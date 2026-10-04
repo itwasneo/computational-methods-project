@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Traveling Salesman Problem — Team Project Presentation</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --bg2: #101936;
+      --card: rgba(255,255,255,0.08);
+      --card2: rgba(255,255,255,0.13);
+      --text: #f8fafc;
+      --muted: #cbd5e1;
+      --accent: #67e8f9;
+      --accent2: #a78bfa;
+      --accent3: #fbbf24;
+      --good: #86efac;
+      --danger: #fb7185;
+      --shadow: 0 26px 80px rgba(0,0,0,.38);
+      --radius: 26px;
+      --slide-w: 1280px;
+      --slide-h: 720px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #020617; color: var(--text); }
+    body { min-height: 100vh; overflow: hidden; }
+
+    .deck {
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 15% 20%, rgba(103,232,249,.16), transparent 30%),
+        radial-gradient(circle at 82% 16%, rgba(167,139,250,.18), transparent 34%),
+        linear-gradient(135deg, #020617, #111827 55%, #0f172a);
+    }
+
+    .slide {
+      position: absolute;
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: min(100vh, calc(100vw * 9 / 16));
+      aspect-ratio: 16 / 9;
+      padding: 54px 68px;
+      background:
+        linear-gradient(145deg, rgba(15,23,42,.98), rgba(17,24,39,.96)),
+        radial-gradient(circle at 10% 10%, rgba(103,232,249,.35), transparent 34%);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      opacity: 0;
+      transform: scale(.985);
+      pointer-events: none;
+      transition: opacity .22s ease, transform .22s ease;
+    }
+
+    .slide.active { opacity: 1; transform: scale(1); pointer-events: auto; }
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(255,255,255,.03) 1px, transparent 1px);
+      background-size: 54px 54px;
+      mask-image: radial-gradient(circle at 50% 40%, black, transparent 75%);
+      pointer-events: none;
+    }
+
+    .content { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; }
+    .eyebrow { color: var(--accent); font-weight: 750; letter-spacing: .13em; text-transform: uppercase; font-size: 15px; margin-bottom: 12px; }
+    h1 { font-size: 68px; line-height: .97; margin: 0; letter-spacing: -0.055em; max-width: 920px; }
+    h2 { font-size: 46px; line-height: 1.04; margin: 0 0 22px; letter-spacing: -0.035em; max-width: 960px; }
+    h3 { font-size: 25px; margin: 0 0 10px; letter-spacing: -0.02em; }
+    p, li { font-size: 23px; line-height: 1.34; color: var(--muted); }
+    p { margin: 0 0 18px; }
+    ul { margin: 0; padding-left: 26px; }
+    li { margin: 8px 0; }
+    strong { color: var(--text); }
+
+    .subtitle { font-size: 26px; max-width: 850px; color: #dbeafe; margin-top: 24px; }
+    .bottom-bar { margin-top: auto; display: flex; align-items: end; justify-content: space-between; color: #94a3b8; font-size: 15px; }
+    .slide-num { color: rgba(255,255,255,.55); }
+    .tag { border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); border-radius: 999px; padding: 9px 14px; color: #e2e8f0; display: inline-flex; align-items: center; gap: 8px; font-weight: 650; }
+    .tags { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+
+    .grid { display: grid; gap: 18px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,.12); border-radius: var(--radius); padding: 24px; backdrop-filter: blur(8px); }
+    .card.bright { background: linear-gradient(135deg, rgba(103,232,249,.16), rgba(167,139,250,.11)); }
+    .card.gold { background: linear-gradient(135deg, rgba(251,191,36,.14), rgba(255,255,255,.06)); }
+    .metric { font-size: 52px; line-height: 1; font-weight: 850; letter-spacing: -0.045em; color: var(--text); }
+    .label { font-size: 17px; color: #a6b3c8; margin-top: 8px; }
+    .small { font-size: 18px; color: #b6c3d5; }
+    .tiny { font-size: 14px; color: #94a3b8; }
+
+    .hero-layout { display: grid; grid-template-columns: 1.08fr .92fr; gap: 42px; align-items: center; flex: 1; }
+    .visual { border-radius: 32px; background: linear-gradient(145deg, rgba(255,255,255,.1), rgba(255,255,255,.035)); border: 1px solid rgba(255,255,255,.16); padding: 24px; min-height: 370px; display: grid; place-items: center; }
+    svg { max-width: 100%; height: auto; }
+    .node { fill: #0f172a; stroke: #67e8f9; stroke-width: 5; filter: drop-shadow(0 8px 14px rgba(103,232,249,.25)); }
+    .route { fill: none; stroke: #fbbf24; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+    .road { stroke: rgba(255,255,255,.18); stroke-width: 3; }
+    .node-label { font-size: 22px; font-weight: 800; fill: #fff; text-anchor: middle; dominant-baseline: middle; }
+
+    .timeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 22px; }
+    .step { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.13); border-radius: 20px; padding: 16px; min-height: 136px; }
+    .step .week { color: var(--accent3); font-weight: 800; font-size: 16px; margin-bottom: 8px; }
+    .step p { font-size: 17px; margin: 0; }
+
+    .flow { display: flex; align-items: stretch; gap: 14px; margin-top: 18px; }
+    .flow .box { flex: 1; padding: 20px; border-radius: 22px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); }
+    .arrow { display: grid; place-items: center; color: var(--accent); font-size: 32px; }
+
+    .person { display: grid; grid-template-columns: 66px 1fr; gap: 16px; align-items: center; }
+    .avatar { width: 66px; height: 66px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: grid; place-items: center; color: #07111f; font-weight: 900; font-size: 28px; }
+    .role { color: var(--text); font-size: 20px; font-weight: 750; }
+    .role-desc { color: var(--muted); font-size: 16px; margin-top: 3px; }
+
+    .compare { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 22px; font-size: 18px; }
+    .compare th, .compare td { border-bottom: 1px solid rgba(255,255,255,.12); padding: 15px 18px; text-align: left; color: #dbeafe; }
+    .compare th { color: #93c5fd; background: rgba(255,255,255,.08); font-size: 16px; text-transform: uppercase; letter-spacing: .08em; }
+    .compare td:first-child { color: white; font-weight: 780; }
+
+    .callout { margin-top: 22px; padding: 22px 26px; border-radius: 24px; border: 1px solid rgba(103,232,249,.34); background: rgba(103,232,249,.09); color: #e0f2fe; font-size: 23px; }
+    .quote { font-size: 26px; line-height: 1.3; color: #e2e8f0; padding-left: 22px; border-left: 5px solid var(--accent3); }
+    .refs { display: grid; gap: 14px; margin-top: 26px; }
+    .ref { padding: 18px 20px; border-radius: 20px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.11); color: #dbeafe; font-size: 18px; line-height: 1.32; }
+
+    .controls { position: fixed; z-index: 10; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; background: rgba(2,6,23,.7); border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 9px 12px; backdrop-filter: blur(10px); }
+    .controls button { background: rgba(255,255,255,.09); color: white; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; padding: 8px 14px; font-weight: 800; cursor: pointer; }
+    .progress-wrap { width: 190px; height: 8px; background: rgba(255,255,255,.12); border-radius: 999px; overflow: hidden; }
+    .progress { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+
+    .print-hint { position: fixed; top: 14px; right: 18px; z-index: 10; color: rgba(255,255,255,.58); font-size: 13px; }
+
+    @media print {
+      @page { size: 16in 9in; margin: 0; }
+      html, body { width: 16in; height: 9in; background: #0f172a; overflow: visible; }
+      .deck { display: block; width: auto; height: auto; background: none; }
+      .slide { position: relative; opacity: 1 !important; transform: none !important; width: 16in; height: 9in; page-break-after: always; box-shadow: none; padding: .68in .85in; }
+      .controls, .print-hint { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-hint">Tip: press F11 for presenting • Ctrl/Cmd+P → Save as PDF</div>
+  <main class="deck" id="deck">
+
+    <section class="slide active">
+      <div class="content">
+        <div class="hero-layout">
+          <div>
+            <div class="eyebrow">Team project presentation</div>
+            <h1>Traveling Salesman Problem</h1>
+            <p class="subtitle">Designing, implementing, and comparing three heuristic algorithms for route optimization.</p>
+            <div class="tags">
+              <span class="tag">Greedy nearest-neighbour</span>
+              <span class="tag">Genetic algorithm</span>
+              <span class="tag">Simulated annealing</span>
+            </div>
+          </div>
+          <div class="visual">
+            <svg viewBox="0 0 520 360" aria-label="TSP route visualization">
+              <line class="road" x1="95" y1="76" x2="232" y2="54" />
+              <line class="road" x1="232" y1="54" x2="405" y2="88" />
+              <line class="road" x1="405" y1="88" x2="449" y2="242" />
+              <line class="road" x1="449" y1="242" x2="287" y2="300" />
+              <line class="road" x1="287" y1="300" x2="118" y2="256" />
+              <line class="road" x1="118" y1="256" x2="95" y2="76" />
+              <line class="road" x1="232" y1="54" x2="287" y2="300" />
+              <line class="road" x1="95" y1="76" x2="405" y2="88" />
+              <path class="route" d="M95 76 L232 54 L405 88 L449 242 L287 300 L118 256 Z" />
+              <circle class="node" cx="95" cy="76" r="25" /><text class="node-label" x="95" y="76">A</text>
+              <circle class="node" cx="232" cy="54" r="25" /><text class="node-label" x="232" y="54">B</text>
+              <circle class="node" cx="405" cy="88" r="25" /><text class="node-label" x="405" y="88">C</text>
+              <circle class="node" cx="449" cy="242" r="25" /><text class="node-label" x="449" y="242">D</text>
+              <circle class="node" cx="287" cy="300" r="25" /><text class="node-label" x="287" y="300">E</text>
+              <circle class="node" cx="118" cy="256" r="25" /><text class="node-label" x="118" y="256">F</text>
+            </svg>
+          </div>
+        </div>
+        <div class="bottom-bar"><span>20ish minutes • 3-person team</span><span class="slide-num">1 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Presentation roadmap</div>
+        <h2>What we will cover</h2>
+        <div class="grid grid-3" style="margin-top:24px;">
+          <div class="card bright"><h3>1. Problem</h3><p>What is the TSP, and why is it an optimization challenge?</p></div>
+          <div class="card"><h3>2. Team setup</h3><p>Members, organization style, communication, and division of labor.</p></div>
+          <div class="card gold"><h3>3. Strategy</h3><p>Algorithms, testing methodology, comparison metrics, and expected outputs.</p></div>
+        </div>
+        <div class="callout"><strong>Goal:</strong> present both the mathematical problem and the practical plan for solving it as a team.</div>
+        <div class="bottom-bar"><span>Suggested time: 1 min</span><span class="slide-num">2 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">1) Chosen problem</div>
+        <h2>The Traveling Salesman Problem</h2>
+        <div class="hero-layout">
+          <div>
+            <p class="quote">Given a set of cities linked by roads, start from one city, visit every city exactly once, and minimize the total travel distance.</p>
+            <ul style="margin-top:28px;">
+              <li>Each city is a <strong>node</strong>.</li>
+              <li>Each road distance is an <strong>edge cost</strong>.</li>
+              <li>A valid solution is a <strong>tour</strong>.</li>
+              <li>The best tour is the one with <strong>minimum total distance</strong>.</li>
+            </ul>
+          </div>
+          <div class="visual">
+            <svg viewBox="0 0 500 370">
+              <g opacity=".65">
+                <line class="road" x1="80" y1="70" x2="225" y2="100" />
+                <line class="road" x1="225" y1="100" x2="410" y2="60" />
+                <line class="road" x1="410" y1="60" x2="365" y2="230" />
+                <line class="road" x1="365" y1="230" x2="210" y2="300" />
+                <line class="road" x1="210" y1="300" x2="75" y2="240" />
+                <line class="road" x1="75" y1="240" x2="80" y2="70" />
+                <line class="road" x1="80" y1="70" x2="365" y2="230" />
+                <line class="road" x1="225" y1="100" x2="75" y2="240" />
+                <line class="road" x1="410" y1="60" x2="210" y2="300" />
+              </g>
+              <path class="route" d="M80 70 L225 100 L410 60 L365 230 L210 300 L75 240 Z" />
+              <circle class="node" cx="80" cy="70" r="24"/><text class="node-label" x="80" y="70">1</text>
+              <circle class="node" cx="225" cy="100" r="24"/><text class="node-label" x="225" y="100">2</text>
+              <circle class="node" cx="410" cy="60" r="24"/><text class="node-label" x="410" y="60">3</text>
+              <circle class="node" cx="365" cy="230" r="24"/><text class="node-label" x="365" y="230">4</text>
+              <circle class="node" cx="210" cy="300" r="24"/><text class="node-label" x="210" y="300">5</text>
+              <circle class="node" cx="75" cy="240" r="24"/><text class="node-label" x="75" y="240">6</text>
+            </svg>
+          </div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">3 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Why it is difficult</div>
+        <h2>The number of possible tours grows extremely fast</h2>
+        <div class="grid grid-3" style="margin-top:26px;">
+          <div class="card"><div class="metric">10</div><div class="label">cities</div><p class="small">Already many possible tours to compare.</p></div>
+          <div class="card bright"><div class="metric">20</div><div class="label">cities</div><p class="small">Exact enumeration becomes impractical.</p></div>
+          <div class="card gold"><div class="metric">n!</div><div class="label">growth pattern</div><p class="small">This motivates approximation and heuristic strategies.</p></div>
+        </div>
+        <div class="callout">Our project focuses on finding <strong>good solutions efficiently</strong>, then comparing them against exact optima for small instances.</div>
+        <div class="bottom-bar"><span>Suggested time: 1–2 min</span><span class="slide-num">4 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">2) Team organization</div>
+        <h2>Three members, democratic organization</h2>
+        <div class="hero-layout">
+          <div>
+            <p>We organize the project as a <strong>small democratic team</strong>: major technical choices are discussed together, while each member owns a clear part of the implementation.</p>
+            <ul>
+              <li>No permanent hierarchy; decisions are made by consensus.</li>
+              <li>One rotating coordinator keeps each meeting focused.</li>
+              <li>Code review is shared to keep the project consistent.</li>
+            </ul>
+          </div>
+          <div class="grid" style="gap:14px;">
+            <div class="card person"><div class="avatar">1</div><div><div class="role">Team-member-1</div><div class="role-desc">Coordination + greedy baseline + documentation</div></div></div>
+            <div class="card person"><div class="avatar">2</div><div><div class="role">Team-member-2</div><div class="role-desc">Genetic algorithm + parameter experiments</div></div></div>
+            <div class="card person"><div class="avatar">3</div><div><div class="role">Team-member-3</div><div class="role-desc">Simulated annealing + exact solver for small cases</div></div></div>
+          </div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">5 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">3) Communication channels</div>
+        <h2>Keeping communication simple and traceable</h2>
+        <div class="grid grid-2" style="margin-top:22px;">
+          <div class="card bright"><h3>Quick communication</h3><p>Group chat for daily questions, blockers, and short updates.</p></div>
+          <div class="card"><h3>Code collaboration</h3><p>Git repository with issues, branches, pull requests, and commit history.</p></div>
+          <div class="card"><h3>Shared documentation</h3><p>Shared folder for references, experiment results, graphs, and final slides.</p></div>
+          <div class="card gold"><h3>Weekly checkpoint</h3><p>Short meeting to review progress, compare results, and update priorities.</p></div>
+        </div>
+        <div class="callout"><strong>Rule:</strong> important decisions go into the repository or shared document, not only into chat.</div>
+        <div class="bottom-bar"><span>Suggested time: 1–2 min</span><span class="slide-num">6 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">4) Division of labor</div>
+        <h2>Parallel work, shared integration</h2>
+        <table class="compare" style="margin-top:24px;">
+          <thead><tr><th>Member</th><th>Main responsibility</th><th>Deliverable</th></tr></thead>
+          <tbody>
+            <tr><td>Team-member-1</td><td>Problem setup, data generation, greedy algorithm</td><td>Baseline implementation + project report structure</td></tr>
+            <tr><td>Team-member-2</td><td>Genetic algorithm design and tuning</td><td>Selection, crossover, mutation, population experiments</td></tr>
+            <tr><td>Team-member-3</td><td>Simulated annealing and exact comparison</td><td>Cooling schedule, local moves, brute force / dynamic check for small cases</td></tr>
+            <tr><td>All members</td><td>Testing, comparison, graphs, final interpretation</td><td>Unified results and presentation</td></tr>
+          </tbody>
+        </table>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">7 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">5) Solving strategy</div>
+        <h2>We compare three algorithms on the same instances</h2>
+        <div class="flow">
+          <div class="box"><h3>Generate cities</h3><p class="small">Different sizes and spatial configurations.</p></div>
+          <div class="arrow">→</div>
+          <div class="box"><h3>Run algorithms</h3><p class="small">Greedy, genetic, simulated annealing.</p></div>
+          <div class="arrow">→</div>
+          <div class="box"><h3>Measure results</h3><p class="small">Tour length, runtime, stability, parameter sensitivity.</p></div>
+        </div>
+        <div class="grid grid-3" style="margin-top:28px;">
+          <div class="card"><h3>Greedy</h3><p class="small">Fast baseline using nearest neighbour.</p></div>
+          <div class="card bright"><h3>Genetic</h3><p class="small">Searches a population of possible tours.</p></div>
+          <div class="card gold"><h3>Annealing</h3><p class="small">Escapes local minima by accepting some worse moves.</p></div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">8 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Algorithm 1</div>
+        <h2>Greedy nearest-neighbour method</h2>
+        <div class="hero-layout">
+          <div>
+            <ul>
+              <li>Start from the initial city.</li>
+              <li>Repeatedly visit the closest unvisited city.</li>
+              <li>Return to the starting city after all cities are visited.</li>
+            </ul>
+            <div class="callout"><strong>Role in project:</strong> simple, fast baseline for comparison.</div>
+          </div>
+          <div class="card">
+            <h3>Strengths / limits</h3>
+            <table class="compare" style="margin-top:14px;">
+              <tbody>
+                <tr><td>+</td><td>Easy to implement and very fast</td></tr>
+                <tr><td>+</td><td>Useful first approximation</td></tr>
+                <tr><td>−</td><td>Can get trapped by early local choices</td></tr>
+                <tr><td>−</td><td>Not guaranteed to find the optimum</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">9 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Algorithm 2</div>
+        <h2>Genetic algorithm</h2>
+        <div class="hero-layout">
+          <div>
+            <p>The genetic algorithm evolves a <strong>population of tours</strong> and progressively favors better tours.</p>
+            <ul>
+              <li><strong>Selection:</strong> keep or prefer shorter tours.</li>
+              <li><strong>Crossover:</strong> combine parts of two parent tours.</li>
+              <li><strong>Mutation:</strong> randomly swap or reverse cities to explore alternatives.</li>
+            </ul>
+          </div>
+          <div class="visual">
+            <svg viewBox="0 0 520 360">
+              <rect x="30" y="45" width="150" height="70" rx="18" fill="rgba(103,232,249,.18)" stroke="rgba(103,232,249,.65)"/>
+              <rect x="340" y="45" width="150" height="70" rx="18" fill="rgba(167,139,250,.18)" stroke="rgba(167,139,250,.65)"/>
+              <rect x="185" y="235" width="150" height="70" rx="18" fill="rgba(251,191,36,.18)" stroke="rgba(251,191,36,.75)"/>
+              <text x="105" y="88" fill="#fff" font-size="22" font-weight="800" text-anchor="middle">Parent A</text>
+              <text x="415" y="88" fill="#fff" font-size="22" font-weight="800" text-anchor="middle">Parent B</text>
+              <text x="260" y="278" fill="#fff" font-size="22" font-weight="800" text-anchor="middle">Child tour</text>
+              <path d="M180 110 C200 170, 220 190, 245 235" stroke="#67e8f9" stroke-width="6" fill="none" stroke-linecap="round"/>
+              <path d="M340 110 C320 170, 300 190, 275 235" stroke="#a78bfa" stroke-width="6" fill="none" stroke-linecap="round"/>
+              <text x="260" y="170" fill="#cbd5e1" font-size="20" text-anchor="middle">crossover + mutation</text>
+            </svg>
+          </div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">10 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Algorithm 3</div>
+        <h2>Simulated annealing</h2>
+        <div class="hero-layout">
+          <div>
+            <p>Simulated annealing improves one solution iteratively while occasionally accepting worse moves to avoid local minima.</p>
+            <ul>
+              <li>Start with an initial tour.</li>
+              <li>Make a local change, such as swapping or reversing a segment.</li>
+              <li>Accept better moves; sometimes accept worse moves depending on temperature.</li>
+              <li>Gradually reduce temperature until the search stabilizes.</li>
+            </ul>
+          </div>
+          <div class="visual">
+            <svg viewBox="0 0 520 360">
+              <polyline points="50,300 110,250 165,260 220,180 270,205 330,130 390,150 470,80" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M50 300 C130 220, 175 300, 245 190 C295 120, 330 190, 470 80" fill="none" stroke="#fbbf24" stroke-width="6" stroke-linecap="round"/>
+              <circle cx="110" cy="250" r="15" fill="#fb7185"/>
+              <circle cx="220" cy="180" r="15" fill="#86efac"/>
+              <circle cx="330" cy="130" r="15" fill="#86efac"/>
+              <text x="105" y="44" fill="#fff" font-size="26" font-weight="850">Accept some worse moves early</text>
+              <text x="105" y="76" fill="#cbd5e1" font-size="19">then become more selective as temperature cools</text>
+              <text x="70" y="330" fill="#cbd5e1" font-size="17">high temperature</text>
+              <text x="365" y="330" fill="#cbd5e1" font-size="17">low temperature</text>
+            </svg>
+          </div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">11 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Testing plan</div>
+        <h2>How we will evaluate the algorithms</h2>
+        <div class="grid grid-2" style="margin-top:22px;">
+          <div class="card bright"><h3>Different numbers of cities</h3><p>Small instances for exact comparison; larger instances for scalability.</p></div>
+          <div class="card"><h3>Different configurations</h3><p>Random cities, clustered cities, and road-like layouts.</p></div>
+          <div class="card"><h3>Performance metrics</h3><p>Total route distance, execution time, memory use when relevant.</p></div>
+          <div class="card gold"><h3>Solution quality metrics</h3><p>Distance gap from best known or exact optimum, stability across repeated runs.</p></div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">12 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Parameter study</div>
+        <h2>Understanding what controls each algorithm</h2>
+        <table class="compare" style="margin-top:24px;">
+          <thead><tr><th>Algorithm</th><th>Parameters to study</th><th>Expected influence</th></tr></thead>
+          <tbody>
+            <tr><td>Greedy</td><td>Starting city; tie-breaking rule</td><td>Can change the final route, even with same cities</td></tr>
+            <tr><td>Genetic</td><td>Population size, mutation rate, crossover type, generations</td><td>Balances exploration, quality, and runtime</td></tr>
+            <tr><td>Simulated annealing</td><td>Initial temperature, cooling schedule, number of iterations</td><td>Controls ability to escape local minima</td></tr>
+            <tr><td>Exact comparison</td><td>Small city counts only</td><td>Provides a reference optimum for quality measurement</td></tr>
+          </tbody>
+        </table>
+        <div class="callout">We will not only ask <strong>which algorithm is best</strong>, but also <strong>under what conditions</strong> it performs best.</div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">13 / 14</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="content">
+        <div class="eyebrow">Workplan and literature</div>
+        <h2>Implementation roadmap</h2>
+        <div class="timeline">
+          <div class="step"><div class="week">Step 1</div><p>Implement city generation and distance matrix.</p></div>
+          <div class="step"><div class="week">Step 2</div><p>Implement greedy, genetic, and annealing algorithms.</p></div>
+          <div class="step"><div class="week">Step 3</div><p>Test different city numbers and configurations.</p></div>
+          <div class="step"><div class="week">Step 4</div><p>Compare runtime, route length, and parameter sensitivity.</p></div>
+          <div class="step"><div class="week">Step 5</div><p>Compare small systems with exact optimal solutions.</p></div>
+        </div>
+        <div class="refs">
+          <div class="ref"><strong>Kirkpatrick, Gelatt & Vecchi (1983)</strong> — “Optimization by Simulated Annealing,” <em>Science</em> 220, 671–680. DOI: 10.1126/science.220.4598.671</div>
+          <div class="ref"><strong>Goldberg & Lingle (1985)</strong> — “Alleles, Loci, and the Traveling Salesman Problem,” <em>Proceedings of the First International Conference on Genetic Algorithms</em>, 154–159.</div>
+        </div>
+        <div class="bottom-bar"><span>Suggested time: 2 min</span><span class="slide-num">14 / 14</span></div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="controls" aria-label="Presentation controls">
+    <button id="prev" type="button">← Prev</button>
+    <div class="progress-wrap"><div class="progress" id="progress"></div></div>
+    <button id="next" type="button">Next →</button>
+  </nav>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const progress = document.getElementById('progress');
+    let index = 0;
+
+    function show(i) {
+      index = Math.max(0, Math.min(slides.length - 1, i));
+      slides.forEach((slide, n) => slide.classList.toggle('active', n === index));
+      progress.style.width = `${((index + 1) / slides.length) * 100}%`;
+      document.title = `Slide ${index + 1}/${slides.length} — TSP Team Presentation`;
+    }
+
+    document.getElementById('prev').addEventListener('click', () => show(index - 1));
+    document.getElementById('next').addEventListener('click', () => show(index + 1));
+    document.addEventListener('keydown', (event) => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) show(index + 1);
+      if (['ArrowLeft', 'PageUp', 'Backspace'].includes(event.key)) show(index - 1);
+      if (event.key === 'Home') show(0);
+      if (event.key === 'End') show(slides.length - 1);
+    });
+    show(0);
+  </script>
+</body>
+</html>
