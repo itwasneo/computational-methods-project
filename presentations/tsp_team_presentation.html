@@ -571,14 +571,14 @@
             <div class="ga-phase"><span class="ga-index">04</span><strong>Mutation</strong><span>Swap two cities, re-score, and repeat.</span></div>
           </div>
           <div class="ga-example" aria-label="Example TSP tours starting at A. Parent 1 is A B C D E and Parent 2 is A D E B C. Crossover keeps B from Parent 1 and appends D E C from Parent 2, making A B D E C. Mutation swaps B and C, making A C D E B. Each tour returns to A.">
-            <div class="ga-example-title">Example · tour order</div>
+            <div class="ga-example-title">Illustrative crossover · not the paper’s PMX</div>
             <div class="ga-tour"><span class="ga-tour-label">Parent 1</span><div class="ga-cities"><span class="ga-start">A</span><span class="ga-segment">B</span><span>C</span><span>D</span><span>E</span></div></div>
             <div class="ga-tour"><span class="ga-tour-label">Parent 2</span><div class="ga-cities"><span class="ga-start">A</span><span class="ga-from-second">D</span><span class="ga-from-second">E</span><span>B</span><span class="ga-from-second">C</span></div></div>
             <div class="ga-transform">↓ &nbsp; Keep B; fill D–E–C from Parent 2</div>
             <div class="ga-tour"><span class="ga-tour-label">Child</span><div class="ga-cities"><span class="ga-start">A</span><span class="ga-segment">B</span><span class="ga-from-second">D</span><span class="ga-from-second">E</span><span class="ga-from-second">C</span></div></div>
             <div class="ga-transform">↓ &nbsp; Swap B and C</div>
             <div class="ga-tour"><span class="ga-tour-label">Mutated</span><div class="ga-cities"><span class="ga-start">A</span><span class="ga-change">C</span><span class="ga-from-second">D</span><span class="ga-from-second">E</span><span class="ga-change">B</span></div></div>
-            <div class="ga-example-note">Each order is a tour: return to A after the last city.</div>
+            <div class="ga-example-note">Each order returns to A. Goldberg &amp; Lingle (1985) describe partially mapped crossover (PMX); this is a different illustrative crossover.</div>
           </div>
         </div>
         <div class="bottom-bar"><span class="slide-num">10 / 14</span></div>
