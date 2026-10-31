@@ -66,7 +66,7 @@ An Apptainer image is the preferred cluster application environment. This avoids
 
 1. Keep the image definition, dependency specification, and lockfile in Git.
 2. Pin the base image and application dependencies rather than relying on floating `latest` tags.
-3. Follow the documented ULHPC workflow: build the image off-cluster with the required privileges, then transfer the SIF artifact. Do not assume an in-cluster image-building facility.
+3. Build the image off-cluster with the required privileges, then transfer the SIF artifact to the project workspace. Do not assume an in-cluster image-building facility.
 4. For recorded benchmark campaigns, use a fixed image containing a known application revision and record its checksum and source revision.
 5. Keep inputs, outputs, and writable temporary/cache directories outside the immutable application image through deliberately configured mounts.
 
@@ -75,12 +75,12 @@ Development may expose a working source tree to the container, but measured runs
 ### Runtime boundaries and caveats
 
 - Load the ULHPC `tools/Apptainer` module inside an allocation. The application need not load the host Python or Numba modules.
-- Control inherited environment settings and Python user-package visibility. ULHPC documents that the default home-directory mount can override the container environment, and provides `--no-mount home` where appropriate.
+- Control inherited environment settings and Python user-package visibility. The default home-directory mount can expose configuration or packages that override the container environment; use `--no-mount home` where appropriate and expose required data directories deliberately.
 - Containers do not replace Slurm resource controls or prevent CPU-affinity and NUMA experiments. Verify actual placement inside the container; see [placement guidance](hpc-resources.md#cpu-placement-and-numa).
 - Match thread counts to the allocation and control nested threading. Do not let every worker independently use all cores visible on the host.
 - Treat startup, imports, JIT compilation/cache loading, steady-state search, and end-to-end runtime as distinct measurement components.
 - Keep compiled artifacts compatible with the target CPU architecture; do not assume binaries built specifically for a development machine will run on every cluster node.
-- A GPU image still depends on compatible host drivers and the documented NVIDIA integration. An MPI image still needs launcher and communication-stack compatibility checks.
+- A GPU image still depends on compatible host drivers and Apptainer's NVIDIA integration (`--nv`). An MPI image still needs launcher and communication-stack compatibility checks.
 
 ## Implementation-time validation
 
@@ -91,10 +91,4 @@ The architecture is decided, but exact package versions and a working image have
 - Verify resource limits, effective affinity, and thread behavior in a small cluster allocation.
 - Validate any GPU or MPI image separately before claiming acceleration or distributed scaling.
 
-## ULHPC documentation basis
-
-Cluster-specific guidance comes only from the supplied local documentation checkout at `../ulhpc-docs/docs/`, relative to the project root. These links assume that sibling checkout exists:
-
-- [Apptainer, image builds, home mounts, GPU integration, and MPI execution](../../ulhpc-docs/docs/environment/containers.md)
-- [ULHPC module environment](../../ulhpc-docs/docs/environment/modules.md)
-- [Slurm launchers](../../ulhpc-docs/docs/slurm/launchers.md)
+The [resource execution plan](hpc-resources.md) defines allocation, placement, storage, and cluster validation responsibilities.

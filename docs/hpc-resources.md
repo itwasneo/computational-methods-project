@@ -6,25 +6,19 @@ Use the University of Luxembourg HPC facility for substantial experiments. Begin
 
 The application stack and container workflow are described in [Technology stack and execution architecture](tech-stack.md).
 
-## Documentation boundary
+## Resource strategy
 
-All cluster-specific facts in this document are sourced exclusively from the supplied local checkout at `../ulhpc-docs/docs/`, relative to the project root. Source links below assume that sibling checkout exists; the ULHPC documentation is not vendored into this project.
+This document defines how the project will use resources, not a fixed inventory of the cluster. Confirm the team's access, available hardware, and allocation limits before running experiments. No live cluster validation has been performed yet.
 
-The documentation describes the facility, not our team's permissions or current resource availability. No live cluster validation has been performed. Record the actual hardware and software configuration used by each experiment rather than treating documentation examples as a live inventory.
-
-## Target resources
-
-| Resource | Documented configuration | Planned use |
+| Resource | Planned use | Allocation approach |
 | --- | --- | --- |
-| **Aion CPU nodes** | Two AMD EPYC Rome 7H12 processors, 128 cores and 256 GB RAM per node | Preferred CPU target, subject to account access; multicore and potential distributed experiments |
-| **Iris CPU nodes** | Intel Broadwell or Skylake processors, 28 cores and 128 GB RAM per node | Alternative CPU target or a separately identified architecture comparison |
-| **Iris `gpu` nodes** | Four NVIDIA V100 GPUs per node, with 16 or 32 GB memory per GPU; 28 CPU cores and 768 GB host RAM | Optional GPU investigation, starting with one GPU |
+| **Aion CPU nodes** | Preferred target for serial baselines, multicore experiments, and possible distributed execution | Start on one node with explicit process, thread, memory, and walltime requests |
+| **Iris CPU nodes** | Alternative CPU target or a separately labelled architecture comparison | Use a consistent CPU model within each scaling experiment |
+| **Iris GPU resources** | Optional acceleration of one profiled workload | Start with one GPU after confirming access and software compatibility |
 
-Sources: [Aion compute nodes](../../ulhpc-docs/docs/systems/aion/compute.md), [Iris compute nodes](../../ulhpc-docs/docs/systems/iris/compute.md).
+Select exact resource profiles during deployment rather than hardcoding node specifications into the solvers. Record the hardware actually allocated to each run, including CPU model, core allocation, memory, and any GPU model and device memory.
 
-The documentation also lists a `hopper` partition associated with H100 GPUs. Its hardware is less fully described in the reviewed pages; do not assume access or a particular GPU memory capacity. See [partitions](../../ulhpc-docs/docs/slurm/partitions.md) and [long-job resource types](../../ulhpc-docs/docs/jobs/long.md).
-
-For controlled scaling experiments, keep the CPU architecture fixed. Do not present a single-core Iris versus multicore Aion comparison as pure parallel speedup. Record GPU model, device memory, and host CPU configuration for acceleration experiments.
+For controlled scaling experiments, keep the CPU architecture fixed. Do not present a single-core Iris versus multicore Aion comparison as pure parallel speedup.
 
 ## Slurm owns resource scheduling
 
@@ -39,35 +33,32 @@ Our Python runner defines logical experiments; Slurm allocates their resources. 
 | Cooperating distributed searches | Coordinated MPI job, not unrelated array tasks |
 | GPU search or kernel experiment | GPU allocation and GPU-enabled container; do not occupy GPU nodes for CPU-only work |
 
-ULHPC recommends grouping short work rather than overwhelming the scheduler. Its guidance identifies roughly **10 allocations per minute** and **1,000 job steps per minute** as thresholds for considering additional grouping. Treat these as workload-design guidance, not targets to saturate.
+Batch short trials to avoid excessive allocation and job-step requests. Use pilot runtimes to choose batch sizes and concurrency limits, and keep submission rates within the limits applicable to the team's account.
 
 Array elements share their requested scheduler resources. Group experiments by resource profile and use a concurrency cap. Array execution order must not affect experiment identifiers or random seeds. Native Slurm job dependencies can connect preparation, execution, and aggregation stages without a custom scheduling service.
 
-Sources: [GNU Parallel](../../ulhpc-docs/docs/jobs/gnu-parallel.md), [job arrays](../../ulhpc-docs/docs/jobs/arrays.md), [job dependencies](../../ulhpc-docs/docs/jobs/dependencies.md).
-
 ### Operational rules
 
-- Login nodes are for preparation, file management, and submission, not benchmark execution.
-- Load modules on compute nodes inside an allocation.
-- Interactive allocations are for development, testing, and debugging; production experiments belong in batch jobs.
-- Follow the documented login-shell initialization in launcher scripts, such as `#!/bin/bash --login`.
+- Use login nodes for preparation, file management, and submission, not benchmark execution.
+- Load required host modules on compute nodes inside an allocation.
+- Use interactive allocations for development, testing, and debugging; submit production experiments as batch jobs.
+- Initialize launcher scripts with a login shell, such as `#!/bin/bash --login`, before loading host modules.
 - Explicitly request resources and set process/thread limits accordingly. Prevent nested parallelism from oversubscribing the allocation.
-- Monitor resource utilization and use measured runtimes to refine allocation sizes and walltime requests.
+- Monitor utilization and use measured runtimes and memory consumption to refine subsequent requests.
+- Keep credentials and private account configuration out of Git; supply deployment-specific values separately.
 - Separate scheduler waiting time from application execution time in performance reports.
-
-Sources: [Slurm resource management](../../ulhpc-docs/docs/slurm/index.md), [interactive-job policy](../../ulhpc-docs/docs/jobs/interactive.md), [launchers](../../ulhpc-docs/docs/slurm/launchers.md), [monitoring jobs](../../ulhpc-docs/docs/jobs/submit.md).
 
 ## CPU placement and NUMA
 
-Aion exposes eight virtual sockets/NUMA domains with 16 cores each. Iris regular CPU nodes have two sockets with 14 cores each. The documentation states that simultaneous multithreading is disabled on the compute nodes.
+Inspect the allocated node's CPU and NUMA topology before choosing process and thread placement. Do not assume that one large thread team is always preferable to several smaller teams.
 
-This makes placement a useful possible investigation, alongside algorithm engineering and memory representation:
+Possible placement experiments include:
 
-- Compare compact and spread placement while keeping the logical workload fixed.
-- Compare larger thread teams spanning NUMA domains with smaller teams within domains.
-- Consider how distance data is initialized, shared, or replicated, and report the resulting memory footprint.
+- Comparing compact and spread placement while keeping the logical workload fixed.
+- Comparing larger thread teams spanning NUMA domains with smaller teams within domains.
+- Changing how distance data is initialized, shared, or replicated, while reporting the resulting memory footprint.
 
-A full-node layout of eight processes with 16 cores each is one documented Aion pattern, not an assumption that it will be optimal for TSP. Throughput-oriented packing and controlled solver-scaling experiments should be distinguished; colocated runs can contend for shared resources.
+Distinguish throughput-oriented packing from controlled solver-scaling experiments: colocated runs can contend for shared resources. Record placement and concurrency alongside timing results.
 
 ### Containers do not remove placement controls
 
@@ -79,42 +70,34 @@ Keep three controls distinct:
 2. **Thread placement:** how its worker threads use those cores.
 3. **Memory placement:** where the data resides and the memory policy used when it is allocated and initialized.
 
-CPU pinning alone does not establish memory locality. Validate the effective process and thread placement from inside the container, using the documented affinity-reporting tools or `/proc/self/status`. Check that the required memory-policy operations are available before treating a NUMA configuration as established.
-
-Sources: [affinity and pinning](../../ulhpc-docs/docs/jobs/affinity_and_pinning.md), [numactl](../../ulhpc-docs/docs/software/swsets/tools/numactl.md), [Apptainer](../../ulhpc-docs/docs/environment/containers.md).
+CPU pinning alone does not establish memory locality. Validate effective placement from inside the container using affinity reports, such as `taskset` or `/proc/self/status`. Check that the required memory-policy operations are available before treating a NUMA configuration as established.
 
 ## Optional GPU and MPI execution
 
 ### GPU
 
-For the documented Iris V100 configuration, the GPU guide recommends seven CPU cores per allocated GPU. Start with one GPU and use the documented Apptainer NVIDIA integration (`--nv`). This CPU/GPU ratio is not a prescription for the separately listed Hopper hardware.
+Start with one allocated GPU and explicitly request the CPU cores and host memory needed to feed it. Enable Apptainer's NVIDIA integration with `--nv` and validate the actual host-driver, device, and container-runtime combination before choosing CUDA-dependent package versions.
 
-Validate host-driver and container-runtime compatibility before selecting CUDA-dependent package versions. The versions in documentation examples are not evidence of the current host driver. Keep transfers and synchronization explicit in timing, and report both kernel-only and end-to-end measurements.
-
-Source: [GPU jobs](../../ulhpc-docs/docs/jobs/gpu.md), [GPU-enabled containers](../../ulhpc-docs/docs/environment/containers.md#gpu-enabled-apptainer-containers).
+Accelerate one demonstrated bottleneck rather than porting all three solvers. Keep reusable data on the device where practical, and account for transfers and synchronization. Report both kernel-only and end-to-end measurements against an optimized CPU baseline with its resource allocation stated.
 
 ### MPI
 
 Use mpi4py only if a distributed investigation is selected. A containerized MPI installation must be compatible with the cluster launcher and communication environment; successful Python imports are not sufficient validation.
 
-Before TSP scaling runs, check multi-node correctness and communication performance. The local documentation provides an MPI-container example launched through `srun`, but this does not establish compatibility for an arbitrary new MPI/mpi4py image.
-
-Source: [MPI containers](../../ulhpc-docs/docs/environment/containers.md#mpi-and-apptainer-containers), [MPI launchers](../../ulhpc-docs/docs/slurm/launchers.md#mpi).
+Before TSP scaling runs, launch a small multi-node correctness and communication test through Slurm. Increase node counts only after validating single-node behavior and the distributed runtime. Keep logical islands or chains, seeds, and search budgets fixed when measuring execution scaling.
 
 ## Storage and results
 
-| Location | Intended project use | Important limitation |
+| Location | Intended project use | Handling rule |
 | --- | --- | --- |
-| `$HOME` | Configuration and environment artifacts | Not backed up |
-| `${PROJECTHOME}/<project>` | Shared inputs and outputs, if project storage is available | Documented backup coverage is limited to the `backup` subdirectory |
-| `$SCRATCH` | Temporary working data and checkpoints | Not backed up; not an archive |
-| Node-local `/tmp` | Temporary small-file work, including compilation/cache activity where appropriate | Cleared after the job; not shared across nodes |
+| `$HOME` | Configuration and environment artifacts | Keep usage modest and maintain an independent copy of important files |
+| `${PROJECTHOME}/<project>` | Shared inputs, images, and outputs, if project storage is available | Confirm team permissions, quotas, and backup arrangements before use |
+| `$SCRATCH` | Temporary working data and checkpoints | Treat as disposable working storage, not an archive |
+| Node-local `/tmp` | Temporary small-file work, including compilation/cache activity where appropriate | Do not assume persistence after job completion or visibility from other nodes |
 
-Persist completed result batches outside node-local temporary storage during long runs, and copy remaining outputs before normal job completion. Keep an independent backup of important inputs, configurations, and results.
+Persist completed result batches outside node-local temporary storage during long runs, and copy remaining outputs before normal job completion. Do not rely on working directories being backed up. Keep an independent backup of important inputs, configurations, and results.
 
-Write separate result shards per worker or batch, then aggregate them. Avoid both a shared multi-writer CSV and excessive tiny-file traffic on shared storage.
-
-Sources: [storage overview](../../ulhpc-docs/docs/filesystems/index.md), [backup policy](../../ulhpc-docs/docs/data/backups.md).
+Write separate result shards per worker or batch, then aggregate them. Avoid both a shared multi-writer CSV and excessive tiny-file traffic on shared storage. Keep generated results and container images out of Git; retain the manifests, build definitions, checksums, and instructions needed to reproduce them.
 
 ## Checks before production experiments
 
@@ -125,5 +108,3 @@ The platform choice is resolved. These are deployment checks, not additional req
 - Verify effective CPU affinity, runtime thread counts, and any selected memory-placement policy.
 - Record image checksum, source revision, package/runtime versions, loaded host modules, CPU/GPU model, resource layout, seeds, and Slurm job/array identifiers.
 - Validate any MPI or GPU extension separately before using it for reported experiments.
-
-Source for account-specific access: [Slurm accounts](../../ulhpc-docs/docs/slurm/accounts.md).
