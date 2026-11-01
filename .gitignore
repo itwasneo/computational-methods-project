@@ -1,0 +1,32 @@
+# Local Python environments and private configuration
+.venv/
+.venv-*/
+venv/
+.env
+.env.*
+!.env.example
+
+# Python, Numba, test, and tool caches
+__pycache__/
+*.py[cod]
+*.nbc
+*.nbi
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+/build/
+/dist/
+*.egg-info/
+
+# Generated inputs, results, and container images (not test fixtures)
+/data/generated/
+/data/downloaded/
+/results/
+/outputs/
+/artifacts/
+*.sif

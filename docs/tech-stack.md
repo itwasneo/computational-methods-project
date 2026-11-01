@@ -1,6 +1,6 @@
 # Technology stack and execution architecture
 
-**Status:** decided; implementation and cluster validation are pending.
+**Status:** decided; the local package scaffold and locked numerical stack are smoke-tested. Solver/runner implementation and cluster validation are pending.
 
 Use a Python-first stack with compiled numerical kernels, a small project-specific experiment runner, and an Apptainer image for reproducible cluster execution. The required solvers remain nearest-neighbour, genetic algorithm (GA), and simulated annealing (SA).
 
@@ -22,6 +22,8 @@ See [HPC resources and execution](hpc-resources.md) for the ULHPC target, schedu
 | Cluster scheduling | Slurm | Allocate resources and launch workers; group short work with GNU Parallel |
 
 The cluster host does not need uv or the project's Python environment installed. Its Apptainer module launches the packaged application.
+
+[Local development](development.md) records the selected Python 3.12 environment, locked dependency versions, setup commands, and smoke tests. Analysis dependencies are in a separate, opt-in `analysis` group.
 
 ### Optional extensions
 
@@ -84,9 +86,9 @@ Development may expose a working source tree to the container, but measured runs
 
 ## Implementation-time validation
 
-The architecture is decided, but exact package versions and a working image have not yet been established. Before production experiments:
+The local Python/NumPy/Numba combination is locked and passes a compilation/execution smoke test. A working cluster image has not yet been established. Before production experiments:
 
-- Select and lock a compatible Python/NumPy/Numba combination.
+- Use the committed dependency lock for the image; revalidate any dependency changes locally before deployment.
 - Build and test the CPU image, including solver tests, JIT execution, writable caches, and result persistence.
 - Verify resource limits, effective affinity, and thread behavior in a small cluster allocation.
 - Validate any GPU or MPI image separately before claiming acceleration or distributed scaling.
