@@ -1,6 +1,6 @@
 # CPU image and repository workflow
 
-**Status:** image definition and verification procedure prepared; owner build validation is in progress, with no successful SIF build/runtime verification recorded yet. Cluster access/storage are owner-confirmed, not independently tested. This is preparation for task #21, not evidence that its runtime checks or task #22 are complete. CI task #4 also remains outstanding.
+**Status:** the owner supplied a successful local build log for source revision `f6e1fcde83988e76292bdff83fc6f736a9c19ee0`: all 10 packaged tests and the correctness smoke check passed, and the SIF/checksum pair was created. Execution of the finished SIF with runtime mounts and Aion/Iris compatibility remain unverified. Cluster access/storage are owner-confirmed, not independently tested. This is preparation for task #21, not evidence that its runtime checks or task #22 are complete. CI task #4 also remains outstanding.
 
 **Execution boundary:** cluster connections, transfers, allocations, and job execution are performed by the project owner. Coding agents must not connect to ULHPC or submit/run jobs there. The commands below are instructions for the owner, not automated remote execution.
 
@@ -49,7 +49,7 @@ Input versions are pinned, but byte-for-byte identical SIF rebuilds are not prom
 
 The supplied cluster guidance describes building off-cluster with the required privileges, then transferring the artifact. Do not assume that cluster access or partition permissions grant image-build privileges. Do not run this build on a cluster login or compute node.
 
-Use a trusted Linux x86_64 builder with Apptainer and network access for the pinned base and Python packages. The recipe was prepared with local Apptainer 1.5.0 command syntax; a complete successful build remains unverified. Review the definition before a privileged build. If your local installation uses another approved build mechanism, adapt that local invocation without changing the source/pinning rules.
+Use a trusted Linux x86_64 builder with Apptainer and network access for the pinned base and Python packages. The recipe was prepared with local Apptainer 1.5.0 command syntax; the owner subsequently reported a successful local build at the revision recorded above. Review the definition before a privileged build. If your local installation uses another approved build mechanism, adapt that local invocation without changing the source/pinning rules.
 
 After committing the definition and all intended source changes, run the following in **Bash on the off-cluster builder**:
 
@@ -92,11 +92,63 @@ The temporary archive avoids including uncommitted, ignored, or secret local fil
 
 Do not bypass `%test` with `--notest`: it runs [check_runtime.py](../containers/check_runtime.py), including the packaged pytest suite, serial and parallel Numba compilation, cache writes, and a temporary report. The image filesystem can already be read-only at this stage, so `%test` creates a private directory under writable `/tmp` and redirects its temporary files and caches there. It does not depend on a runtime `/cache` bind or the image's default `TMPDIR`. Test caches/reports are removed on exit so build-host native JIT artifacts are not shipped as runtime caches. A failed check means the image is not validated; retain the build log and investigate rather than suppressing the failure.
 
-Keep the SIF and checksum in the ignored `artifacts/` directory locally. Transfer them yourself using your approved method, then verify the checksum from the destination image directory:
+Keep the SIF and checksum in the ignored `artifacts/` directory locally, together with the build log. The temporary build-time verification report is cleaned up; build provenance remains inside the SIF at `/opt/tsp/build-info.json`.
+
+## Owner-operated image transfer
+
+Use `rsync` over SSH to transfer the SIF and its checksum together. These are **owner-run instructions**, not authorization for a coding agent to connect or transfer files. Use your existing approved SSH configuration; do not put credentials, private keys, or private connection configuration in the repository.
+
+### Prepare the destination
+
+In your own destination shell, create an image directory within storage you are authorized to use:
 
 ```bash
-sha256sum -c tsp-cpu-<source-commit>.sif.sha256
+mkdir -p /absolute/path/to/tsp-workspace/images
 ```
+
+Replace the placeholder with your actual workspace. Check that it has enough free space, is writable by you, and is visible from the intended compute nodes. Preserve the project directory's group/ACL policy rather than copying local ownership or recursively changing permissions. If the same shared directory is visible from both clusters, one transfer is sufficient; verify visibility rather than assuming that two SSH aliases imply two separate copies.
+
+### Transfer from the local machine
+
+Run this from the local repository root after replacing the placeholders. Set `revision` to the commit embedded in the **built image**, not automatically to the current Git HEAD: documentation or code commits may have been added since the build.
+
+```bash
+(
+    set -euo pipefail
+    revision="<full-source-commit-of-built-image>"
+    name="tsp-cpu-${revision}.sif"
+    destination="<your-ssh-alias>:/absolute/path/to/tsp-workspace/images/"
+
+    cd artifacts/containers
+    sha256sum -c "$name.sha256"
+    rsync -tv --partial --progress --rsh=ssh \
+        "$name" "$name.sha256" "$destination"
+)
+```
+
+For the locally validated image recorded above, `revision` is `f6e1fcde83988e76292bdff83fc6f736a9c19ee0`.
+
+- `--partial` retains interrupted transfers for reuse. Retry the same command with the same source files and destination; do not run concurrent transfers to the same artifact paths.
+- `-t` preserves modification times and `-v --progress` shows transfer progress. No recursive option is needed for these two explicit files.
+- No `-a`, `-p`, `-o`, or `-g` is used: do not reproduce the builder's root ownership or local permission settings in project storage. Destination permissions still need to allow the intended readers.
+- No `-z` is used because SIF payloads are generally already compressed.
+- No `--delete` is used: unrelated images must remain untouched.
+
+**Treat published image names as immutable.** This command can replace a same-named destination file; use it only for a new artifact or a retry of that exact artifact. If you rebuild the same source revision and obtain a different SIF checksum, choose a distinct filename (for example, adding a build ID), generate a matching checksum sidecar for that filename, and transfer those explicit files instead. Do not overwrite an image referenced by existing results.
+
+### Verify on the destination
+
+After a successful transfer, run this yourself in the destination shell, using the same source commit as above:
+
+```bash
+cd /absolute/path/to/tsp-workspace/images
+revision="<full-source-commit-of-built-image>"
+sha256sum -c "tsp-cpu-${revision}.sif.sha256"
+```
+
+Require an `OK` result before running or sharing the image. A SIF appearing in the destination directory does not establish that its transfer finished: partial files may remain after interruption. If checksum verification fails, do not execute the image or regenerate the checksum from the damaged destination. Compare with the retained local checksum, then retry from the known-good source; add `--checksum` to `rsync` if its size/time checks would otherwise skip a damaged file.
+
+Retain the original local checksum and build log. The sidecar verifies that the bytes match the recorded artifact; it is not a digital signature or proof of runtime compatibility. A successful transfer/checksum check must still be followed by the owner-operated runtime verification below.
 
 No repository script performs a cluster connection, transfer, or job submission.
 
