@@ -37,7 +37,7 @@ Keep configuration, scheduling decisions, logging, and result serialization in o
 - **GA:** compile and profile fitness evaluation and permutation operators; independent tasks must write to separate output regions.
 - **SA:** compile the iteration loop rather than calling a tiny compiled function from Python for every proposed move. Independent chains provide the initial parallelism.
 
-A common solver contract should accept an instance, solver seed, search budget, and algorithm parameters, and return a tour with search statistics. Backend and resource selection belong in the run configuration. The exact API will be defined during implementation.
+The [shared v1 contracts](contracts.md) define instance and tour representations, distance conventions, solver inputs, result fields, and validation boundaries. Each solver accepts an instance, solver seed, search budget, and algorithm parameters, and returns its best complete tour with search statistics. Backend and resource selection belong in the run configuration; concrete wrappers and data structures will be implemented in the follow-up tasks.
 
 ## Own the experiment runner, not the scheduler
 
