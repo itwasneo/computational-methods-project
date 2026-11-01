@@ -120,6 +120,7 @@ A successful project does not require every backend or a GPU implementation of a
 
 | Decision | Agreed direction |
 | --- | --- |
+| [Shared instance, tour, solver, and result contracts](docs/contracts.md) | Coordinate-based symmetric TSP; implicitly closed `int64` tours; shared distance and cost conventions; solver results independent of execution resources |
 | [Technology stack and execution architecture](docs/tech-stack.md) | Python, NumPy, and Numba; our own lightweight experiment runner; pytest, pandas, and Matplotlib; uv for local dependency management and Apptainer for the cluster application environment |
 | [HPC resources and execution](docs/hpc-resources.md) | University of Luxembourg HPC, with Slurm-managed allocations; grouped short experiments, controlled CPU/NUMA placement, and optional MPI or GPU investigations |
 
