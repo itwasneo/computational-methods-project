@@ -33,7 +33,7 @@ The packaged application is installed **non-editably** inside the SIF. Productio
 
 [containers/cpu.def](../containers/cpu.def) uses:
 
-- The Linux/amd64 manifest for `python:3.12.16-slim-bookworm`, pinned by its SHA-256 digest in the definition, not merely by its tag.
+- The Linux/amd64 manifest for `python:3.12.16-slim-bookworm`, pinned by its SHA-256 digest. The definition uses `From: python@sha256:...`: Apptainer's Docker transport rejects references containing both a tag and a digest, so the human-readable version is retained in a comment instead.
 - uv `0.10.4`, installed from the hash-checked x86_64 wheel in [bootstrap-requirements.txt](../containers/bootstrap-requirements.txt).
 - The committed [uv.lock](../uv.lock), installed with `--locked --no-editable` and the explicit `dev` group so the image can run its packaged tests. Analysis dependencies are not included.
 - Only explicitly listed source/build/test files. No `.git`, local environment, credentials, generated results, or host JIT cache is copied into the image.

@@ -1,7 +1,8 @@
 Bootstrap: docker
-From: python:3.12.16-slim-bookworm@sha256:623674a14ef93d052bb9b0de4dbf5f28eb578a35263838941cc8aa43213c1487
+From: python@sha256:623674a14ef93d052bb9b0de4dbf5f28eb578a35263838941cc8aa43213c1487
 
-# Linux/amd64 manifest, not a floating multi-platform tag.
+# Python 3.12.16 slim-bookworm Linux/amd64 manifest.
+# Use digest-only syntax: Apptainer rejects references containing both tag and digest.
 # Build from a committed source archive as described in docs/containers.md.
 
 %files
