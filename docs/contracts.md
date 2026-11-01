@@ -1,6 +1,6 @@
 # Shared instance, tour, solver, and result contracts
 
-**Status:** v1 design for task #1; implementation is pending. Task #2 will define algorithm variants, concrete work budgets, and stopping checkpoints. This document does not select GA operators or an SA cooling schedule.
+**Status:** v1 design for task #1; implementation is pending. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
 
 These contracts keep the three required solvers compatible with one objective function and one experiment runner. They describe logical records and boundaries, not a required class hierarchy or a generic solver framework. See the [technology stack](tech-stack.md) for implementation tools and the [resource plan](hpc-resources.md) for execution responsibilities.
 
@@ -52,7 +52,7 @@ cost(p) = sum(distance(p[k], p[(k + 1) % n]) for k in range(n))
 
 For example, with coordinates `[(0, 0), (3, 0), (3, 4)]`, `p = [0, 2, 1]` uses edges `0 -> 2`, `2 -> 1`, and `1 -> 0`, with total cost `5 + 4 + 3 = 12` under either convention. A two-city tour includes both the outward and return edge. Distinct city IDs remain distinct visits even when their coordinates coincide.
 
-Any starting city and either orientation are valid. Rotation or reversal normalization is not required at solver boundaries; a solver must not reorder a supplied tour in place merely to canonicalize it. Algorithmic tie-breaking belongs to task #2.
+Any starting city and either orientation are valid. Rotation or reversal normalization is not required at solver boundaries; a solver must not reorder a supplied tour in place merely to canonicalize it. Algorithmic tie-breaking follows the [baseline decisions](algorithm-baselines.md#common-decisions).
 
 The shared full-tour cost routine is the correctness reference. SA may maintain incremental costs, and GA may cache fitness, but the final returned cost must be recomputed from the returned tour. The runner independently validates the permutation and recomputes its cost before accepting a result.
 
@@ -80,7 +80,7 @@ An optional initial tour, if supported by the chosen algorithm, is supplied thro
 
 Use fresh random state for each invocation. Instance-generation seeds and solver seeds are distinct. Derive subsearch streams from stable logical IDs, never thread numbers, worker counts, scheduling order, process-global RNG state, or Python's randomized `hash()`. The concrete stream scheme is defined in task #6; this interface does not promise bitwise equivalence across different runtimes or numerical backends.
 
-Task #2 defines the concrete budget fields, legal zero-work cases, initialization accounting, and safe stopping points. Fixed-work scaling must preserve those budgets and logical searches when resources change. Time limits are checked only at safe points and may overshoot; actual elapsed time must be reported. Unsupported time-budget or history requests must fail explicitly until those capabilities exist.
+The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) define concrete budget fields, legal zero-work cases, initialization accounting, and safe stopping points. Fixed-work scaling must preserve those budgets and logical searches when resources change. Time limits are checked only at safe points and may overshoot; actual elapsed time must be reported. Unsupported time-budget or history requests must fail explicitly until those capabilities exist.
 
 ## Solver results and progress
 
@@ -90,7 +90,7 @@ Task #2 defines the concrete budget fields, legal zero-work cases, initializatio
 | `best_tour` | Owned `int64` tour containing the best complete solution observed; `None` only for `no_solution`. SA returns its best tour, not necessarily its final current tour. |
 | `best_cost` | Finite, non-negative `float64`-precision cost recomputed from `best_tour`; `None` exactly when `best_tour` is `None`. Never use infinity, NaN, or an empty tour as a missing-solution sentinel. |
 | `work` | Non-negative integer counters for actual completed work, as below; never substitute the requested limits for observed counts. |
-| `termination_reason` | `work_limit`, `time_limit`, or `algorithm_stop`. The last requires an explicit variant-specific stopping rule agreed in task #2; it is not an implicit convergence claim. |
+| `termination_reason` | `work_limit`, `time_limit`, or `algorithm_stop`. The last requires an explicit variant-specific rule, such as the baseline SA's empty neighborhood for fewer than four cities; it is not an implicit convergence claim. |
 | `history` | `None` when recording is disabled; otherwise an ordered sequence of progress points. An enabled history is empty if no complete solution was observed. |
 
 Use these common counters, with zero for algorithms to which they do not apply:
@@ -98,13 +98,13 @@ Use these common counters, with zero for algorithms to which they do not apply:
 | Counter | Meaning |
 | --- | --- |
 | `nn_starts_completed` | Complete nearest-neighbour constructions |
-| `ga_generations_completed` | Complete GA generations; initialization accounting is specified separately in task #2 |
+| `ga_generations_completed` | Complete GA generations; initial-population evaluation is counted separately, as specified in the [GA baseline](algorithm-baselines.md#genetic-algorithm) |
 | `sa_proposals_evaluated` | SA proposals for which the acceptance decision completed, including rejected proposals |
 | `full_tour_evaluations` | Full objective evaluations performed during search, including initialization; excludes JIT warm-up and post-search validation/recomputation |
 
 Incremental move-delta evaluations are not full-tour evaluations. Additional diagnostic counters are permitted if their meanings are documented. For a logical batch of searches, aggregate counters across those searches, not execution threads. Counters are not a claim that a GA generation and an SA proposal have equal computational cost.
 
-A progress point contains `elapsed_s`, a snapshot of `work`, and `best_cost` for a complete tour. Timestamps are monotonic search-relative wall-clock observations, counters do not decrease, and best-so-far costs do not increase beyond validation tolerance. Recording must not consume randomness or change search decisions; its overhead is measured and reported. Sampling intervals, terminal samples, and time-to-target analysis are specified in task #19.
+A progress point contains `elapsed_s`, a snapshot of `work`, and `best_cost` for a complete tour. Timestamps are monotonic search-relative wall-clock observations, counters do not decrease, and best-so-far costs do not increase beyond validation tolerance. Recording must not consume randomness or alter proposal, selection, or acceptance rules. Its overhead can change how much work fits within a time limit and must be measured and reported. Sampling intervals, terminal samples, and time-to-target analysis are specified in task #19.
 
 Malformed inputs and execution failures must not masquerade as `ok` or `no_solution`. The runner records failures separately, including their phase and error information. It wraps successful solver results with experiment IDs, effective configuration, seeds, timings, provenance, and execution metadata in the versioned result format from task #18. Numerical solvers do not write result files themselves.
 
@@ -114,7 +114,7 @@ Validate once at the Python boundary before entering hot kernels:
 
 - **Types and structure:** reject incompatible dtypes or object types with `TypeError`; reject wrong shapes, unsupported distance kinds, non-finite coordinates, and fewer than two cities with `ValueError`.
 - **Tours:** reject missing, repeated, negative, and out-of-range city IDs. A closed array of length `n + 1` is invalid; do not silently truncate it or coerce floating-point indices to integers.
-- **Configuration:** reject invalid seeds, unknown parameters, and invalid budgets before search. Legal parameter ranges and small-instance handling for each operator are specified in task #2.
+- **Configuration:** reject invalid seeds, unknown parameters, and invalid budgets before search. Legal parameter ranges and small-instance handling follow the [algorithm baselines](algorithm-baselines.md).
 - **Numerical range:** report unsupported range or non-finite arithmetic as a numerical failure, not a usable tour cost.
 - **Resources and capabilities:** the runner rejects unsupported execution options or insufficient resources explicitly; it does not silently switch distance conventions, shrink the workload, or choose another algorithm.
 
@@ -135,7 +135,7 @@ The runner selects a compatible solver adapter and prepares its numerical inputs
 
 ## Implementation hand-off
 
-- **Task #2:** settle algorithm variants, tie-breaking, budget fields, initialization accounting, and stop precedence/checkpoints against this shared boundary.
+- **Task #2:** the [companion baseline specification](algorithm-baselines.md) records variants, tie-breaking, budgets, initialization accounting, and stop precedence/checkpoints against this boundary.
 - **Tasks #5 and #8:** implement canonical data, validation, shared tour cost, and equivalent distance paths. Cover closing edges, two-city inputs, duplicate coordinates, rounding ties, invalid tours, and numeric boundaries with tests.
 - **Tasks #6 and #18:** implement logical identities, random-stream planning, manifests, and persisted result envelopes.
 - **Task #19:** implement time limits and progress recording without hiding missing solutions or instrumentation costs.
