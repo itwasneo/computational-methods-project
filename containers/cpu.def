@@ -1,0 +1,99 @@
+Bootstrap: docker
+From: python:3.12.16-slim-bookworm@sha256:623674a14ef93d052bb9b0de4dbf5f28eb578a35263838941cc8aa43213c1487
+
+# Linux/amd64 manifest, not a floating multi-platform tag.
+# Build from a committed source archive as described in docs/containers.md.
+
+%files
+    pyproject.toml /opt/tsp/pyproject.toml
+    uv.lock /opt/tsp/uv.lock
+    README.md /opt/tsp/README.md
+    src /opt/tsp/src
+    tests /opt/tsp/tests
+    containers/cpu.def /opt/tsp/container.def
+    containers/bootstrap-requirements.txt /opt/tsp/bootstrap-requirements.txt
+    containers/check_runtime.py /opt/tsp/check_runtime.py
+    .image-build/source-revision /opt/tsp/source-revision
+
+%post
+    set -eu
+    unset PYTHONPATH PYTHONHOME VIRTUAL_ENV
+    export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+    export UV_NO_CONFIG=1 UV_NO_CACHE=1 UV_PYTHON_DOWNLOADS=never
+    export UV_PROJECT_ENVIRONMENT=/opt/tsp/.venv
+
+    cd /opt/tsp
+    test -f src/tsp_hpc/__init__.py
+    /usr/local/bin/python3.12 -I -B -m pip install \
+        --no-cache-dir --no-deps --only-binary=:all: --require-hashes \
+        -r /opt/tsp/bootstrap-requirements.txt
+    /usr/local/bin/uv sync --locked --no-editable --no-sources \
+        --no-default-groups --group dev --no-managed-python \
+        --python /usr/local/bin/python3.12
+
+    mkdir -p /inputs /outputs /cache/tmp /cache/numba /cache/xdg
+    /opt/tsp/.venv/bin/python -I -B - <<'PY'
+import hashlib
+from importlib.metadata import distributions
+import json
+from pathlib import Path
+import platform
+import re
+import subprocess
+
+root = Path('/opt/tsp')
+revision = (root / 'source-revision').read_text().strip()
+if re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', revision) is None:
+    raise SystemExit('Expected a full Git commit ID from the source-archive workflow')
+definition = (root / 'container.def').read_bytes()
+base = next(line.removeprefix('From: ').strip() for line in definition.decode().splitlines() if line.startswith('From: '))
+info = {
+    'source_revision': revision,
+    'base_image': base,
+    'architecture': platform.machine(),
+    'python_version': platform.python_version(),
+    'uv_version': subprocess.check_output(['/usr/local/bin/uv', '--version'], text=True).strip(),
+    'definition_sha256': hashlib.sha256(definition).hexdigest(),
+    'lock_sha256': hashlib.sha256((root / 'uv.lock').read_bytes()).hexdigest(),
+    'packages': sorted(
+        [{'name': dist.metadata['Name'], 'version': dist.version} for dist in distributions()],
+        key=lambda item: item['name'].lower(),
+    ),
+}
+(root / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n')
+PY
+
+%environment
+    export PATH=/opt/tsp/.venv/bin:/usr/local/bin:/usr/bin:/bin
+    export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+    unset PYTHONPATH PYTHONHOME VIRTUAL_ENV
+    export TMPDIR=/cache/tmp
+    export XDG_CACHE_HOME=/cache/xdg
+    export NUMBA_CACHE_DIR=/cache/numba
+    export NUMBA_NUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+
+%runscript
+    exec /opt/tsp/.venv/bin/python -I -B -m tsp_hpc "$@"
+
+%test
+    set -eu
+    # Build-time checks use disposable caches; never bake native JIT caches into SIF.
+    # At runtime, bind a writable directory at /cache before using apptainer test.
+    mkdir -p /cache/tmp
+    work=$(mktemp -d /cache/tmp/tsp-image-test.XXXXXX)
+    trap 'rm -rf -- "$work"' EXIT
+    export TMPDIR="$work/tmp" XDG_CACHE_HOME="$work/xdg" NUMBA_CACHE_DIR="$work/numba"
+    export NUMBA_NUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+    mkdir -p "$TMPDIR" "$XDG_CACHE_HOME" "$NUMBA_CACHE_DIR"
+    /opt/tsp/.venv/bin/python -I -B /opt/tsp/check_runtime.py --output "$work/report.json"
+
+%labels
+    org.opencontainers.image.title tsp-hpc CPU environment
+    org.opencontainers.image.description Locked application and validation tools; no GPU or MPI runtime
+
+%help
+    Immutable CPU application image for Linux x86_64.
+    Use clean environment/containment and explicit input, output, and cache mounts.
+    The current application CLI provides help/version information, not solver commands.
+    /opt/tsp/build-info.json records source revision, base digest, lock hash, and packages.
+    See the repository's docs/containers.md for build and owner-operated validation.

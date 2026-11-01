@@ -1,14 +1,14 @@
 # HPC resources and execution
 
-**Status:** ULHPC is the selected execution platform; account-specific access and runtime compatibility still require validation.
+**Status:** the project owner confirms Aion/Iris access, available partitions/QoS, and suitable storage. Allocated-resource details and container/runtime compatibility still require owner-operated validation.
 
 Use the University of Luxembourg HPC facility for substantial experiments. Begin with CPU execution on one node, then expand only when measurements justify additional resources. Distributed computation and GPU acceleration remain optional investigations, not required backends for all three algorithms.
 
-The application stack and container workflow are described in [Technology stack and execution architecture](tech-stack.md).
+The application stack is described in [Technology stack and execution architecture](tech-stack.md). The [CPU image and repository workflow](containers.md) provides the off-cluster definition/build procedure and owner-run verification instructions.
 
 ## Resource strategy
 
-This document defines how the project will use resources, not a fixed inventory of the cluster. Confirm the team's access, available hardware, and allocation limits before running experiments. No live cluster validation has been performed yet.
+This document defines how the project will use resources, not a fixed inventory of the cluster. Access and storage availability are owner-confirmed; actual hardware, effective allocation limits, and runtime behavior must still be recorded when the owner runs validation. No independent live cluster validation has been performed by the coding agent.
 
 | Resource | Planned use | Allocation approach |
 | --- | --- | --- |
@@ -39,6 +39,7 @@ Array elements share their requested scheduler resources. Group experiments by r
 
 ### Operational rules
 
+- Cluster connections, transfers, allocations, and job execution are owner-operated. Coding agents must not access the clusters or submit/run jobs there.
 - Use login nodes for preparation, file management, and submission, not benchmark execution.
 - Load required host modules on compute nodes inside an allocation.
 - Use interactive allocations for development, testing, and debugging; submit production experiments as batch jobs.
@@ -103,8 +104,8 @@ Write separate result shards per worker or batch, then aggregate them. Avoid bot
 
 The platform choice is resolved. These are deployment checks, not additional required research directions:
 
-- Confirm the course/project Slurm account, permitted partitions and QoS, and available project storage.
-- Validate the Apptainer CPU image in a small allocation, including JIT execution and result persistence.
+- Supply the owner-confirmed course/project Slurm account, selected partition/QoS, and workspace paths at deployment; keep private values outside Git.
+- Have the owner validate the Apptainer CPU image in a small allocation, including JIT execution and result persistence.
 - Verify effective CPU affinity, runtime thread counts, and any selected memory-placement policy.
 - Record image checksum, source revision, package/runtime versions, loaded host modules, CPU/GPU model, resource layout, seeds, and Slurm job/array identifiers.
 - Validate any MPI or GPU extension separately before using it for reported experiments.

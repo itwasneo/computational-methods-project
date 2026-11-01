@@ -20,6 +20,8 @@ uv run --locked pytest
 
 The package uses Python 3.12. The CLI currently shows help/version information only; it does not run solvers. See [Local development](docs/development.md) for the selected versions, optional analysis dependencies, repository layout, and build commands.
 
+The [CPU image and repository workflow](docs/containers.md) includes a prepared Apptainer definition and owner-run build/validation instructions. No built or cluster-validated image is claimed yet.
+
 ## Core scope
 
 The three algorithms from the original project proposal remain the required implementation scope:
@@ -137,7 +139,7 @@ A successful project does not require every backend or a GPU implementation of a
 | [Technology stack and execution architecture](docs/tech-stack.md) | Python, NumPy, and Numba; our own lightweight experiment runner; pytest, pandas, and Matplotlib; uv for local dependency management and Apptainer for the cluster application environment |
 | [HPC resources and execution](docs/hpc-resources.md) | University of Luxembourg HPC, with Slurm-managed allocations; grouped short experiments, controlled CPU/NUMA placement, and optional MPI or GPU investigations |
 
-These choices are agreed. The local numerical stack is locked and smoke-tested as described in [Local development](docs/development.md); solver/runner implementation and cluster deployment are pending. Account-specific access and container/runtime compatibility must be validated before production experiments.
+These choices are agreed. The local numerical stack is locked and smoke-tested as described in [Local development](docs/development.md); solver/runner implementation and cluster deployment are pending. Cluster access/storage are owner-confirmed, while container/runtime compatibility and effective allocations still require owner-operated validation before production experiments.
 
 ## Decisions still to make
 
