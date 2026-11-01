@@ -6,7 +6,19 @@ Implement and compare three heuristics for the Traveling Salesman Problem (TSP),
 
 ## Project status
 
-The project is currently in the planning stage. The repository contains the [original team presentation](presentations/tsp_team_presentation.html); solver implementations and the experiment framework are not yet available.
+The project has agreed data/algorithm contracts and a Python package scaffold with a locked environment and passing numerical-stack smoke tests. Solver implementations and the experiment runner are not yet available. The [original team presentation](presentations/tsp_team_presentation.html) remains a record of the proposal.
+
+## Local development
+
+With uv available, run from the project root:
+
+```bash
+uv sync --locked
+uv run --locked tsp-hpc --help
+uv run --locked pytest
+```
+
+The package uses Python 3.12. The CLI currently shows help/version information only; it does not run solvers. See [Local development](docs/development.md) for the selected versions, optional analysis dependencies, repository layout, and build commands.
 
 ## Core scope
 
@@ -125,7 +137,7 @@ A successful project does not require every backend or a GPU implementation of a
 | [Technology stack and execution architecture](docs/tech-stack.md) | Python, NumPy, and Numba; our own lightweight experiment runner; pytest, pandas, and Matplotlib; uv for local dependency management and Apptainer for the cluster application environment |
 | [HPC resources and execution](docs/hpc-resources.md) | University of Luxembourg HPC, with Slurm-managed allocations; grouped short experiments, controlled CPU/NUMA placement, and optional MPI or GPU investigations |
 
-These choices are agreed, but implementation and cluster validation are pending. Exact package versions, account-specific resource access, and any GPU/MPI compatibility must be checked before production experiments.
+These choices are agreed. The local numerical stack is locked and smoke-tested as described in [Local development](docs/development.md); solver/runner implementation and cluster deployment are pending. Account-specific access and container/runtime compatibility must be validated before production experiments.
 
 ## Decisions still to make
 
