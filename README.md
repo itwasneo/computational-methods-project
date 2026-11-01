@@ -121,6 +121,7 @@ A successful project does not require every backend or a GPU implementation of a
 | Decision | Agreed direction |
 | --- | --- |
 | [Shared instance, tour, solver, and result contracts](docs/contracts.md) | Coordinate-based symmetric TSP; implicitly closed `int64` tours; shared distance and cost conventions; solver results independent of execution resources |
+| [Initial algorithm variants and stopping semantics](docs/algorithm-baselines.md) | Deterministic fixed-start NN; tournament/OX/swap/elitist GA; reversal/geometric-cooling SA; explicit work budgets, initialization accounting, and time-limit checkpoints |
 | [Technology stack and execution architecture](docs/tech-stack.md) | Python, NumPy, and Numba; our own lightweight experiment runner; pytest, pandas, and Matplotlib; uv for local dependency management and Apptainer for the cluster application environment |
 | [HPC resources and execution](docs/hpc-resources.md) | University of Luxembourg HPC, with Slurm-managed allocations; grouped short experiments, controlled CPU/NUMA placement, and optional MPI or GPU investigations |
 
@@ -128,6 +129,6 @@ These choices are agreed, but implementation and cluster validation are pending.
 
 ## Decisions still to make
 
-- Concrete crossover, mutation, SA neighborhood, and cooling choices.
-- Benchmark sizes, tuning budgets, reference sources, and stopping criteria.
+- Benchmark sizes, tuning budgets, reference sources, and final campaign settings.
+- Tuned parameter values and any separately identified alternatives to the initial algorithm variants.
 - Which advanced investigation offers the strongest experiment within the project timeline.
