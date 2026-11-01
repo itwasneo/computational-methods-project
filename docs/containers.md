@@ -1,6 +1,6 @@
 # CPU image and repository workflow
 
-**Status:** image definition and verification procedure prepared; no SIF has been built or executed as part of this change. Cluster access/storage are owner-confirmed, not independently tested. This is preparation for task #21, not evidence that its runtime checks or task #22 are complete. CI task #4 also remains outstanding.
+**Status:** image definition and verification procedure prepared; owner build validation is in progress, with no successful SIF build/runtime verification recorded yet. Cluster access/storage are owner-confirmed, not independently tested. This is preparation for task #21, not evidence that its runtime checks or task #22 are complete. CI task #4 also remains outstanding.
 
 **Execution boundary:** cluster connections, transfers, allocations, and job execution are performed by the project owner. Coding agents must not connect to ULHPC or submit/run jobs there. The commands below are instructions for the owner, not automated remote execution.
 
@@ -49,7 +49,7 @@ Input versions are pinned, but byte-for-byte identical SIF rebuilds are not prom
 
 The supplied cluster guidance describes building off-cluster with the required privileges, then transferring the artifact. Do not assume that cluster access or partition permissions grant image-build privileges. Do not run this build on a cluster login or compute node.
 
-Use a trusted Linux x86_64 builder with Apptainer and network access for the pinned base and Python packages. The recipe was prepared with local Apptainer 1.5.0 command syntax; the image itself is not yet build-tested. Review the definition before a privileged build. If your local installation uses another approved build mechanism, adapt that local invocation without changing the source/pinning rules.
+Use a trusted Linux x86_64 builder with Apptainer and network access for the pinned base and Python packages. The recipe was prepared with local Apptainer 1.5.0 command syntax; a complete successful build remains unverified. Review the definition before a privileged build. If your local installation uses another approved build mechanism, adapt that local invocation without changing the source/pinning rules.
 
 After committing the definition and all intended source changes, run the following in **Bash on the off-cluster builder**:
 
@@ -90,7 +90,7 @@ After committing the definition and all intended source changes, run the followi
 
 The temporary archive avoids including uncommitted, ignored, or secret local files. `source-revision` is generated from the same commit being archived, not guessed from a filename. Relative `%files` paths are evaluated from that archive directory.
 
-Do not bypass `%test` with `--notest`: it runs [check_runtime.py](../containers/check_runtime.py), including the packaged pytest suite, serial and parallel Numba compilation, cache writes, and a temporary report. Test caches/reports are removed before finishing the image so build-host native JIT artifacts are not shipped as runtime caches. A failed check means the image is not validated; retain the build log and investigate rather than suppressing the failure.
+Do not bypass `%test` with `--notest`: it runs [check_runtime.py](../containers/check_runtime.py), including the packaged pytest suite, serial and parallel Numba compilation, cache writes, and a temporary report. The image filesystem can already be read-only at this stage, so `%test` creates a private directory under writable `/tmp` and redirects its temporary files and caches there. It does not depend on a runtime `/cache` bind or the image's default `TMPDIR`. Test caches/reports are removed on exit so build-host native JIT artifacts are not shipped as runtime caches. A failed check means the image is not validated; retain the build log and investigate rather than suppressing the failure.
 
 Keep the SIF and checksum in the ignored `artifacts/` directory locally. Transfer them yourself using your approved method, then verify the checksum from the destination image directory:
 

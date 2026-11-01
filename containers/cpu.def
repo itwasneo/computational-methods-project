@@ -20,7 +20,7 @@ From: python@sha256:623674a14ef93d052bb9b0de4dbf5f28eb578a35263838941cc8aa43213c
     set -eu
     unset PYTHONPATH PYTHONHOME VIRTUAL_ENV
     export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
-    export UV_NO_CONFIG=1 UV_NO_CACHE=1 UV_PYTHON_DOWNLOADS=never
+    export UV_NO_CONFIG=1 UV_NO_CACHE=1 UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy
     export UV_PROJECT_ENVIRONMENT=/opt/tsp/.venv
 
     cd /opt/tsp
@@ -78,10 +78,10 @@ PY
 
 %test
     set -eu
-    # Build-time checks use disposable caches; never bake native JIT caches into SIF.
-    # At runtime, bind a writable directory at /cache before using apptainer test.
-    mkdir -p /cache/tmp
-    work=$(mktemp -d /cache/tmp/tsp-image-test.XXXXXX)
+    # The image filesystem (including /cache) can be read-only during %test.
+    # Use writable /tmp explicitly, not the runtime TMPDIR=/cache/tmp default.
+    # All test caches/reports are disposable; runtime verification uses bound /cache.
+    work=$(mktemp -d /tmp/tsp-image-test.XXXXXX)
     trap 'rm -rf -- "$work"' EXIT
     export TMPDIR="$work/tmp" XDG_CACHE_HOME="$work/xdg" NUMBA_CACHE_DIR="$work/numba"
     export NUMBA_NUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
