@@ -6,7 +6,7 @@ Implement and compare three heuristics for the Traveling Salesman Problem (TSP),
 
 ## Project status
 
-The project is currently in the planning stage. The repository contains the [original team presentation](presentations/tsp_team_presentation.html); solver implementations and the experiment framework are not yet available.
+The project is in the planning and implementation stage. A manual [swap-based SA baseline](docs/sa-baseline.md) and an exploratory [Smart TSP testbench](benchmarks/README.md) are available. The other solvers, common result interface, and final benchmark protocol remain in progress. The repository also contains the [original team presentation](presentations/tsp_team_presentation.html).
 
 ## Core scope
 
