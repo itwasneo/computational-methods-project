@@ -64,6 +64,8 @@ Use separate result shards per worker or batch, then merge them. Do not have con
 
 An Apptainer image is the preferred cluster application environment. This avoids coupling the Python/NumPy/Numba combination to the versions in a particular ULHPC module release.
 
+The [CPU image and repository workflow](containers.md) provides the prepared, digest-pinned definition, source-snapshot build instructions, mount policy, and owner-operated verification procedure. Definition preparation does not establish successful image construction or cluster compatibility.
+
 ### Build and release workflow
 
 1. Keep the image definition, dependency specification, and lockfile in Git.
