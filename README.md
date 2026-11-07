@@ -6,7 +6,7 @@ Implement and compare three heuristics for the Traveling Salesman Problem (TSP),
 
 ## Project status
 
-The project has agreed data/algorithm contracts, implemented [shared TSP data and objective utilities](docs/data-and-objective.md), [manifest and random-stream planning](docs/manifests.md), [reproducible instances and fixtures](docs/instances.md), and a Python package with locked dependencies and automated correctness checks. Solver implementations and the experiment runner are not yet available. The [original team presentation](presentations/tsp_team_presentation.html) remains a record of the proposal.
+The project has agreed data/algorithm contracts, implemented [shared TSP data and objective utilities](docs/data-and-objective.md), [manifest and random-stream planning](docs/manifests.md), [reproducible instances and fixtures](docs/instances.md), [compiled distance backends](docs/distances.md), and a Python package with locked dependencies and automated correctness checks. Solver implementations and the experiment runner are not yet available. The [original team presentation](presentations/tsp_team_presentation.html) remains a record of the proposal.
 
 The **10-slide progress presentation** is available as [PDF](presentations/tsp_progress_presentation.pdf) or [offline HTML](presentations/tsp_progress_presentation.html). It includes the locally built CPU image from unmerged PR #53 and distinguishes completed work from pending solver, cluster-runtime, and benchmark validation. See [presentation instructions and evidence](presentations/README.md).
 

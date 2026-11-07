@@ -3,6 +3,7 @@ name = "tsp-hpc"
 version = "0.1.0"
 description = "TSP heuristic experiments with compiled Python kernels and controlled HPC execution"
 readme = "README.md"
+license-files = ["src/tsp_hpc/licenses/CPython.txt"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "numba>=0.68.1,<0.69",
