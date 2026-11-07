@@ -1,6 +1,6 @@
 # Shared instance, tour, solver, and result contracts
 
-**Status:** v1 design for task #1; implementation is pending. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
+**Status:** v1 design for task #1. Task #5 implements the [instance, tour validation, and independent objective utilities](data-and-objective.md); solver/result records and the remaining execution contracts are still specifications. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
 
 These contracts keep the three required solvers compatible with one objective function and one experiment runner. They describe logical records and boundaries, not a required class hierarchy or a generic solver framework. See the [technology stack](tech-stack.md) for implementation tools and the [resource plan](hpc-resources.md) for execution responsibilities.
 
@@ -29,7 +29,7 @@ For cities `i` and `j`, let `r = hypot(x[i] - x[j], y[i] - y[j])`, evaluated in 
 | `euclidean_2d` | `r`, without rounding; the default for generated instances |
 | `tsplib_euc_2d` | `floor(r + 0.5)`, applied to **each edge**, not to the completed tour; used for the supported TSPLIB `EUC_2D` subset |
 
-Do not use ties-to-even rounding for `EUC_2D`. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. The TSPLIB loader is a later task; declaring its convention does not imply that arbitrary TSPLIB formats are supported.
+Do not use ties-to-even rounding for `EUC_2D`. Interpret `floor(r + 0.5)` as mathematical half-up rounding of the computed `r`; avoid premature floating-point rounding of the intermediate addition at half-integer or large-integer boundaries. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. The TSPLIB loader is a later task; declaring its convention does not imply that arbitrary TSPLIB formats are supported.
 
 The runner may prepare either:
 
@@ -136,7 +136,7 @@ The runner selects a compatible solver adapter and prepares its numerical inputs
 ## Implementation hand-off
 
 - **Task #2:** the [companion baseline specification](algorithm-baselines.md) records variants, tie-breaking, budgets, initialization accounting, and stop precedence/checkpoints against this boundary.
-- **Tasks #5 and #8:** implement canonical data, validation, shared tour cost, and equivalent distance paths. Cover closing edges, two-city inputs, duplicate coordinates, rounding ties, invalid tours, and numeric boundaries with tests.
+- **Task #5:** canonical data, validation, and independent tour cost are implemented in [the shared data/objective API](data-and-objective.md), with boundary and numerical tests. **Task #8** will add equivalent optimized distance paths and check them against this reference.
 - **Tasks #6 and #18:** implement logical identities, random-stream planning, manifests, and persisted result envelopes.
 - **Task #19:** implement time limits and progress recording without hiding missing solutions or instrumentation costs.
 
