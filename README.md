@@ -6,7 +6,7 @@ Implement and compare three heuristics for the Traveling Salesman Problem (TSP),
 
 ## Project status
 
-The project has agreed data/algorithm contracts, implemented [shared TSP data and objective utilities](docs/data-and-objective.md), [manifest and random-stream planning](docs/manifests.md), [reproducible instances and fixtures](docs/instances.md), [compiled distance backends](docs/distances.md), and a Python package with locked dependencies and automated correctness checks. Solver implementations and the experiment runner are not yet available. The [original team presentation](presentations/tsp_team_presentation.html) remains a record of the proposal.
+The project has agreed data/algorithm contracts, implemented [shared TSP data and objective utilities](docs/data-and-objective.md), [manifest and random-stream planning](docs/manifests.md), [reproducible instances and fixtures](docs/instances.md), [compiled distance backends](docs/distances.md), and a Python package with locked dependencies and automated correctness checks. The [serial nearest-neighbour baseline](docs/nearest-neighbour.md) is available; GA, SA, and the experiment runner remain future work. The [original team presentation](presentations/tsp_team_presentation.html) remains a record of the proposal.
 
 The **10-slide progress presentation** is available as [PDF](presentations/tsp_progress_presentation.pdf) or [offline HTML](presentations/tsp_progress_presentation.html). It includes the locally built CPU image from unmerged PR #53 and distinguishes completed work from pending solver, cluster-runtime, and benchmark validation. See [presentation instructions and evidence](presentations/README.md).
 
@@ -139,7 +139,7 @@ A successful project does not require every backend or a GPU implementation of a
 | [Technology stack and execution architecture](docs/tech-stack.md) | Python, NumPy, and Numba; our own lightweight experiment runner; pytest, pandas, and Matplotlib; uv for local dependency management and Apptainer for the cluster application environment |
 | [HPC resources and execution](docs/hpc-resources.md) | University of Luxembourg HPC, with Slurm-managed allocations; grouped short experiments, controlled CPU/NUMA placement, and optional MPI or GPU investigations |
 
-These choices are agreed. The local numerical stack is locked and smoke-tested as described in [Local development](docs/development.md); solver/runner implementation and cluster deployment are pending. Account-specific access and container/runtime compatibility must be validated before production experiments.
+These choices are agreed. The local numerical stack is locked and smoke-tested as described in [Local development](docs/development.md); serial NN is implemented, while GA/SA, runner integration, and cluster deployment are pending. Account-specific access and container/runtime compatibility must be validated before production experiments.
 
 ## Decisions still to make
 

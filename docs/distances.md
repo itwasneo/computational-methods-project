@@ -1,6 +1,6 @@
 # Distance backends and explicit preprocessing
 
-**Status:** task #8 implements compiled CPU distance preparation, edge queries and full-tour evaluation. Solvers, runner integration, performance campaigns and cluster validation remain separate work. The [independent Python objective](data-and-objective.md) remains the correctness reference and is unchanged.
+**Status:** task #8 implements compiled CPU distance preparation, edge queries and full-tour evaluation. The [serial NN solver](nearest-neighbour.md) uses these backends; GA/SA, runner integration, performance campaigns and cluster validation remain separate work. The [independent Python objective](data-and-objective.md) remains the correctness reference and is unchanged.
 
 ## Public API
 
@@ -35,7 +35,7 @@ assert dense.metadata["matrix_bytes"] == 128
 assert on_demand.metadata["matrix_bytes"] == 0
 ```
 
-Neither representation changes coordinates, city order, distance convention, instance ID, solver seeds, or scientific search identity. A [manifest](manifests.md) already declares the execution's `distance_mode`; future adapters can pass that choice to this factory. The memory ceiling is a preparation/deployment option, not a new scientific algorithm parameter or manifest schema extension.
+Neither representation changes coordinates, city order, distance convention, instance ID, solver seeds, or scientific search identity. A [manifest](manifests.md) already declares the execution's `distance_mode`; the [serial NN adapter](nearest-neighbour.md#explicit-preparation-and-reuse) can consume its explicitly prepared representation, while automatic runner dispatch remains future work. The memory ceiling is a preparation/deployment option, not a new scientific algorithm parameter or manifest schema extension.
 
 ## Representations and memory
 
@@ -65,7 +65,7 @@ Every call to `prepare_distances()` prepares a fresh representation. There is no
 - `jit_warmup_time_s`: wall time for helper warm-up, including cache loading/compilation if needed and tiny dispatches;
 - `preprocessing_time_s`: wall time for validating coordinates, allocating/filling the actual representation, and marking its matrix read-only.
 
-Warm-up runs before the preprocessing timer. These fields exclude source loading, module/process startup, solver execution, and independent final solution validation. Warm-up is not necessarily compilation on every call, and it does not warm future solver kernels. Both writable and read-only int64 tour signatures are exercised.
+Warm-up runs before the preprocessing timer. These fields exclude source loading, module/process startup, solver execution, and independent final solution validation. Warm-up is not necessarily compilation on every call, and it does not warm solver kernels; the NN adapter performs its own separate warm-up. Both writable and read-only int64 tour signatures are exercised.
 
 These are observed setup durations, **not performance claims** or speedup measurements. Metadata retains the object's original construction times when it is reused. The future runner must record whether preprocessing is charged once per instance, once per trial, or amortized across trials; it must not silently hide or double-count reuse. Report setup separately from search time, as well as whichever total-time comparison the experiment protocol requires.
 
@@ -120,6 +120,6 @@ assert evaluate_candidate(
 
 Use `prepared.coordinates`, `.matrix` and `.use_dense` as the first three arguments. `coordinate_edge_kernel(coordinates, a, b)` is also available for a direct coordinate-only query. All raw kernels implement unrounded Euclidean distances only.
 
-**Kernel preconditions matter:** raw kernels trust canonical finite float64 arrays, valid city indices, a valid int64 permutation, and the matrix/flags supplied by preparation. They do not perform permutation or bounds validation and must not receive arbitrary external weight matrices. Use the checked Python methods at untrusted boundaries; future solver wrappers must validate their inputs before entering kernels. The public tour method's permutation validation allocates O(n) scratch, while the compiled scoring loop allocates no matrices or tour copies. Numerical arithmetic checks remain active in the kernels. Compiled callers must also keep fastmath disabled for this baseline.
+**Kernel preconditions matter:** raw kernels trust canonical finite float64 arrays, valid city indices, a valid int64 permutation, and the matrix/flags supplied by preparation. They do not perform permutation or bounds validation and must not receive arbitrary external weight matrices. Use the checked Python methods at untrusted boundaries; solver wrappers must validate their inputs before entering kernels. The public tour method's permutation validation allocates O(n) scratch, while the compiled scoring loop allocates no matrices or tour copies. Numerical arithmetic checks remain active in the kernels. Compiled callers must also keep fastmath disabled for this baseline.
 
-Run `uv run --locked pytest -W error` for fixture/generated-instance comparisons against the independent reference, numerical boundaries, memory guards, timing separation, compiled callers, and read-only/storage invariants. No solver search or benchmark campaign is run by these checks.
+Run `uv run --locked pytest -W error` for fixture/generated-instance comparisons against the independent reference, numerical boundaries, memory guards, timing separation, compiled callers, and read-only/storage invariants. The full suite also includes [serial NN search tests](nearest-neighbour.md#validation). No benchmark campaign is run by these checks.
