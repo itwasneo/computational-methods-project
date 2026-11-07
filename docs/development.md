@@ -43,7 +43,7 @@ The CLI currently provides help and version information only. Running `tsp-hpc` 
 uv run --locked python -m tsp_hpc --help
 ```
 
-The tests check package metadata, console-entry registration, CLI behavior from outside the checkout, and actual Numba nopython compilation/execution. They do not implement TSP solvers or establish benchmark performance. No cluster account, GPU, container runtime, or network access is required to run the tests once the environment is installed. The CI workflow below runs these checks automatically.
+The tests check package metadata, console-entry registration, CLI behavior from outside the checkout, actual Numba nopython compilation/execution, and the [shared TSP data/objective utilities](data-and-objective.md). They do not implement TSP solvers or establish benchmark performance. No cluster account, GPU, container runtime, or network access is required to run the tests once the environment is installed. The CI workflow below runs these checks automatically.
 
 ## Automated correctness checks
 
@@ -68,7 +68,7 @@ Operational policy:
 - Run checks even for documentation-only changes; no path filters or performance thresholds are used. **CI timings are not benchmark evidence.**
 - No Apptainer build, container execution, cluster connection, Slurm job, GPU/MPI check, deployment, or automated merge is part of this workflow.
 
-After a successful GitHub run and explicit owner approval, `Python checks` can be made a required check on `master`. Adding the workflow alone does not change branch protection.
+Following successful GitHub runs and explicit owner approval, `Python checks` is now required on `master`, bound to the GitHub Actions app. Branches must be up to date before merging; the existing administrator enforcement and review rules are preserved. This gate is a GitHub repository setting, not something enabled by the workflow file alone.
 
 ## Optional analysis environment
 
