@@ -1,6 +1,6 @@
 # Shared TSP data and objective
 
-**Status:** task #5 implements the instance, coordinate/tour validation, and independent objective portion of the [shared contracts](contracts.md). [Manifest and identity planning](manifests.md) is implemented separately in task #6. Solvers, result records, loaders, and optimized distance backends remain separate work.
+**Status:** task #5 implements the instance, coordinate/tour validation, and independent objective portion of the [shared contracts](contracts.md). [Manifest and identity planning](manifests.md) is implemented separately in task #6. Task #7 provides [generated instances, fixtures, and verified JSON artifact loading](instances.md). Solvers, result records, TSPLIB import, and optimized distance backends remain separate work.
 
 ## Public API
 

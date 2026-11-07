@@ -1,6 +1,6 @@
 # Technology stack and execution architecture
 
-**Status:** decided; the local package, data/objective utilities, and manifest/stream planning are implemented and tested. Solver/runner implementation and cluster validation are pending.
+**Status:** decided; the local package, data/objective utilities, manifest/stream planning, and instance generation/storage are implemented and tested. Solver/runner implementation and cluster validation are pending.
 
 Use a Python-first stack with compiled numerical kernels, a small project-specific experiment runner, and an Apptainer image for reproducible cluster execution. The required solvers remain nearest-neighbour, genetic algorithm (GA), and simulated annealing (SA).
 

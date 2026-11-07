@@ -1,6 +1,6 @@
 # Experiment manifests, identities, and random streams
 
-**Status:** task #6 implements fixed-work CPU manifest validation and planning. It does not generate instances, execute solvers, allocate resources, or write benchmark results. Those remain separate tasks. No new dependencies are required.
+**Status:** task #6 implements fixed-work CPU manifest validation and planning. The planner does not generate instances, execute solvers, allocate resources, or write benchmark results. Task #7 separately provides [generated instances and saved artifacts](instances.md); execution remains future work. No new dependencies are required.
 
 ## API and example
 
@@ -57,7 +57,7 @@ Each instance requires:
 - `distance_kind`: `euclidean_2d` or `tsplib_euc_2d`.
 - Optional `instance_seed`: the generation seed as a Python integer in `[0, 2**64)`, or `null` for deterministic/imported data. Omission resolves to `null`.
 
-Descriptors refer to **already resolved data**, not generation requests or file locations. Parsing validates metadata, not the existence or content of a data file. A future loader/runner must resolve the ID and compare the actual instance's ID, checksum, size and distance convention before execution. Full generation/source provenance belongs with the instance artifacts from tasks #7/#10.
+Descriptors refer to **already resolved data**, not generation requests or file locations. Parsing validates metadata, not the existence or content of a data file. A future loader/runner must resolve the ID and compare the actual instance's ID, checksum, size and distance convention before execution. Generation provenance is saved with the [task #7 instance artifacts](instances.md#saved-artifacts-and-shared-inputs); task #10 will add TSPLIB source provenance.
 
 For new generated data, use `make_instance_id()` when constructing the instance, then `describe_instance()` to create its descriptor. Existing meaningful logical IDs are also allowed: the checksum prevents a changed dataset from retaining the same search identity merely because its label was reused.
 
@@ -148,7 +148,7 @@ For GA's future parallel operators, derive from the **population stream's seed**
 
 Parameters, budgets and collection size are deliberately absent from seed derivation. This provides paired initial streams across parameter/budget comparisons; adding a chain does not reseed existing chains. Different algorithms or draw-consumption patterns need not follow the same trajectories. Changing actual instance identity/content, solver root seed, repetition, role or logical ID changes the corresponding streams.
 
-For future stochastic instance generation, derive a separate `"instance"` stream from an independently supplied generation root and generator/sample IDs. Store the actual generator seed in `instance_seed` and retain full generation provenance with the dataset. Never derive instance generation from a solver's mutable RNG state.
+For [stochastic instance generation](instances.md), derive a separate `"instance"` stream from an independently supplied generation root and generator/sample IDs. Store the actual generator seed in `instance_seed` and retain full generation provenance with the dataset. Never derive instance generation from a solver's mutable RNG state.
 
 Each `stream.generator()` call creates fresh state at the stream's beginning. Retain and advance that object within one search; do not recreate it for every draw. Never share a mutable generator between workers/threads or seed process-global NumPy/Python RNG state. The tests include passing one owned generator to a serial Numba kernel; this is not a claim of parallel thread safety.
 
