@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+# Keep push checks and PR merge-result checks separate; cancel superseded runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-checks:
+    name: Python checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      UV_NO_CONFIG: "1"
+      UV_PYTHON: "3.12"
+      UV_PYTHON_DOWNLOADS: never
+      PYTHONNOUSERSITE: "1"
+      NUMBA_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: .python-version
+          architecture: x64
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.10.4"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            .python-version
+          cache-local-path: ${{ runner.temp }}/uv-cache
+
+      - name: Show tool versions
+        run: |
+          python --version
+          uv --version
+
+      - name: Install locked environment
+        run: uv sync --locked
+
+      - name: Run correctness tests
+        env:
+          # Outside the uv cache: do not restore native JIT artifacts across runs.
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-cache
+        run: uv run --locked pytest
+
+      - name: Build package distributions
+        run: uv build --no-sources

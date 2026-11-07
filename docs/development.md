@@ -1,6 +1,6 @@
 # Local development
 
-**Status:** the Python package, CLI scaffold, locked dependencies, and numerical-stack smoke tests are implemented. Solvers, experiment commands, CI, and the cluster image remain separate tasks.
+**Status:** the Python package, CLI scaffold, locked dependencies, numerical-stack smoke tests, and automated CI workflow are implemented. Solvers, experiment commands, and the cluster image remain separate tasks.
 
 ## Environment and dependency policy
 
@@ -43,7 +43,32 @@ The CLI currently provides help and version information only. Running `tsp-hpc` 
 uv run --locked python -m tsp_hpc --help
 ```
 
-The tests check package metadata, console-entry registration, CLI behavior from outside the checkout, and actual Numba nopython compilation/execution. They do not implement TSP solvers or establish benchmark performance. No cluster account, GPU, container runtime, or network access is required to run the tests once the environment is installed. Automated execution of these checks belongs to task #4.
+The tests check package metadata, console-entry registration, CLI behavior from outside the checkout, and actual Numba nopython compilation/execution. They do not implement TSP solvers or establish benchmark performance. No cluster account, GPU, container runtime, or network access is required to run the tests once the environment is installed. The CI workflow below runs these checks automatically.
+
+## Automated correctness checks
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs the **CI / Python checks** job on branch pushes and pull requests targeting `master`. It uses GitHub-hosted Ubuntu 24.04, Python 3.12 selected through `.python-version`, and uv `0.10.4`. Python patch versions and runner software may change; tool versions are printed in the log. This is not a substitute for a pinned experiment image.
+
+The validation commands are the same locally and in CI:
+
+```bash
+uv sync --locked
+uv run --locked pytest
+uv build --no-sources
+```
+
+The first command rejects a missing or inconsistent lockfile rather than silently updating it. pytest discovers the complete `tests/` suite, including actual Numba compilation/execution; future solver tests join automatically. The final command builds the source distribution and wheel without relying on local uv source overrides. It checks packaging, not installation of the resulting wheel in a separate environment. The optional `analysis` group is not installed in this initial job.
+
+Operational policy:
+
+- GitHub Actions are pinned to full commit IDs; uv is explicitly versioned. Update those pins deliberately.
+- The job has read-only repository permissions, does not persist checkout credentials, and requires no custom secrets or cluster credentials. Fork PRs use ordinary `pull_request`, not privileged `pull_request_target`; GitHub may require approval before running a first-time contributor's workflow.
+- Cache only uv's dependency cache, not `.venv` or native Numba caches. Tests use a separate temporary Numba cache, and numerical libraries are limited to one thread.
+- A 15-minute timeout bounds a job. New commits cancel superseded runs for the same branch/event or PR. A same-repository PR can have both a branch-push run and a separate PR merge-result run.
+- Run checks even for documentation-only changes; no path filters or performance thresholds are used. **CI timings are not benchmark evidence.**
+- No Apptainer build, container execution, cluster connection, Slurm job, GPU/MPI check, deployment, or automated merge is part of this workflow.
+
+After a successful GitHub run and explicit owner approval, `Python checks` can be made a required check on `master`. Adding the workflow alone does not change branch protection.
 
 ## Optional analysis environment
 
