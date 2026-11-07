@@ -22,6 +22,8 @@ A loader maps external city labels to contiguous internal IDs in a deterministic
 
 ### Distance conventions and representations
 
+**Current execution decision:** use unrounded `euclidean_2d` for the solver project. The compiled backends reject `tsplib_euc_2d`. Its definitions and previously merged data/reference support below are retained for compatibility, not as a promise of current execution support. Do not compare unrounded tour costs against integer-rounded benchmark optima.
+
 For cities `i` and `j`, let `r = hypot(x[i] - x[j], y[i] - y[j])`, evaluated in `float64`.
 
 | Convention | Edge cost |

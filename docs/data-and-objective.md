@@ -40,6 +40,8 @@ assert validate_solution(instance, tour, reported_cost=12.0) == 12.0
 
 ## Distance conventions and numerical boundaries
 
+The current solver execution scope is unrounded `euclidean_2d`. The independent reference retains the previously merged rounded convention below, but the compiled backends explicitly reject it. Native compiled and reference unrounded results are compared using the existing tolerances, not bitwise equality.
+
 - **`euclidean_2d`:** unrounded `hypot(dx, dy)` in float64 precision. Using `hypot` avoids unnecessary overflow from squaring large but otherwise representable components.
 - **`tsplib_euc_2d`:** mathematical `floor(r + 0.5)` applied to each edge, never to the tour total. The implementation separates the integer and fractional parts to avoid premature floating-point rounding of `r + 0.5`. For example, the float immediately below `0.5` rounds to zero, while `2.5` rounds to three. Large integral distances are not accidentally incremented.
 - Costs are returned as Python floats and accumulated sequentially in stored-tour order with float64 precision. Rounded edge costs and totals must lie in `[0, 2**53]`, the contiguous exact-integer range. Even representable larger integers are outside this deliberately conservative supported range. Check the remaining range **before** each addition so a one-unit overflow cannot silently disappear.

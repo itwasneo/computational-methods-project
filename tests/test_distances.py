@@ -1,8 +1,6 @@
-"""Independent-reference agreement, compiled callers, and explicit preparation."""
+"""Unrounded reference agreement, compiled callers, and explicit preparation."""
 
 from dataclasses import FrozenInstanceError
-from decimal import Decimal, localcontext
-from importlib.resources import files
 from itertools import permutations
 import math
 import os
@@ -14,7 +12,6 @@ import numpy as np
 import pytest
 
 import tsp_hpc.distances as module
-from tsp_hpc._hypot import hypot_2d
 from tsp_hpc.data import TSPInstance
 from tsp_hpc.distances import (
     coordinate_edge_kernel, distance_edge_kernel, distance_tour_kernel,
@@ -22,152 +19,130 @@ from tsp_hpc.distances import (
 )
 from tsp_hpc.identity import describe_instance
 from tsp_hpc.instances import fixture, fixture_names, uniform_instance, clustered_instance
-from tsp_hpc.objective import COST_ATOL, COST_RTOL, MAX_EXACT_INTEGER, NumericalError, edge_cost, tour_cost
+from tsp_hpc.objective import COST_ATOL, COST_RTOL, NumericalError, edge_cost, tour_cost
 
-KINDS = ("euclidean_2d", "tsplib_euc_2d")
 MODES = ("dense", "on_demand")
 
 
-def problem(points, kind="euclidean_2d"):
-    return TSPInstance("test", np.array(points, dtype=np.float64), kind)
+def problem(points):
+    return TSPInstance("test", np.array(points, dtype=np.float64))
 
 
-def assert_cost(actual, expected, kind):
-    if kind == "tsplib_euc_2d":
-        assert actual == expected
-    else:
-        assert abs(actual - expected) <= COST_ATOL + COST_RTOL * abs(expected)
+def assert_cost(actual, expected):
+    assert abs(actual - expected) <= COST_ATOL + COST_RTOL * abs(expected)
 
 
-@pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("name", fixture_names())
-def test_all_fixture_edges_and_tours_against_independent_reference(name, kind):
-    instance = fixture(name, distance_kind=kind).instance
+def test_all_fixture_edges_and_tours_against_independent_reference(name):
+    instance = fixture(name).instance
     descriptor = describe_instance(instance)
     dense = prepare_distances(instance, mode="dense")
     demand = prepare_distances(instance, mode="on_demand")
     for i in range(instance.n_cities):
         for j in range(instance.n_cities):
-            reference = edge_cost(instance, i, j)
-            assert_cost(dense.edge_cost(i, j), reference, kind)
+            assert_cost(dense.edge_cost(i, j), edge_cost(instance, i, j))
             assert dense.edge_cost(i, j) == demand.edge_cost(i, j)
             assert dense.edge_cost(i, j) == dense.edge_cost(j, i)
     for order in permutations(range(instance.n_cities)):
         tour = np.array(order, dtype=np.int64)
         original = tour.copy()
-        assert_cost(dense.tour_cost(tour), tour_cost(instance, tour), kind)
+        assert_cost(dense.tour_cost(tour), tour_cost(instance, tour))
         assert dense.tour_cost(tour) == demand.tour_cost(tour)
         np.testing.assert_array_equal(tour, original)
     assert describe_instance(instance) == descriptor
     assert dense.instance is demand.instance is instance
 
 
-@pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("builder", [uniform_instance, clustered_instance])
-def test_generated_edges_and_random_tours(builder, kind):
-    instance = builder(32, seed=42, side_length=1000., distance_kind=kind).instance
+def test_generated_edges_and_random_tours(builder):
+    instance = builder(32, seed=42, side_length=1000.).instance
     dense = prepare_distances(instance, mode="dense")
     demand = prepare_distances(instance, mode="on_demand")
     for i in range(instance.n_cities):
         for j in range(instance.n_cities):
-            assert_cost(dense.edge_cost(i, j), edge_cost(instance, i, j), kind)
+            assert_cost(dense.edge_cost(i, j), edge_cost(instance, i, j))
             assert dense.edge_cost(i, j) == demand.edge_cost(i, j)
     rng = np.random.Generator(np.random.PCG64(123))
     for _ in range(30):
         tour = rng.permutation(instance.n_cities).astype(np.int64)
-        assert_cost(dense.tour_cost(tour), tour_cost(instance, tour), kind)
+        assert_cost(dense.tour_cost(tour), tour_cost(instance, tour))
         assert dense.tour_cost(tour) == demand.tour_cost(tour)
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("distance,expected", [
-    (0., 0.), (np.nextafter(.5, 0.), 0.), (.5, 1.), (np.nextafter(.5, math.inf), 1.),
-    (1.5, 2.), (2.5, 3.), (np.nextafter(2.5, 0.), 2.),
-    (np.nextafter(2.5, math.inf), 3.), (float(2**52 + 1), float(2**52 + 1)),
-    (float(MAX_EXACT_INTEGER), float(MAX_EXACT_INTEGER)),
-])
-def test_half_up_rounding_without_premature_addition(mode, distance, expected):
-    instance = problem([(0., 0.), (distance, 0.)], "tsplib_euc_2d")
-    backend = prepare_distances(instance, mode=mode)
-    assert backend.edge_cost(0, 1) == edge_cost(instance, 0, 1) == expected
+def test_rounded_instances_rejected_before_warmup_or_allocation(mode, monkeypatch):
+    instance = fixture("square", distance_kind="tsplib_euc_2d").instance
+    def fail(*args, **kwargs):
+        raise AssertionError("unsupported convention must fail before preparation")
+    monkeypatch.setattr(module, "warmup_distance_kernels", fail)
+    monkeypatch.setattr(module.np, "empty", fail)
+    with pytest.raises(ValueError, match="only unrounded euclidean_2d"):
+        prepare_distances(instance, mode=mode)
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_round_each_edge_not_the_completed_tour(mode):
-    instance = problem([(0, 0), (.5, 0), (1, 0)], "tsplib_euc_2d")
-    assert prepare_distances(instance, mode=mode).tour_cost(np.arange(3, dtype=np.int64)) == 3.
+def test_distances_are_not_integer_rounded(mode):
+    instance = problem([(0, 0), (.5, 0), (1, 0)])
+    backend = prepare_distances(instance, mode=mode)
+    assert backend.edge_cost(0, 1) == .5
+    assert backend.tour_cost(np.arange(3, dtype=np.int64)) == 2.
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_native_hypot_rounding_regression(mode):
-    # On the development runtime, native compiled hypot rounded this up to 7807.5,
-    # while CPython's compensated norm is the preceding float. That changed a
-    # rounded edge from 7807 to 7808. Do not rely on platform libc hypot here.
-    x, y = 5865.277089690506, 5153.210738088601
-    assert math.hypot(x, y) == 7807.499999999999
-    instance = problem([(0, 0), (x, y)], "tsplib_euc_2d")
+def test_native_hypot_small_difference_uses_unrounded_reference_tolerance(mode):
+    # Implementations may differ in the last bit. Do not round to integers or
+    # require bitwise equivalence to CPython's separate math implementation.
+    instance = problem([(0, 0), (5865.277089690506, 5153.210738088601)])
     backend = prepare_distances(instance, mode=mode)
-    assert backend.edge_cost(0, 1) == edge_cost(instance, 0, 1) == 7807.
+    actual = backend.edge_cost(0, 1)
+    assert_cost(actual, edge_cost(instance, 0, 1))
+    assert 7807.49 < actual < 7807.51
+    assert actual != math.floor(actual)
 
 
-def test_compensated_norm_half_integer_neighbourhoods_and_exponents():
+def test_native_norm_near_half_integers_and_across_exponents():
     rng = np.random.Generator(np.random.PCG64(987))
     for _ in range(3000):
         angle = rng.uniform(0., math.pi / 2)
         radius = float(rng.integers(0, 100000)) + .5
         x, y = radius * math.cos(angle), radius * math.sin(angle)
         for neighbour in (np.nextafter(x, 0.), x, np.nextafter(x, math.inf)):
-            reference = math.hypot(neighbour, y)
-            actual = hypot_2d(float(neighbour), float(y))
-            assert actual == reference
             coordinates = np.array([[0., 0.], [neighbour, y]])
-            rounded = math.floor(reference) + int(reference - math.floor(reference) >= .5)
-            assert coordinate_edge_kernel(coordinates, 0, 1, True) == rounded
+            actual = coordinate_edge_kernel(coordinates, 0, 1)
+            assert_cost(actual, math.hypot(neighbour, y))
     for exponent in range(-1073, 1024, 13):
-        x = math.ldexp(.75, exponent)
-        y = math.ldexp(.625, exponent)
-        assert hypot_2d(x, y) == math.hypot(x, y)
-
-
-@pytest.mark.parametrize("xy", [
-    (5865.277089690506, 5153.210738088601), (0.3, 0.4),
-    (3e200, 4e200), (5e-324, 5e-324), (1e-308, 1e-308),
-    (float(2**52), 1.), (float(2**53), 1.),
-])
-def test_compensated_norm_against_high_precision_decimal_oracle(xy):
-    with localcontext() as context:
-        context.prec = 200
-        x, y = map(Decimal.from_float, xy)
-        expected = float((x*x + y*y).sqrt())
-    assert hypot_2d(*xy) == expected
+        x, y = math.ldexp(.75, exponent), math.ldexp(.625, exponent)
+        coordinates = np.array([[0., 0.], [x, y]])
+        actual = coordinate_edge_kernel(coordinates, 0, 1)
+        expected = math.hypot(x, y)
+        # A relative check would underflow for subnormals; allow at most one ULP.
+        assert abs(actual - expected) <= math.ulp(expected)
 
 
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("xy", [(3e200, 4e200), (5e-324, 5e-324), (1e-308, 1e-308)])
-def test_norm_does_not_square_overflow_or_discard_subnormal_edges(mode, xy):
+def test_norm_avoids_squared_overflow_and_preserves_tiny_edges(mode, xy):
     instance = problem([(0., 0.), xy])
     actual = prepare_distances(instance, mode=mode).edge_cost(0, 1)
-    assert actual == edge_cost(instance, 0, 1)  # Absolute tolerances would hide subnormal errors.
-    assert actual > 0
+    expected = edge_cost(instance, 0, 1)
+    assert abs(actual - expected) <= math.ulp(expected)
+    assert actual > 0  # The usual absolute tolerance would hide underflow to zero.
 
 
-@pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("mode", MODES)
-def test_diagonal_and_duplicate_extreme_coordinates_are_zero(kind, mode):
+def test_diagonal_and_duplicate_extreme_coordinates_are_zero(mode):
     maximum = np.finfo(np.float64).max
-    instance = problem([(maximum, maximum)] * 2, kind)
-    backend = prepare_distances(instance, mode=mode)
+    backend = prepare_distances(problem([(maximum, maximum)] * 2), mode=mode)
     assert backend.edge_cost(0, 0) == backend.edge_cost(0, 1) == 0.
     assert backend.tour_cost(np.array([0, 1], dtype=np.int64)) == 0.
 
 
-@pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("points", [
     [(-np.finfo(np.float64).max, 0), (np.finfo(np.float64).max, 0)],
     [(0, 0), (np.finfo(np.float64).max, np.finfo(np.float64).max)],
 ])
-def test_dense_checks_all_edges_and_on_demand_checks_requested_edges(kind, points):
-    instance = problem(points, kind)
+def test_dense_checks_all_edges_and_on_demand_checks_requested_edges(points):
+    instance = problem(points)
     with pytest.raises(NumericalError, match="edge distance"):
         prepare_distances(instance, mode="dense")
     backend = prepare_distances(instance, mode="on_demand")
@@ -180,36 +155,16 @@ def test_dense_checks_all_edges_and_on_demand_checks_requested_edges(kind, point
 
 @pytest.mark.parametrize("mode", MODES)
 def test_finite_unrounded_edges_can_overflow_total(mode):
-    instance = problem([(0, 0), (np.finfo(np.float64).max, 0)])
-    backend = prepare_distances(instance, mode=mode)
+    backend = prepare_distances(problem([(0, 0), (np.finfo(np.float64).max, 0)]), mode=mode)
     assert backend.edge_cost(0, 1) == np.finfo(np.float64).max
     with pytest.raises(NumericalError, match="tour total"):
         backend.tour_cost(np.array([0, 1], dtype=np.int64))
 
 
-@pytest.mark.parametrize("distance", [np.nextafter(float(2**53), math.inf), 1e200])
-def test_rounded_edge_limit_checked_before_machine_integer_conversion(distance):
-    instance = problem([(0, 0), (distance, 0)], "tsplib_euc_2d")
-    with pytest.raises(NumericalError, match="rounded edge"):
-        prepare_distances(instance, mode="dense")
-    with pytest.raises(NumericalError, match="rounded edge"):
-        prepare_distances(instance, mode="on_demand").edge_cost(0, 1)
-
-
-@pytest.mark.parametrize("mode", MODES)
-def test_rounded_total_at_exact_limit_and_single_unit_overflow(mode):
-    instance = problem([(0, 0), (2**52, 0)], "tsplib_euc_2d")
-    backend = prepare_distances(instance, mode=mode)
-    assert backend.tour_cost(np.array([0, 1], dtype=np.int64)) == 2**53
-    instance = problem([(0, 0), (2**52, 0), (0, 1)], "tsplib_euc_2d")
-    with pytest.raises(NumericalError, match="rounded tour total"):
-        prepare_distances(instance, mode=mode).tour_cost(np.arange(3, dtype=np.int64))
-
-
-@njit
-def _compiled_client(coordinates, matrix, dense, rounded, tour):
-    edge = distance_edge_kernel(coordinates, matrix, dense, rounded, 0, 1)
-    return edge, distance_tour_kernel(coordinates, matrix, dense, rounded, tour)
+@njit(fastmath=False)
+def _compiled_client(coordinates, matrix, dense, tour):
+    edge = distance_edge_kernel(coordinates, matrix, dense, 0, 1)
+    return edge, distance_tour_kernel(coordinates, matrix, dense, tour)
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -221,7 +176,7 @@ def test_compiled_client_and_warmed_signatures(mode, readonly):
     signatures = tuple(distance_tour_kernel.signatures)
     assert backend.tour_cost(tour) == 12.
     assert tuple(distance_tour_kernel.signatures) == signatures
-    assert _compiled_client(backend.coordinates, backend.matrix, backend.use_dense, backend.rounded, tour) == (3., 12.)
+    assert _compiled_client(backend.coordinates, backend.matrix, backend.use_dense, tour) == (3., 12.)
     assert _compiled_client.nopython_signatures
 
 
@@ -257,12 +212,11 @@ def test_explicit_storage_no_mutation_or_rebuild_during_queries(mode, monkeypatc
 
 
 def test_memory_limit_checked_before_warmup_or_allocation(monkeypatch):
-    instance = fixture("square").instance
     def fail():
         raise AssertionError("oversized request must fail before warmup")
     monkeypatch.setattr(module, "warmup_distance_kernels", fail)
     with pytest.raises(MemoryError, match="128 bytes"):
-        prepare_distances(instance, mode="dense", max_matrix_bytes=127)
+        prepare_distances(fixture("square").instance, mode="dense", max_matrix_bytes=127)
     assert estimated_matrix_bytes(2**40) == 8 * (2**40)**2
 
 
@@ -308,9 +262,8 @@ def test_wrappers_check_both_city_indices(mode, index, error):
 ])
 @pytest.mark.parametrize("mode", MODES)
 def test_wrappers_reject_invalid_tours(mode, tour, error):
-    backend = prepare_distances(fixture("square").instance, mode=mode)
     with pytest.raises(error):
-        backend.tour_cost(tour)
+        prepare_distances(fixture("square").instance, mode=mode).tour_cost(tour)
 
 
 @pytest.mark.parametrize("kwargs,error", [
@@ -337,18 +290,14 @@ def test_invalid_instance_and_size_estimates():
             estimated_matrix_bytes(size)
 
 
-def test_cpython_notice_is_available_as_package_data():
-    text = files("tsp_hpc").joinpath("licenses/CPython.txt").read_text()
-    assert "PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2" in text
-    assert "All Rights Reserved" in text
-
-
 def test_generic_cpu_cold_compile_and_cache_reload(tmp_path):
     program = (
         "from tsp_hpc.distances import prepare_distances; "
-        "from tsp_hpc.data import TSPInstance; import numpy as np; "
-        "i=TSPInstance('probe',np.array([[0.,0.],[5865.277089690506,5153.210738088601]]),'tsplib_euc_2d'); "
-        "assert all(prepare_distances(i,mode=m).edge_cost(0,1)==7807 for m in ('dense','on_demand')); "
+        "from tsp_hpc.data import TSPInstance; from tsp_hpc.objective import edge_cost; "
+        "import numpy as np, math; "
+        "i=TSPInstance('probe',np.array([[0.,0.],[5865.277089690506,5153.210738088601]])); "
+        "costs=[prepare_distances(i,mode=m).edge_cost(0,1) for m in ('dense','on_demand')]; "
+        "assert costs[0]==costs[1]; assert math.isclose(costs[0],edge_cost(i,0,1),rel_tol=1e-10,abs_tol=1e-12); "
         "print('generic CPU passed')"
     )
     environment = {

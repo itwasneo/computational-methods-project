@@ -12,52 +12,43 @@ from time import perf_counter
 from numba import njit
 import numpy as np
 
-from tsp_hpc._hypot import hypot_2d
 from tsp_hpc.data import TSPInstance, validate_city_index, validate_coordinates, validate_tour
-from tsp_hpc.objective import MAX_EXACT_INTEGER, NumericalError
+from tsp_hpc.objective import NumericalError
 
 DEFAULT_MAX_MATRIX_BYTES = 256 * 1024 * 1024
 
 
 @njit(cache=True, fastmath=False)
-def coordinate_edge_kernel(coordinates, city_a, city_b, rounded):
-    """Finite float64 coordinates, valid city indices, boolean convention flag."""
+def coordinate_edge_kernel(coordinates, city_a, city_b):
+    """Unrounded Euclidean distance for finite float64 coordinates and valid IDs."""
     dx = coordinates[city_a, 0] - coordinates[city_b, 0]
     dy = coordinates[city_a, 1] - coordinates[city_b, 1]
     if not math.isfinite(dx) or not math.isfinite(dy):
         raise NumericalError("derived edge distance is not finite")
-    distance = hypot_2d(dx, dy)
+    distance = math.hypot(dx, dy)
     if not math.isfinite(distance):
         raise NumericalError("derived edge distance is not finite")
-    if rounded:
-        # Guard BEFORE floor: Numba floor produces a bounded machine integer.
-        if distance > MAX_EXACT_INTEGER:
-            raise NumericalError("rounded edge exceeds the exact float64 integer range")
-        whole = math.floor(distance)
-        return float(whole) + (1.0 if distance - whole >= 0.5 else 0.0)
     return distance
 
 
 @njit(cache=True, fastmath=False)
-def distance_edge_kernel(coordinates, matrix, use_dense, rounded, city_a, city_b):
+def distance_edge_kernel(coordinates, matrix, use_dense, city_a, city_b):
     """Use a prepared matrix or coordinates; all structural inputs are trusted."""
     if use_dense:
         return matrix[city_a, city_b]
-    return coordinate_edge_kernel(coordinates, city_a, city_b, rounded)
+    return coordinate_edge_kernel(coordinates, city_a, city_b)
 
 
 @njit(cache=True, fastmath=False)
-def distance_tour_kernel(coordinates, matrix, use_dense, rounded, tour):
+def distance_tour_kernel(coordinates, matrix, use_dense, tour):
     """Sequential float64 sum for a validated int64 permutation; implicit closure."""
     total = 0.0
     n = len(tour)
     for position in range(n):
         edge = distance_edge_kernel(
-            coordinates, matrix, use_dense, rounded,
+            coordinates, matrix, use_dense,
             tour[position], tour[(position + 1) % n],
         )
-        if rounded and edge > MAX_EXACT_INTEGER - total:
-            raise NumericalError("rounded tour total exceeds the exact float64 integer range")
         total += edge
         if not math.isfinite(total):
             raise NumericalError("derived tour total is not finite")
@@ -65,13 +56,13 @@ def distance_tour_kernel(coordinates, matrix, use_dense, rounded, tour):
 
 
 @njit(cache=True, fastmath=False)
-def _fill_dense(coordinates, rounded, matrix):
+def _fill_dense(coordinates, matrix):
     # A single n*n allocation is owned by the Python preparation boundary.
     # Compute each unordered pair once and mirror, with no n*n temporaries.
     for i in range(len(coordinates)):
         matrix[i, i] = 0.0
         for j in range(i + 1, len(coordinates)):
-            value = coordinate_edge_kernel(coordinates, i, j, rounded)
+            value = coordinate_edge_kernel(coordinates, i, j)
             matrix[i, j] = value
             matrix[j, i] = value
 
@@ -95,15 +86,14 @@ def warmup_distance_kernels() -> None:
     coordinates = np.array([[0., 0.], [3., 4.]], dtype=np.float64)
     coordinates.flags.writeable = False
     matrix = np.empty((2, 2), dtype=np.float64)
-    _fill_dense(coordinates, False, matrix)
+    _fill_dense(coordinates, matrix)
     matrix.flags.writeable = False
     candidate = np.array([0, 1], dtype=np.int64)
     for use_dense in (False, True):
-        for rounded in (False, True):
-            distance_edge_kernel(coordinates, matrix, use_dense, rounded, 0, 1)
-            distance_tour_kernel(coordinates, matrix, use_dense, rounded, candidate)
+        distance_edge_kernel(coordinates, matrix, use_dense, 0, 1)
+        distance_tour_kernel(coordinates, matrix, use_dense, candidate)
     candidate.flags.writeable = False
-    distance_tour_kernel(coordinates, matrix, True, True, candidate)
+    distance_tour_kernel(coordinates, matrix, True, candidate)
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -133,10 +123,6 @@ class PreparedDistances:
         return self.mode == "dense"
 
     @property
-    def rounded(self) -> bool:
-        return self.instance.distance_kind == "tsplib_euc_2d"
-
-    @property
     def metadata(self) -> dict:
         return {
             "instance_id": self.instance.instance_id,
@@ -155,14 +141,14 @@ class PreparedDistances:
         city_a = validate_city_index(city_a, self.instance.n_cities)
         city_b = validate_city_index(city_b, self.instance.n_cities)
         return distance_edge_kernel(
-            self.coordinates, self.matrix, self.use_dense, self.rounded, city_a, city_b
+            self.coordinates, self.matrix, self.use_dense, city_a, city_b
         )
 
     def tour_cost(self, tour: np.ndarray) -> float:
         """Validate a complete permutation once, then evaluate it without allocation."""
         validate_tour(tour, self.instance.n_cities)
         return distance_tour_kernel(
-            self.coordinates, self.matrix, self.use_dense, self.rounded, tour
+            self.coordinates, self.matrix, self.use_dense, tour
         )
 
 
@@ -178,6 +164,8 @@ def prepare_distances(instance: TSPInstance, *, mode: str,
     """
     if not isinstance(instance, TSPInstance):
         raise TypeError("instance must be a TSPInstance")
+    if instance.distance_kind != "euclidean_2d":
+        raise ValueError("compiled distance backends support only unrounded euclidean_2d instances")
     if type(mode) is not str:
         raise TypeError("mode must be a string")
     if mode not in ("dense", "on_demand"):
@@ -197,10 +185,9 @@ def prepare_distances(instance: TSPInstance, *, mode: str,
     warmup_time = perf_counter() - start
     start = perf_counter()
     validate_coordinates(instance.coordinates)
-    rounded = instance.distance_kind == "tsplib_euc_2d"
     if mode == "dense":
         matrix = np.empty((instance.n_cities, instance.n_cities), dtype=np.float64)
-        _fill_dense(instance.coordinates, rounded, matrix)
+        _fill_dense(instance.coordinates, matrix)
     else:
         matrix = np.empty((0, 0), dtype=np.float64)
     matrix.flags.writeable = False

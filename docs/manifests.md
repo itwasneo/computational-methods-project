@@ -86,7 +86,7 @@ Empty NN start lists and zero GA/SA budgets remain explicit plans; they are not 
 
 ### Execution configurations
 
-Each execution requires `backend` (`serial` or `multicore`) and a `resources` object. Optional `distance_mode` is `dense` or `on_demand`, defaulting to `on_demand`. Both [distance backends](distances.md) are implemented; solver/runner dispatch remains future work.
+Each execution requires `backend` (`serial` or `multicore`) and a `resources` object. Optional `distance_mode` is `dense` or `on_demand`, defaulting to `on_demand`. Both [distance backends](distances.md) are implemented for unrounded `euclidean_2d` only; solver/runner dispatch remains future work. The schema retains `tsplib_euc_2d` descriptors for compatibility, but distance preparation rejects them. Schema validation is not an execution-capability guarantee.
 
 Resources require a non-blank `profile` label, with positive integer `workers` and `threads_per_worker`, each defaulting to one. Serial execution requires both counts to be one. A multicore request may use one worker/thread as a scaling baseline. No request may increase the number of logical searches implicitly.
 

@@ -32,7 +32,7 @@ The three algorithms from the original project proposal remain the required impl
 | **Genetic algorithm (GA)** | Population-based search | Fitness evaluation, selection, permutation-preserving crossover, mutation |
 | **Simulated annealing (SA)** | Temperature-guided local search | Move proposals, acceptance decisions, cooling schedule, best-tour tracking |
 
-Initially, focus on complete, symmetric, two-dimensional Euclidean TSP instances. A valid tour visits every city exactly once and returns to its starting city. All solvers must use the same distance convention and cost calculation for a given instance.
+Focus on complete, symmetric, two-dimensional TSP instances with **unrounded Euclidean distances**. A valid tour visits every city exactly once and returns to its starting city. All solvers must use the same distance convention and cost calculation for a given instance.
 
 Exact optima for small instances provide quality and correctness references, not a fourth primary solver. Segment-reversal moves may be used within SA; a separate 2-opt solver is not required.
 
@@ -94,7 +94,7 @@ Give stochastic algorithms comparable parameter-tuning opportunities, and evalua
 ### Instances and correctness
 
 - Use shared generated instances with varied sizes and spatial layouts, plus selected compatible TSPLIB instances.
-- Respect each benchmark's distance definition, including rounding rules, when comparing against reference costs.
+- Any future benchmark comparison must use the same objective as its reference costs. Do not compare our unrounded tour costs against integer-rounded TSPLIB optima; rounded-distance execution is outside the current scope.
 - Validate that tours contain every city exactly once and include the closing edge in their cost.
 - Test permutation operators and compare incremental cost updates against full tour-cost recomputation.
 - Compare small cases against exact optima; clearly distinguish certified optima from best-known reference solutions.

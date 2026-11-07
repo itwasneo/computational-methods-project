@@ -71,29 +71,25 @@ These are observed setup durations, **not performance claims** or speedup measur
 
 ## Numerical semantics
 
-Both paths use identical compiled edge arithmetic, no relaxed `fastmath`, and the same sequential float64 tour accumulation order, including the closing edge. They support:
+The current execution scope is **unrounded `euclidean_2d` only**, as chosen by the project owner. Both paths use native Numba `math.hypot`, no relaxed `fastmath`, and the same sequential float64 tour accumulation order, including the closing edge. Distances are never converted to integer weights. Non-finite differences, distances or totals raise the shared `NumericalError`.
 
-- `euclidean_2d`: the finite Euclidean norm, without rounding;
-- `tsplib_euc_2d`: mathematical half-up rounding of the computed float64 norm, implemented using its integer and fractional parts—not an intermediate `r + 0.5` addition.
-
-Rounded edges and totals stay within `[0, 2**53]`. The compiled edge routine checks this range **before** `floor`, because Numba's result is a bounded machine integer rather than Python's arbitrary-precision integer. Rounded totals are checked before addition so that overflow cannot silently lose one integer unit. Non-finite differences, distances or totals raise the shared `NumericalError`.
+`prepare_distances()` rejects `tsplib_euc_2d` before warm-up or allocation. The earlier data, artifact, manifest and independent-reference APIs still recognize that convention for compatibility; recognizing a descriptor does not imply execution support. Nothing silently reinterprets a rounded instance as unrounded. Supporting integer-rounded benchmarks is outside the current execution plan.
 
 Dense construction checks every pair eagerly and returns no partial representation on failure. On-demand checks only queried edges; preparing it does not certify that every possible edge/tour is representable. Even a successfully built dense matrix can contain finite edges whose combined tour total overflows. Such totals fail when evaluated, just as in the independent reference.
 
-### Why not simply compile `math.hypot`?
+### Native calculation and the independent reference
 
-On the development runtime, the vector `(5865.277089690506, 5153.210738088601)` exposes an important difference:
+The Python reference retains its separate `math.hypot` implementation. Native Numba calculations may differ from it in the last floating-point bits. For example, the vector `(5865.277089690506, 5153.210738088601)` produced `7807.5` in native compiled code and `7807.499999999999` in the reference on the development runtime. Without integer rounding, this is a tiny numerical difference within the existing unrounded validation rule:
 
-- CPython's `math.hypot` produces `7807.499999999999`, which rounds to **7807**.
-- Native compiled `hypot` produced `7807.5`, which rounds to **7808**.
+```text
+abs(actual - reference) <= 1e-12 + 1e-10 * abs(reference)
+```
 
-An unrounded tolerance is not sufficient here: the rounded objective would change by a whole unit. Naively squaring components would also overflow for otherwise representable norms such as `(3e200, 4e200)`.
+These are validation tolerances, not search tie-breaking or acceptance rules. Dense and on-demand paths use the same native edge calculation and are checked for exact agreement on the tested inputs; bitwise agreement with the independent Python implementation is not required. `hypot` also avoids the intermediate squared overflow of a naive `sqrt(dx*dx + dy*dy)` calculation.
 
-The private [compiled norm helper](../src/tsp_hpc/_hypot.py) therefore adapts CPython 3.12.3's compensated `vector_norm` algorithm from `Modules/mathmodule.c` to two finite scalar components. It uses power-of-two scaling, compensated product/sum errors, and a square-root correction. An explicit LLVM fused multiply-add recovers product errors; this is **not** permission to reassociate arbitrary calculations or enable fastmath. Subnormal scaling is handled separately. It executes in Numba nopython code without Python callbacks or dynamic arrays.
+No copied numerical helper, custom LLVM intrinsic or additional bundled third-party license is included in this implementation. Existing dependency licenses remain applicable to Python, NumPy and Numba.
 
-The source retains attribution and a summary of modifications. The full [CPython license and copyright notice](../src/tsp_hpc/licenses/CPython.txt) are included in the package and distribution license metadata. This is an adaptation of standard mathematical support code, not an external TSP solver or benchmark framework.
-
-Tests check the rounding regression, half-integer neighbourhoods, exponent extremes and high-precision Decimal cases. They also exercise a generic CPU target in fresh processes, including cache reload. This establishes correctness evidence for the supported tested stack, not a universal bitwise-equivalence proof across arbitrary interpreters, compiler options or floating-point environments. Runtime changes require rerunning the checks; cluster compatibility still needs owner-operated validation.
+Tests check reference agreement near half-integers, exponent extremes, subnormal values, and a generic CPU target in fresh processes with cache reload. Runtime changes require rerunning the checks; cluster compatibility still needs owner-operated validation.
 
 ## Compiled solver boundary
 
@@ -108,21 +104,21 @@ from tsp_hpc.distances import (
 from tsp_hpc.instances import fixture
 
 @njit(fastmath=False)
-def evaluate_candidate(coordinates, matrix, use_dense, rounded, tour):
+def evaluate_candidate(coordinates, matrix, use_dense, tour):
     first_edge = distance_edge_kernel(
-        coordinates, matrix, use_dense, rounded, tour[0], tour[1]
+        coordinates, matrix, use_dense, tour[0], tour[1]
     )
-    total = distance_tour_kernel(coordinates, matrix, use_dense, rounded, tour)
+    total = distance_tour_kernel(coordinates, matrix, use_dense, tour)
     return first_edge, total
 
 prepared = prepare_distances(fixture("square").instance, mode="on_demand")
 tour = np.arange(4, dtype=np.int64)  # Known valid permutation for this fixture.
 assert evaluate_candidate(
-    prepared.coordinates, prepared.matrix, prepared.use_dense, prepared.rounded, tour
+    prepared.coordinates, prepared.matrix, prepared.use_dense, tour
 ) == (1.0, 4.0)
 ```
 
-Use `prepared.coordinates`, `.matrix`, `.use_dense` and `.rounded` as the first four arguments. `coordinate_edge_kernel(coordinates, a, b, rounded)` is also available for a direct coordinate-only query.
+Use `prepared.coordinates`, `.matrix` and `.use_dense` as the first three arguments. `coordinate_edge_kernel(coordinates, a, b)` is also available for a direct coordinate-only query. All raw kernels implement unrounded Euclidean distances only.
 
 **Kernel preconditions matter:** raw kernels trust canonical finite float64 arrays, valid city indices, a valid int64 permutation, and the matrix/flags supplied by preparation. They do not perform permutation or bounds validation and must not receive arbitrary external weight matrices. Use the checked Python methods at untrusted boundaries; future solver wrappers must validate their inputs before entering kernels. The public tour method's permutation validation allocates O(n) scratch, while the compiled scoring loop allocates no matrices or tour copies. Numerical arithmetic checks remain active in the kernels. Compiled callers must also keep fastmath disabled for this baseline.
 
