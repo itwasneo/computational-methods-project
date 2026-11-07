@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "instances": [
+    {
+      "instance_id": "unit-square",
+      "coordinate_checksum": "5bd594629b558cec3174cb988c57d2c4dc5e8ef38a0d352d32ee9e535ddc5275",
+      "n_cities": 4,
+      "distance_kind": "euclidean_2d",
+      "instance_seed": null
+    }
+  ],
+  "experiments": [
+    {
+      "instance_id": "unit-square",
+      "algorithm": "nn",
+      "budget": {"start_cities": [0, 1, 2, 3]},
+      "solver_seed": 42,
+      "repetitions": [0],
+      "executions": [
+        {"backend": "serial", "resources": {"profile": "local-cpu"}}
+      ]
+    },
+    {
+      "instance_id": "unit-square",
+      "algorithm": "ga",
+      "parameters": {"population_size": 16},
+      "budget": {"max_generations": 10},
+      "solver_seed": 42,
+      "repetitions": [0, 1],
+      "logical_search_ids": ["population-0"],
+      "executions": [
+        {"backend": "serial", "resources": {"profile": "local-cpu"}}
+      ]
+    },
+    {
+      "instance_id": "unit-square",
+      "algorithm": "sa",
+      "budget": {"max_proposals": 10000},
+      "solver_seed": 42,
+      "repetitions": [0, 1],
+      "logical_search_ids": ["chain-0", "chain-1", "chain-2", "chain-3"],
+      "executions": [
+        {"backend": "serial", "resources": {"profile": "local-cpu"}},
+        {
+          "backend": "multicore",
+          "resources": {"profile": "local-cpu", "workers": 4, "threads_per_worker": 1}
+        }
+      ]
+    }
+  ]
+}

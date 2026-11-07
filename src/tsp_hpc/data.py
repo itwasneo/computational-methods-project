@@ -74,7 +74,7 @@ def validate_tour(tour: NDArray[np.int64], n_cities: int) -> None:
 class TSPInstance:
     """Validated instance with an owned, read-only coordinate snapshot.
 
-    The caller supplies the logical ID; identity generation belongs to manifests.
+    The caller supplies the logical ID; tsp_hpc.identity provides content-based IDs.
     Treat coordinates as immutable, including their NumPy flags and shape.
     Instances use identity equality, not elementwise NumPy array equality.
     """

@@ -1,6 +1,6 @@
 # Technology stack and execution architecture
 
-**Status:** decided; the local package scaffold and locked numerical stack are smoke-tested. Solver/runner implementation and cluster validation are pending.
+**Status:** decided; the local package, data/objective utilities, and manifest/stream planning are implemented and tested. Solver/runner implementation and cluster validation are pending.
 
 Use a Python-first stack with compiled numerical kernels, a small project-specific experiment runner, and an Apptainer image for reproducible cluster execution. The required solvers remain nearest-neighbour, genetic algorithm (GA), and simulated annealing (SA).
 
@@ -39,7 +39,7 @@ Keep configuration, scheduling decisions, logging, and result serialization in o
 - **GA:** compile and profile fitness evaluation and permutation operators; independent tasks must write to separate output regions.
 - **SA:** compile the iteration loop rather than calling a tiny compiled function from Python for every proposed move. Independent chains provide the initial parallelism.
 
-The [shared v1 contracts](contracts.md) define instance and tour representations, distance conventions, solver inputs, result fields, and validation boundaries. Each solver accepts an instance, solver seed, search budget, and algorithm parameters, and returns its best complete tour with search statistics. Backend and resource selection belong in the run configuration; concrete wrappers and data structures will be implemented in the follow-up tasks.
+The [shared v1 contracts](contracts.md) define instance and tour representations, distance conventions, solver inputs, result fields, and validation boundaries. Each solver accepts an instance, solver seed, search budget, and algorithm parameters, and returns its best complete tour with search statistics. Backend and resource selection belong in the run configuration. Instance/objective utilities and [manifest planning](manifests.md) are implemented; solver wrappers, result records, and execution backends remain follow-up work.
 
 ## Own the experiment runner, not the scheduler
 
