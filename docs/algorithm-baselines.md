@@ -1,6 +1,6 @@
 # Initial algorithm variants and stopping semantics
 
-**Status:** v1 design for task #2; implementation and parameter tuning are pending. These are reproducible starting variants, not claims of optimal parameters or finalized benchmark settings.
+**Status:** v1 design for task #2; solver implementation and parameter tuning are pending. Configuration validation and stream planning are [implemented](manifests.md). These are reproducible starting variants, not claims of optimal parameters or finalized benchmark settings.
 
 This document complements the [shared contracts](contracts.md). The required algorithms remain nearest-neighbour (NN), a genetic algorithm (GA), and simulated annealing (SA). An exact reference and SA's reversal moves do not add primary solvers.
 
@@ -10,7 +10,7 @@ This document complements the [shared contracts](contracts.md). The required alg
 - Use exact comparisons of computed `float64` values for algorithmic decisions. The contract's validation tolerances are not tie-breaking, acceptance, or convergence thresholds.
 - On equal best costs, retain the earliest candidate in **logical** order: NN start-list position; GA initialization slot followed by generation/offspring slot; SA initial tour followed by proposal number. Parallel completion order must not decide the winner. Across independent searches, break ties by the fixed logical search index.
 - Do not normalize rotations or orientations, deduplicate equal tours, seed a population with NN, apply local improvement after crossover, or restart a stalled search implicitly. Such changes alter the baseline.
-- Generate uniform random permutations using Fisher-Yates shuffling. All random choices use explicit solver/subsearch streams; task #6 defines their concrete implementation. Fixed-work serial and parallel execution must preserve logical searches, configuration, and random streams.
+- Generate uniform random permutations using Fisher-Yates shuffling. All random choices use explicit solver/subsearch streams; the [stream planner](manifests.md#random-stream-planning) defines their versioned derivation and ownership rules. Fixed-work serial and parallel execution must preserve logical searches, configuration, and random streams.
 - The baseline GA and SA start randomly; they do not accept an `initial_tour` parameter. The shared interface permits future variants with supplied or heuristic initialization, but these must be identified separately.
 - Record the variant identifier and all effective settings, including resolved defaults. Reject unknown fields, non-finite numeric settings, invalid ranges, and booleans where integer counts are required.
 

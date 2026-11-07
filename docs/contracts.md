@@ -1,6 +1,6 @@
 # Shared instance, tour, solver, and result contracts
 
-**Status:** v1 design for task #1. Task #5 implements the [instance, tour validation, and independent objective utilities](data-and-objective.md); solver/result records and the remaining execution contracts are still specifications. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
+**Status:** v1 design for task #1. Task #5 implements the [instance, tour validation, and independent objective utilities](data-and-objective.md). Task #6 implements [manifests, identities, and random-stream planning](manifests.md). Solver/result records and execution remain specifications. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
 
 These contracts keep the three required solvers compatible with one objective function and one experiment runner. They describe logical records and boundaries, not a required class hierarchy or a generic solver framework. See the [technology stack](tech-stack.md) for implementation tools and the [resource plan](hpc-resources.md) for execution responsibilities.
 
@@ -12,7 +12,7 @@ Asymmetric distances, missing edges, arbitrary explicit-weight input matrices, g
 
 | Instance field | Contract |
 | --- | --- |
-| `instance_id` | Non-empty, stable identifier for the logical instance; independent of worker counts, hardware, and distance representation. Identity generation and checksums are specified in task #6. |
+| `instance_id` | Non-empty, stable identifier for the logical instance; independent of worker counts, hardware, and distance representation. Content ID and checksum helpers follow the implemented [manifest identity rules](manifests.md#identity-rules). |
 | `coordinates` | C-contiguous NumPy `float64` array of shape `(n, 2)`, with finite values and `n >= 2`. Row indices are the internal city IDs `0` through `n - 1`. |
 | `distance_kind` | Explicitly either `euclidean_2d` or `tsplib_euc_2d`; never inferred separately by individual solvers. |
 
@@ -78,7 +78,7 @@ This is an interface specification, not implemented Python code. Wrappers valida
 
 An optional initial tour, if supported by the chosen algorithm, is supplied through its parameters and follows the same tour contract. The solver owns its working copy and does not mutate caller-provided arrays. Returned best tours must not alias mutable solver state or caller-owned buffers.
 
-Use fresh random state for each invocation. Instance-generation seeds and solver seeds are distinct. Derive subsearch streams from stable logical IDs, never thread numbers, worker counts, scheduling order, process-global RNG state, or Python's randomized `hash()`. The concrete stream scheme is defined in task #6; this interface does not promise bitwise equivalence across different runtimes or numerical backends.
+Use fresh random state for each invocation. Instance-generation seeds and solver seeds are distinct. Derive subsearch streams from stable logical IDs, never thread numbers, worker counts, scheduling order, process-global RNG state, or Python's randomized `hash()`. The [versioned stream scheme](manifests.md#random-stream-planning) is implemented; this interface does not promise bitwise equivalence across different runtimes or numerical backends.
 
 The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) define concrete budget fields, legal zero-work cases, initialization accounting, and safe stopping points. Fixed-work scaling must preserve those budgets and logical searches when resources change. Time limits are checked only at safe points and may overshoot; actual elapsed time must be reported. Unsupported time-budget or history requests must fail explicitly until those capabilities exist.
 
@@ -137,7 +137,7 @@ The runner selects a compatible solver adapter and prepares its numerical inputs
 
 - **Task #2:** the [companion baseline specification](algorithm-baselines.md) records variants, tie-breaking, budgets, initialization accounting, and stop precedence/checkpoints against this boundary.
 - **Task #5:** canonical data, validation, and independent tour cost are implemented in [the shared data/objective API](data-and-objective.md), with boundary and numerical tests. **Task #8** will add equivalent optimized distance paths and check them against this reference.
-- **Tasks #6 and #18:** implement logical identities, random-stream planning, manifests, and persisted result envelopes.
+- **Task #6:** [manifests, logical identities, and random-stream planning](manifests.md) are implemented. **Task #18** will add execution dispatch and persisted result envelopes.
 - **Task #19:** implement time limits and progress recording without hiding missing solutions or instrumentation costs.
 
 Task #3 can scaffold the package independently; it does not need to implement these data structures or any solver.

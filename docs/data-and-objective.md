@@ -1,6 +1,6 @@
 # Shared TSP data and objective
 
-**Status:** task #5 implements the instance, coordinate/tour validation, and independent objective portion of the [shared contracts](contracts.md). Solvers, result records, manifests, loaders, and optimized distance backends remain separate work.
+**Status:** task #5 implements the instance, coordinate/tour validation, and independent objective portion of the [shared contracts](contracts.md). [Manifest and identity planning](manifests.md) is implemented separately in task #6. Solvers, result records, loaders, and optimized distance backends remain separate work.
 
 ## Public API
 
@@ -16,7 +16,7 @@
 
 Validation functions do not convert, reorder, or mutate arrays. Normalize lists, array subclasses (including memory maps), non-native dtypes, or strided layouts explicitly in a builder/loader before calling this API. Do not coerce an invalid solver tour into validity. Masked arrays are not supported: masks could hide invalid values.
 
-`TSPInstance.n_cities` is derived from the coordinate shape. The caller supplies a non-blank logical ID; automatic identity generation belongs to task #6. The frozen record prevents field reassignment and uses object-identity equality rather than elementwise NumPy equality. Its coordinate copy isolates it from subsequent changes to the caller's array. Treat that copy as immutable, including its flags and shape; NumPy's read-only flag is an accidental-write guard, not protection against deliberate bypass.
+`TSPInstance.n_cities` is derived from the coordinate shape. The caller supplies a non-blank logical ID; `tsp_hpc.identity.make_instance_id()` provides content-based IDs under the [manifest identity rules](manifests.md#identity-rules). The frozen record prevents field reassignment and uses object-identity equality rather than elementwise NumPy equality. Its coordinate copy isolates it from subsequent changes to the caller's array. Treat that copy as immutable, including its flags and shape; NumPy's read-only flag is an accidental-write guard, not protection against deliberate bypass.
 
 Duplicate coordinates, collinear cities, and zero-cost tours are valid. Different city IDs remain different visits even when their coordinates coincide. A two-city tour counts both the outward and return edge. Tours have implicit closure; an array of length `n + 1` repeating the start is rejected.
 
