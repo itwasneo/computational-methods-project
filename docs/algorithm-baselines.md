@@ -181,4 +181,4 @@ Changing a documented numeric parameter or workload remains within the named var
 
 Follow-up implementation tasks must cover deterministic NN ties and start ordering; OX cut boundaries, permutation validity, and parent immutability; GA tournament ties, elitism, and initialization accounting; SA wraparound deltas, rejected moves, geometric cooling, and numerical checks; and zero-work/expired-time precedence for every solver.
 
-Include two- and three-city inputs, duplicate coordinates, all-zero distances, probability boundaries, and both supported distance conventions. This document selects behavior; executable solvers and their tests remain in their implementation tasks.
+Include two- and three-city inputs, duplicate coordinates, all-zero distances, and probability boundaries under unrounded Euclidean distances. The current solver execution scope is `euclidean_2d` only; unsupported rounded instances must be rejected rather than reinterpreted. This document selects behavior; executable solvers and their tests remain in their implementation tasks.

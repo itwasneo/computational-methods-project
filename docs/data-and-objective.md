@@ -1,6 +1,6 @@
 # Shared TSP data and objective
 
-**Status:** task #5 implements the instance, coordinate/tour validation, and independent objective portion of the [shared contracts](contracts.md). [Manifest and identity planning](manifests.md) is implemented separately in task #6. Task #7 provides [generated instances, fixtures, and verified JSON artifact loading](instances.md). Solvers, result records, TSPLIB import, and optimized distance backends remain separate work.
+**Status:** task #5 implements the instance, coordinate/tour validation, and independent objective portion of the [shared contracts](contracts.md). [Manifest and identity planning](manifests.md) is implemented separately in task #6. Task #7 provides [generated instances, fixtures, and verified JSON artifact loading](instances.md). Task #8 implements [compiled dense and on-demand distance backends](distances.md), checked against this unchanged independent reference. Solvers, result records, and TSPLIB import remain separate work.
 
 ## Public API
 
@@ -39,6 +39,8 @@ assert validate_solution(instance, tour, reported_cost=12.0) == 12.0
 ```
 
 ## Distance conventions and numerical boundaries
+
+The current solver execution scope is unrounded `euclidean_2d`. The independent reference retains the previously merged rounded convention below, but the compiled backends explicitly reject it. Native compiled and reference unrounded results are compared using the existing tolerances, not bitwise equality.
 
 - **`euclidean_2d`:** unrounded `hypot(dx, dy)` in float64 precision. Using `hypot` avoids unnecessary overflow from squaring large but otherwise representable components.
 - **`tsplib_euc_2d`:** mathematical `floor(r + 0.5)` applied to each edge, never to the tour total. The implementation separates the integer and fractional parts to avoid premature floating-point rounding of `r + 0.5`. For example, the float immediately below `0.5` rounds to zero, while `2.5` rounds to three. Large integral distances are not accidentally incremented.

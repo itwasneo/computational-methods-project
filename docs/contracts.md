@@ -1,6 +1,6 @@
 # Shared instance, tour, solver, and result contracts
 
-**Status:** v1 design for task #1. Task #5 implements the [instance, tour validation, and independent objective utilities](data-and-objective.md). Task #6 implements [manifests, identities, and random-stream planning](manifests.md). Solver/result records and execution remain specifications. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
+**Status:** v1 design for task #1. Task #5 implements the [instance, tour validation, and independent objective utilities](data-and-objective.md). Task #6 implements [manifests, identities, and random-stream planning](manifests.md). Task #8 implements [distance backends and explicit preprocessing](distances.md). Solver/result records and execution remain specifications. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
 
 These contracts keep the three required solvers compatible with one objective function and one experiment runner. They describe logical records and boundaries, not a required class hierarchy or a generic solver framework. See the [technology stack](tech-stack.md) for implementation tools and the [resource plan](hpc-resources.md) for execution responsibilities.
 
@@ -21,6 +21,8 @@ Derive the city count from `coordinates.shape[0]`; do not maintain a conflicting
 A loader maps external city labels to contiguous internal IDs in a deterministic order and retains the inverse mapping in provenance. Solver tours always use internal IDs. Source filenames, checksums, instance-generation seeds, and reference optima belong in instance provenance, not in numerical kernels. Reference values must identify their distance convention and whether they are certified optima or merely best-known costs.
 
 ### Distance conventions and representations
+
+**Current execution decision:** use unrounded `euclidean_2d` for the solver project. The compiled backends reject `tsplib_euc_2d`. Its definitions and previously merged data/reference support below are retained for compatibility, not as a promise of current execution support. Do not compare unrounded tour costs against integer-rounded benchmark optima.
 
 For cities `i` and `j`, let `r = hypot(x[i] - x[j], y[i] - y[j])`, evaluated in `float64`.
 
@@ -136,7 +138,7 @@ The runner selects a compatible solver adapter and prepares its numerical inputs
 ## Implementation hand-off
 
 - **Task #2:** the [companion baseline specification](algorithm-baselines.md) records variants, tie-breaking, budgets, initialization accounting, and stop precedence/checkpoints against this boundary.
-- **Task #5:** canonical data, validation, and independent tour cost are implemented in [the shared data/objective API](data-and-objective.md), with boundary and numerical tests. **Task #8** will add equivalent optimized distance paths and check them against this reference.
+- **Task #5:** canonical data, validation, and independent tour cost are implemented in [the shared data/objective API](data-and-objective.md), with boundary and numerical tests. **Task #8** implements [compiled distance paths](distances.md), with reference comparisons and explicit preparation/memory accounting.
 - **Task #6:** [manifests, logical identities, and random-stream planning](manifests.md) are implemented. **Task #18** will add execution dispatch and persisted result envelopes.
 - **Task #19:** implement time limits and progress recording without hiding missing solutions or instrumentation costs.
 

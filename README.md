@@ -6,7 +6,7 @@ Implement and compare three heuristics for the Traveling Salesman Problem (TSP),
 
 ## Project status
 
-The project has agreed data/algorithm contracts, implemented [shared TSP data and objective utilities](docs/data-and-objective.md), [manifest and random-stream planning](docs/manifests.md), [reproducible instances and fixtures](docs/instances.md), and a Python package with locked dependencies and automated correctness checks. Solver implementations and the experiment runner are not yet available. The [original team presentation](presentations/tsp_team_presentation.html) remains a record of the proposal.
+The project has agreed data/algorithm contracts, implemented [shared TSP data and objective utilities](docs/data-and-objective.md), [manifest and random-stream planning](docs/manifests.md), [reproducible instances and fixtures](docs/instances.md), [compiled distance backends](docs/distances.md), and a Python package with locked dependencies and automated correctness checks. Solver implementations and the experiment runner are not yet available. The [original team presentation](presentations/tsp_team_presentation.html) remains a record of the proposal.
 
 The **10-slide progress presentation** is available as [PDF](presentations/tsp_progress_presentation.pdf) or [offline HTML](presentations/tsp_progress_presentation.html). It includes the locally built CPU image from unmerged PR #53 and distinguishes completed work from pending solver, cluster-runtime, and benchmark validation. See [presentation instructions and evidence](presentations/README.md).
 
@@ -32,7 +32,7 @@ The three algorithms from the original project proposal remain the required impl
 | **Genetic algorithm (GA)** | Population-based search | Fitness evaluation, selection, permutation-preserving crossover, mutation |
 | **Simulated annealing (SA)** | Temperature-guided local search | Move proposals, acceptance decisions, cooling schedule, best-tour tracking |
 
-Initially, focus on complete, symmetric, two-dimensional Euclidean TSP instances. A valid tour visits every city exactly once and returns to its starting city. All solvers must use the same distance convention and cost calculation for a given instance.
+Focus on complete, symmetric, two-dimensional TSP instances with **unrounded Euclidean distances**. A valid tour visits every city exactly once and returns to its starting city. All solvers must use the same distance convention and cost calculation for a given instance.
 
 Exact optima for small instances provide quality and correctness references, not a fourth primary solver. Segment-reversal moves may be used within SA; a separate 2-opt solver is not required.
 
@@ -94,7 +94,7 @@ Give stochastic algorithms comparable parameter-tuning opportunities, and evalua
 ### Instances and correctness
 
 - Use shared generated instances with varied sizes and spatial layouts, plus selected compatible TSPLIB instances.
-- Respect each benchmark's distance definition, including rounding rules, when comparing against reference costs.
+- Any future benchmark comparison must use the same objective as its reference costs. Do not compare our unrounded tour costs against integer-rounded TSPLIB optima; rounded-distance execution is outside the current scope.
 - Validate that tours contain every city exactly once and include the closing edge in their cost.
 - Test permutation operators and compare incremental cost updates against full tour-cost recomputation.
 - Compare small cases against exact optima; clearly distinguish certified optima from best-known reference solutions.
