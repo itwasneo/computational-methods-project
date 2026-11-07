@@ -43,7 +43,7 @@ The CLI currently provides help and version information only. Running `tsp-hpc` 
 uv run --locked python -m tsp_hpc --help
 ```
 
-The tests check package metadata, console-entry registration, CLI behavior from outside the checkout, actual Numba nopython compilation/execution, the [shared TSP data/objective utilities](data-and-objective.md), and [manifest/stream invariants](manifests.md). They do not implement TSP solvers or establish benchmark performance. No cluster account, GPU, container runtime, or network access is required to run the tests once the environment is installed. The CI workflow below runs these checks automatically.
+The tests check package metadata, console-entry registration, CLI behavior from outside the checkout, actual Numba nopython compilation/execution, the [shared TSP data/objective utilities](data-and-objective.md), [manifest/stream invariants](manifests.md), and [instance generation/artifact integrity](instances.md). They do not implement TSP solvers or establish benchmark performance. No cluster account, GPU, container runtime, or network access is required to run the tests once the environment is installed. The CI workflow below runs these checks automatically.
 
 ## Automated correctness checks
 
@@ -94,7 +94,7 @@ Run `uv sync --locked` again to restore the normal development environment.
 
 | Path | Purpose |
 | --- | --- |
-| [src/tsp_hpc](../src/tsp_hpc/__init__.py) | Importable package with CLI, data/objective utilities, and manifest/stream planning |
+| [src/tsp_hpc](../src/tsp_hpc/__init__.py) | Importable package with CLI, data/objective utilities, manifest/stream planning, and instance generation/storage |
 | [tests](../tests/test_numerical_stack.py) | pytest checks, including the compiled numerical smoke test |
 | [pyproject.toml](../pyproject.toml) | Package metadata, entry point, dependency groups, build backend, and pytest settings |
 | [uv.lock](../uv.lock) | Version-controlled dependency resolution |
