@@ -4,12 +4,12 @@ Use the installed [development environment](development.md) and run examples fro
 
 ## Canonical data and independent validation
 
-`TSPInstance` takes a caller-supplied logical ID and owns a read-only coordinate copy. Its frozen fields use object-identity equality. The validators in [data.py](../src/tsp_hpc/data.py) check canonical arrays without converting, reordering or mutating them. Normalize external lists, strided/non-native arrays or subclasses explicitly in a loader; do not coerce invalid solver tours into validity. Masked arrays are unsupported. Treat coordinates, flags and shape as immutable: NumPy read-only flags prevent accidental writes, not deliberate bypass.
+`TSPInstance` takes a caller-supplied logical ID and owns a read-only coordinate copy. Its frozen fields use object-identity equality. The validators in [data.py](../src/tsp_hpc/problem/data.py) check canonical arrays without converting, reordering or mutating them. Normalize external lists, strided/non-native arrays or subclasses explicitly in a loader; do not coerce invalid solver tours into validity. Masked arrays are unsupported. Treat coordinates, flags and shape as immutable: NumPy read-only flags prevent accidental writes, not deliberate bypass.
 
 ```python
 import numpy as np
-from tsp_hpc.data import TSPInstance, validate_tour
-from tsp_hpc.objective import tour_cost, validate_solution
+from tsp_hpc.problem.data import TSPInstance, validate_tour
+from tsp_hpc.problem.objective import tour_cost, validate_solution
 
 instance = TSPInstance("triangle", np.array([[0., 0.], [3., 0.], [3., 4.]]))
 tour = np.array([0, 2, 1], dtype=np.int64)
@@ -18,11 +18,11 @@ assert tour_cost(instance, tour) == 12.0
 assert validate_solution(instance, tour, reported_cost=12.0) == 12.0
 ```
 
-`validate_coordinates()` checks the coordinate representation; `validate_city_index()` accepts in-range Python/NumPy integers except booleans and returns a Python `int`. [objective.py](../src/tsp_hpc/objective.py) supplies `edge_cost()`, `tour_cost()` and `validate_solution()` independently of compiled execution. Use them at boundaries, not on every hot-loop proposal. See the [numerical contract](contracts.md#tour-representation-and-shared-objective) for accumulation, tolerance and error rules.
+`validate_coordinates()` checks the coordinate representation; `validate_city_index()` accepts in-range Python/NumPy integers except booleans and returns a Python `int`. [objective.py](../src/tsp_hpc/problem/objective.py) supplies `edge_cost()`, `tour_cost()` and `validate_solution()` independently of compiled execution. Use them at boundaries, not on every hot-loop proposal. See the [numerical contract](contracts.md#tour-representation-and-shared-objective) for accumulation, tolerance and error rules.
 
 ## Instances and artifacts
 
-[instances.py](../src/tsp_hpc/instances.py) provides `uniform_instance()`, `clustered_instance()`, `fixture()`, `fixture_names()`, `save_instance()` and `load_instance()`. Constructors return an `InstanceRecord` with:
+[instances.py](../src/tsp_hpc/problem/instances.py) provides `uniform_instance()`, `clustered_instance()`, `fixture()`, `fixture_names()`, `save_instance()` and `load_instance()`. Constructors return an `InstanceRecord` with:
 
 - `.instance`: the owned canonical TSP instance;
 - `.descriptor`: a detached descriptor for a [manifest](manifests.md), including the effective generation seed or `None`;
@@ -32,8 +32,8 @@ assert validate_solution(instance, tour, reported_cost=12.0) == 12.0
 ```python
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from tsp_hpc.instances import uniform_instance, save_instance, load_instance
-from tsp_hpc.random_streams import derive_stream
+from tsp_hpc.problem.instances import uniform_instance, save_instance, load_instance
+from tsp_hpc.reproducibility.random_streams import derive_stream
 
 seed = derive_stream(123, "instance", "uniform-v1", "sample-a").seed
 record = uniform_instance(32, seed=seed, side_length=100.0)
@@ -87,9 +87,9 @@ This inspectable small-input format materializes JSON/coordinates in O(n) space,
 NN is a constructive heuristic, not an optimality guarantee. For explicit representation, implementation selection and setup reuse:
 
 ```python
-from tsp_hpc.instances import fixture
-from tsp_hpc.distances import prepare_distances
-from tsp_hpc.nearest_neighbour import NearestNeighbourSolver
+from tsp_hpc.problem.instances import fixture
+from tsp_hpc.problem.distances import prepare_distances
+from tsp_hpc.solvers.nn.solver import NearestNeighbourSolver
 
 instance = fixture("square").instance
 prepared = prepare_distances(instance, mode="dense", max_matrix_bytes=1024)
@@ -106,7 +106,7 @@ assert prepared.metadata["matrix_bytes"] == 128
 
 The adapter requires the **same instance object** used in preparation, not just a matching ID. Reuse it for repeated solves; it retains no last-run solution, counters or RNG state. Requests use an ordered list of Python integer starts (not booleans or NumPy scalars) and an empty parameter dictionary. The [NN specification](algorithm-baselines.md#greedy-nearest-neighbour) owns start/tie rules, seed behavior and work accounting. Unsupported capabilities fail explicitly, not by changing the requested workload.
 
-The module-level `tsp_hpc.nearest_neighbour.solve(instance, *, seed, budget, parameters, record_history=False)` is a convenience wrapper using on-demand distances and the default implementation. Its overall call includes setup; prefer the explicit adapter for setup accounting and reuse. Empty convenience work skips preparation/warm-up; an existing adapter's empty solve skips search/final validation and reports zero phase durations.
+The module-level `tsp_hpc.solvers.nn.solver.solve(instance, *, seed, budget, parameters, record_history=False)` is a convenience wrapper using on-demand distances and the default implementation. Its overall call includes setup; prefer the explicit adapter for setup accounting and reuse. Empty convenience work skips preparation/warm-up; an existing adapter's empty solve skips search/final validation and reports zero phase durations.
 
 ### Implementation selection
 
@@ -114,18 +114,18 @@ Both serial implementations follow `nn-fixed-starts-v1` and are listed by `imple
 
 | Implementation | Candidate search |
 | --- | --- |
-| `visited-scan-v1` (unchanged default) | [Baseline](../src/tsp_hpc/nn_visited_scan.py): scan all city IDs, skipping visited entries |
-| `remaining-array-v1` | [Compact pool](../src/tsp_hpc/nn_remaining_array.py): scan only unvisited IDs and remove the winner by swapping with the last active entry; explicit `(cost, city ID)` comparison preserves ties despite reordered storage |
+| `visited-scan-v1` (unchanged default) | [Baseline](../src/tsp_hpc/solvers/nn/visited_scan.py): scan all city IDs, skipping visited entries |
+| `remaining-array-v1` | [Compact pool](../src/tsp_hpc/solvers/nn/remaining_array.py): scan only unvisited IDs and remove the winner by swapping with the last active entry; explicit `(cost, city ID)` comparison preserves ties despite reordered storage |
 
 Select the alternative with `NearestNeighbourSolver(prepared, implementation="remaining-array-v1")`. Both take O(S n²) time for S starts and O(n) working storage, plus an O(S) start snapshot. Per start, the compact pool reduces candidate-loop iterations from `n*(n-1)` to `n*(n-1)/2`; both evaluate that same latter number of candidate distances plus n edges for final tour scoring. It trades a boolean visited mask for int64 remaining IDs: raw working-array elements occupy `24*n-8` bytes versus `17*n` in the baseline, excluding starts, array overhead, result copies and separately prepared distance storage. All workspace allocation/reset stays inside search timing. These are operation/storage counts, **not a measured speedup**.
 
-Register optimized kernels explicitly alongside that baseline in [nearest_neighbour.py](../src/tsp_hpc/nearest_neighbour.py), under new stable IDs. The adapter resolves, warms and executes the selected callable and exposes its ID in metadata; unavailable IDs fail before warm-up. There is no filename-based discovery. Implementations must share scientific conformance tests; changes to search rules require a different variant, not an optimization label.
+Register optimized kernels explicitly alongside that baseline in [solver.py](../src/tsp_hpc/solvers/nn/solver.py), under new stable IDs. The adapter resolves, warms and executes the selected callable and exposes its ID in metadata; unavailable IDs fail before warm-up. There is no filename-based discovery. Implementations must share scientific conformance tests; changes to search rules require a different variant, not an optimization label.
 
 For a plan with an explicit label, pass `implementation=plan.execution["implementation"]` to the adapter. Labels, omission compatibility and scientific-versus-execution identity are specified once in [manifest execution configurations](manifests.md#execution-configurations). Planning does not authorize or dispatch execution; callers must check the requested backend rather than treating a multicore plan as serial.
 
 ## Distance preparation and compiled callers
 
-[distances.py](../src/tsp_hpc/distances.py) creates factory-only `PreparedDistances` records sharing the instance's read-only coordinates. Each call prepares fresh storage; no hidden global cache or fallback exists. Reuse the result outside iteration loops. Checked `.edge_cost(a, b)` and `.tour_cost(tour)` methods validate structural inputs before querying it.
+[distances.py](../src/tsp_hpc/problem/distances.py) creates factory-only `PreparedDistances` records sharing the instance's read-only coordinates. Each call prepares fresh storage; no hidden global cache or fallback exists. Reuse the result outside iteration loops. Checked `.edge_cost(a, b)` and `.tour_cost(tour)` methods validate structural inputs before querying it.
 
 | Mode | Storage and checks |
 | --- | --- |
@@ -141,8 +141,8 @@ Compiled callers pass primitive inputs, not Python records:
 ```python
 import numpy as np
 from numba import njit
-from tsp_hpc.instances import fixture
-from tsp_hpc.distances import prepare_distances, distance_tour_kernel
+from tsp_hpc.problem.instances import fixture
+from tsp_hpc.problem.distances import prepare_distances, distance_tour_kernel
 
 @njit(fastmath=False)
 def evaluate(coordinates, matrix, use_dense, tour):
@@ -175,7 +175,7 @@ Request validation/start marshalling occur before the search clock; result packa
 
 ## Run a manifest
 
-The [sequential runner](../src/tsp_hpc/runner.py) turns resolved plans and saved artifacts into a new JSONL shard. From the repository root, run the [NN example](../examples/manifests/nn-fixed-work.json):
+The [sequential runner](../src/tsp_hpc/experiments/runner.py) turns resolved plans and saved artifacts into a new JSONL shard. From the repository root, run the [NN example](../examples/manifests/nn-fixed-work.json):
 
 ```bash
 mkdir -p results
@@ -188,7 +188,7 @@ It executes both NN implementations in both distance modes, producing four trial
 
 Repeat `--instance ID=PATH` to bind more inputs. Paths are relative to the current working directory, not the manifest directory. No filename discovery, regeneration or TSPLIB loading occurs. The full loaded descriptor—including generation seed—must match the manifest; build descriptors from `InstanceRecord.descriptor`. This artifact-based runner requires canonical artifact IDs; it does not automatically rebind the generic planner's logical aliases. `--max-matrix-bytes` overrides the [matrix-only ceiling](#distance-preparation-and-compiled-callers) without allowing fallback to another representation.
 
-The Python boundary is `run_manifest(manifest, *, instance_paths={instance_id: artifact_path}, output_path=..., max_matrix_bytes=...)` in `tsp_hpc.runner`; it returns the saved summary. Create the output parent first. Manifest parsing is separate; unknown bindings, malformed arguments, duplicate requested plans or collisions after default-implementation resolution fail before output creation. A missing binding/file, invalid artifact, unavailable capability or solver/validation error becomes a failed trial and execution continues in declared order. The CLI exits **0** if all trials completed, **1** if any trial failed, and **2** for invocation/preflight or shard-I/O errors. Interrupts propagate.
+The Python boundary is `run_manifest(manifest, *, instance_paths={instance_id: artifact_path}, output_path=..., max_matrix_bytes=...)` in `tsp_hpc.experiments.runner`; it returns the saved summary. Create the output parent first. Manifest parsing is separate; unknown bindings, malformed arguments, duplicate requested plans or collisions after default-implementation resolution fail before output creation. A missing binding/file, invalid artifact, unavailable capability or solver/validation error becomes a failed trial and execution continues in declared order. The CLI exits **0** if all trials completed, **1** if any trial failed, and **2** for invocation/preflight or shard-I/O errors. Interrupts propagate.
 
 Each trial reloads its input and prepares/warms fresh adapters (**`fresh-per-trial`** policy). Native caches may make later warm-ups cheaper, but no mutable search state or prepared matrix is reused. NN receives the plan's trial seed and ordered starts; it consumes no randomness. Future stochastic dispatch must use the planned logical chain/population seeds, not this NN seed convention. Even an empty NN workload follows runner setup policy; its solver result is a normal `no_solution`, not a failed trial.
 
@@ -253,6 +253,6 @@ Absolute gap is `observed_cost - reference_cost`; percentage gap is `100 * absol
 
 ### Reusable data API
 
-`tsp_hpc.analysis` supplies `read_shards(paths, *, expected_manifest=None, max_record_bytes=...)`, `summary_table(analysis)`, `paired_comparisons(analysis, *, baseline_implementation, baseline_distance_mode=None, metric=...)`, and `reference_gaps(analysis, document)`. The first returns an `Analysis` with a compact pandas `.trials` table, structured `.diagnostics` and hashed `.sources`; the other functions return DataFrames. `tsp_hpc.analysis_reports.write_report(...)` is a separate Matplotlib/CSV presentation layer, not part of the numerical calculation API.
+`tsp_hpc.analysis` supplies `read_shards(paths, *, expected_manifest=None, max_record_bytes=...)`, `summary_table(analysis)`, `paired_comparisons(analysis, *, baseline_implementation, baseline_distance_mode=None, metric=...)`, and `reference_gaps(analysis, document)`. The first returns an `Analysis` with a compact pandas `.trials` table, structured `.diagnostics` and hashed `.sources`; the other functions return DataFrames. `tsp_hpc.analysis.reports.write_report(...)` is a separate Matplotlib/CSV presentation layer, not part of the numerical calculation API.
 
 Ingestion reads one bounded JSONL record at a time (default limit 64 MiB per encoded line), validates then discards tours/full plans, and retains O(trial count) scalar summaries and byte locators. Peak memory also depends on the largest decoded record; the line limit is not an RSS ceiling. `analysis.trial(attempt_id)` loads full details only on demand, checking source stat information and the record digest before returning them. Changing a source requires reloading analysis. Source SHA-256 hashes and grouping keys provide a basis for future interface caches; no web server, persistent cache or browser renderer is introduced here.

@@ -95,7 +95,7 @@ The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) def
 | `termination_reason` | `work_limit`, `time_limit`, or `algorithm_stop`. The last requires an explicit variant-specific rule, such as the baseline SA's empty neighborhood for fewer than four cities; it is not an implicit convergence claim. |
 | `history` | `None` when recording is disabled; otherwise an ordered sequence of progress points. An enabled history is empty if no complete solution was observed. |
 
-`tsp_hpc.results.SolverResult` owns a read-only tour snapshot and uses immutable `WorkCounters` (`.to_dict()` returns a detached dictionary). The constructor validates structure, not the objective against an instance. Phase fields `search_time_s` and `validation_time_s` follow the [API timing boundaries](usage.md#timing-and-results); they are not an end-to-end provenance envelope.
+`tsp_hpc.solvers.results.SolverResult` owns a read-only tour snapshot and uses immutable `WorkCounters` (`.to_dict()` returns a detached dictionary). The constructor validates structure, not the objective against an instance. Phase fields `search_time_s` and `validation_time_s` follow the [API timing boundaries](usage.md#timing-and-results); they are not an end-to-end provenance envelope.
 
 Use these common counters, with zero for algorithms to which they do not apply:
 

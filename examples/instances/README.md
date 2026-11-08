@@ -18,7 +18,7 @@ All use `euclidean_2d`. Generator defaults are saved explicitly in each artifact
 From the repository root:
 
 ```python
-from tsp_hpc.instances import load_instance
+from tsp_hpc.problem.instances import load_instance
 
 record = load_instance("examples/instances/uniform-8.json")
 instance = record.instance
