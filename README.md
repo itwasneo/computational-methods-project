@@ -4,7 +4,7 @@ Implement and compare nearest-neighbour (NN), a genetic algorithm (GA), and simu
 
 **Research question:** How do implementation choices, memory behavior, and parallel execution affect solution quality under limited computational budgets?
 
-We use Python, NumPy and Numba with our own lightweight experiment runner design, rather than an external TSP solver or benchmark framework. CPU baselines come first; MPI, GPU, NUMA, SIMD and targeted C++ investigations are optional and must be justified by measurements.
+We use Python, NumPy and Numba with our own lightweight experiment runner, rather than an external TSP solver or benchmark framework. CPU baselines come first; MPI, GPU, NUMA, SIMD and targeted C++ investigations are optional and must be justified by measurements.
 
 ## Current capabilities
 
@@ -14,9 +14,9 @@ This is the project-wide implementation-status summary; specifications describe 
 | --- | --- | --- |
 | Inputs and objective | Canonical data/validation, independent objective, seeded generators, saved artifacts and fixtures | TSPLIB import and production datasets |
 | Execution | Dense/on-demand distances; serial NN with `visited-scan-v1` and `remaining-array-v1` implementations | GA/SA, multicore and optional accelerator backends |
-| Experiment configuration | Manifest validation, identities and logical RNG planning | Automatic dispatch, persisted run envelopes, benchmark campaigns and analysis commands |
+| Experiments | Manifests, identities, logical RNG planning; sequential NN runner with versioned JSONL results | Campaign scheduling, resume, production protocol and analysis |
 | Stopping and progress | Fixed-work NN and phase timing | Time budgets and progress histories |
-| Tooling | Locked environment, tests and package builds in CI; CLI help/version | Solver-running CLI commands |
+| Tooling | Locked environment, tests/builds in CI; manifest-run CLI | — |
 | Cluster deployment | ULHPC selected; local image build evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) | Finished-image and allocated-cluster runtime validation |
 
 Solver execution uses **unrounded Euclidean distances** on complete symmetric 2D instances. Rounded data/reference compatibility is retained, but is not an executable solver mode. See the [objective contract](docs/contracts.md#distance-conventions-and-representations) before choosing benchmark reference costs.
@@ -33,7 +33,7 @@ uv run --locked tsp-hpc --help
 uv run --locked pytest -W error
 ```
 
-To run a solver through Python, use the [usage guide](docs/usage.md#run-nearest-neighbour). For installation groups, dependency updates and builds, see [development](docs/development.md).
+To run and save NN experiments, follow [Run a manifest](docs/usage.md#run-a-manifest); individual Python solver calls are covered in [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour). For installation groups, dependency updates and builds, see [development](docs/development.md).
 
 ## Documentation
 
@@ -41,7 +41,7 @@ Each reference owns one kind of information. Update that reference rather than c
 
 | Read this | For |
 | --- | --- |
-| [Usage guide](docs/usage.md) | Loading/generating data, selecting an implementation, preparing distances, interpreting timings and extending kernels |
+| [Usage guide](docs/usage.md) | Data, solver/runner usage, implementation selection, timings and saved results |
 | [Shared contracts and experiment methodology](docs/contracts.md) | Data/objective/result rules, validation, execution boundaries and fair comparisons |
 | [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA variants, tie rules, operators, budgets, initialization accounting and stopping checkpoints |
 | [Manifests and reproducibility](docs/manifests.md) | Schema, implementation labels, scientific/execution identities and RNG ownership |
@@ -54,7 +54,7 @@ The [saved input collection](examples/instances/README.md) contains tiny correct
 
 1. Establish correct serial NN, GA and SA against shared validation.
 2. Compare separately named serial implementations and distance representations without changing scientific workloads.
-3. Add the runner and freeze a reproducible tuning/evaluation protocol.
+3. Use the runner to establish and freeze a reproducible tuning/evaluation protocol.
 4. Measure controlled multicore scaling; distinguish single-search acceleration from experiment throughput.
 5. Select a focused advanced extension only if profiling and available resources justify it.
 

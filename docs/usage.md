@@ -172,3 +172,38 @@ The solver independently checks its selected native score/tour with `validate_so
 Prepared metadata also reports instance/convention/mode, hypothetical dense bytes, actual matrix/coordinate bytes and ceiling. Solver metadata adds backend/variant/implementation. Metadata snapshots are detached and retain original setup timings when reused.
 
 Request validation/start marshalling occur before the search clock; result packaging/ownership copies occur after validation timing. Loading, process startup and persistence are also outside these phase fields. Their sum is **not end-to-end time**. Use the [comparison methodology](contracts.md#experimental-comparisons) to account for omitted overhead and preparation reuse. These are phase observations, not time-budget stopping or a persisted run envelope.
+
+## Run a manifest
+
+The [sequential runner](../src/tsp_hpc/runner.py) turns resolved plans and saved artifacts into a new JSONL shard. From the repository root, run the [NN example](../examples/manifests/nn-fixed-work.json):
+
+```bash
+mkdir -p results
+uv run --locked tsp-hpc run examples/manifests/nn-fixed-work.json \
+  --instance instance-v1-434c24120a05da693ed0f22582acc664ddef0f054a900905b4cf275ba68f5699=examples/instances/square.json \
+  --output results/nn.jsonl
+```
+
+It executes both NN implementations in both distance modes, producing four trial records and one campaign summary. Each result has tour `[2, 1, 0, 3]`, cost `4.0`, and two completed starts. This is an integration example, not performance evidence. Use a **new output path** for another attempt; existing files are never overwritten or appended to.
+
+Repeat `--instance ID=PATH` to bind more inputs. Paths are relative to the current working directory, not the manifest directory. No filename discovery, regeneration or TSPLIB loading occurs. The full loaded descriptor—including generation seed—must match the manifest; build descriptors from `InstanceRecord.descriptor`. This artifact-based runner requires canonical artifact IDs; it does not automatically rebind the generic planner's logical aliases. `--max-matrix-bytes` overrides the [matrix-only ceiling](#distance-preparation-and-compiled-callers) without allowing fallback to another representation.
+
+The Python boundary is `run_manifest(manifest, *, instance_paths={instance_id: artifact_path}, output_path=..., max_matrix_bytes=...)` in `tsp_hpc.runner`; it returns the saved summary. Create the output parent first. Manifest parsing is separate; unknown bindings, malformed arguments, duplicate requested plans or collisions after default-implementation resolution fail before output creation. A missing binding/file, invalid artifact, unavailable capability or solver/validation error becomes a failed trial and execution continues in declared order. The CLI exits **0** if all trials completed, **1** if any trial failed, and **2** for invocation/preflight or shard-I/O errors. Interrupts propagate.
+
+Each trial reloads its input and prepares/warms fresh adapters (**`fresh-per-trial`** policy). Native caches may make later warm-ups cheaper, but no mutable search state or prepared matrix is reused. NN receives the plan's trial seed and ordered starts; it consumes no randomness. Future stochastic dispatch must use the planned logical chain/population seeds, not this NN seed convention. Even an empty NN workload follows runner setup policy; its solver result is a normal `no_solution`, not a failed trial.
+
+### JSONL records and timing boundaries
+
+Every line has `schema_version: 1`, `record_type` and a fresh `campaign_id`. Treat these as runner-envelope versions, separate from manifest and solver variants.
+
+- **`trial`:** fresh `attempt_id`, UTC start timestamp, complete `requested_plan` (science, seeds, streams and requested IDs), `effective_execution` and its `execution_id`, input path/descriptor/provenance, runtime observations, adapter metadata, matrix ceiling, setup policy, timings, outcome, result and error. Omitted implementation labels are resolved before effective identity assignment; requested plans stay unchanged. Unsupported capability records have null effective execution/ID rather than claiming execution occurred.
+- **Results:** `outcome="completed"` carries the [shared result fields](contracts.md#solver-results-and-progress) as JSON, with a list tour and independently recomputed cost. Both `ok` and normal `no_solution` count as completed. `outcome="failed"` has a null result and `{phase, type, message, reported_work}` error; `reported_work` preserves returned counters if a result reached the runner, otherwise it is null. It does not invent counters or report a partial solution. A `solve` error may come from search or the adapter's own final validation. The runner independently validates every returned complete tour again before persistence.
+- **`campaign_summary`:** planned-trial count, completed/failed counts, setup time, total trial persistence time and campaign end-to-end time. Its ordered `trial_timings` entries join by `attempt_id` and record each trial's persistence and end-to-end durations after its line was flushed/fsynced. Its presence means all planned trial records were written, not that every trial succeeded. The API returns this same dictionary.
+
+`timings` records successful phase observations; missing fields on failures mean **unknown/not completed**, not zero. Distance-preparation wall time includes helper warm-up plus preprocessing. Solve wall time includes request/packaging overhead and the solver's search/validation phases. Runner validation is additional, not hidden in search counters. These nested fields overlap: do not sum all of them.
+
+A trial's `pre_persistence_time_s` ends before its JSON serialization/write. Its summary timing entry measures from just before trial execution through that line's `fsync`, including input loading, fresh setup, solving, validation and persistence (but not shared campaign setup). Summary `trial_persistence_time_s` sums serialization, write, flush and `fsync` of trial lines. Summary `end_to_end_time_s` spans **runner API entry through all trial writes**, including planning, provenance collection, loading, setup, solving and validation. It excludes manifest parsing, process startup/imports, and the summary's own serialization/write; a record cannot include its own final write duration. Measure whole-command time externally if that boundary is needed.
+
+Runtime observations are sampled at campaign start and include package/compiler-library versions, platform/CPU/affinity observations, one runner worker/serial solver thread, host physical memory and address-space soft limit where available, and an allowlist of numerical/Slurm environment settings. Host memory is not a container/cgroup or job allocation limit, and profile labels/environment variables do not certify resources. Source revision/dirty state come only from the package's source checkout; unavailable provenance (e.g. an ordinary installed wheel) is null, never inferred from an unrelated working directory. Retain image/build provenance separately for packaged deployments.
+
+The shard has one writer, exclusive creation, and a flush/`fsync` after each line. Serialization finishes before writing, but I/O failure or interruption can still leave a partial last line. Failed writes abort; completed prefixes are retained. A missing summary marks an incomplete campaign. This is not transactional storage, automatic retry or resume support; do not append to or silently reuse an incomplete shard.

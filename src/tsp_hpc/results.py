@@ -1,4 +1,4 @@
-"""Shared in-memory solver results; persisted run envelopes remain runner work."""
+"""Shared in-memory solver results; persisted envelopes belong to the runner."""
 
 from dataclasses import asdict, dataclass, field
 import math

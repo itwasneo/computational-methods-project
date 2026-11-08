@@ -1,4 +1,4 @@
-"""Check installed package metadata and the minimal command-line boundary."""
+"""Check installed package metadata and the command-line help boundary."""
 
 import subprocess
 import sys
@@ -29,7 +29,7 @@ def test_console_entry_point_is_registered() -> None:
 @pytest.mark.parametrize(
     ("arguments", "exit_code", "output"),
     [
-        ([], 0, "solver and benchmark commands are not yet implemented"),
+        ([], 0, "Run fixed-work serial NN campaigns from manifests"),
         (["--help"], 0, "usage: tsp-hpc"),
         (["--version"], 0, f"tsp-hpc {tsp_hpc.__version__}"),
         (["--unknown"], 2, "unrecognized arguments: --unknown"),

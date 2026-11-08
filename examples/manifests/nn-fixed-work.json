@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "instances": [{
+    "instance_id": "instance-v1-434c24120a05da693ed0f22582acc664ddef0f054a900905b4cf275ba68f5699",
+    "coordinate_checksum": "5bd594629b558cec3174cb988c57d2c4dc5e8ef38a0d352d32ee9e535ddc5275",
+    "n_cities": 4,
+    "distance_kind": "euclidean_2d",
+    "instance_seed": null
+  }],
+  "experiments": [{
+    "instance_id": "instance-v1-434c24120a05da693ed0f22582acc664ddef0f054a900905b4cf275ba68f5699",
+    "algorithm": "nn",
+    "budget": {"start_cities": [2, 0]},
+    "solver_seed": 42,
+    "repetitions": [0],
+    "executions": [
+      {"backend": "serial", "distance_mode": "dense", "implementation": "visited-scan-v1", "resources": {"profile": "local-cpu"}},
+      {"backend": "serial", "distance_mode": "on_demand", "implementation": "visited-scan-v1", "resources": {"profile": "local-cpu"}},
+      {"backend": "serial", "distance_mode": "dense", "implementation": "remaining-array-v1", "resources": {"profile": "local-cpu"}},
+      {"backend": "serial", "distance_mode": "on_demand", "implementation": "remaining-array-v1", "resources": {"profile": "local-cpu"}}
+    ]
+  }]
+}
