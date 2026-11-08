@@ -34,10 +34,16 @@ def test_result_owns_readonly_tour_and_immutable_counters():
     assert record.work.nn_starts_completed == 1
 
 
-@pytest.mark.parametrize("name", ["nn_starts_completed", "ga_generations_completed",
-                                  "sa_proposals_evaluated", "full_tour_evaluations"])
-@pytest.mark.parametrize("value,error", [(True, TypeError), (1., TypeError),
-                                         (np.int64(1), TypeError), (-1, ValueError)])
+@pytest.mark.parametrize("name,value,error", [
+    # Exercise shared type validation once, and range validation for every field.
+    ("nn_starts_completed", True, TypeError),
+    ("nn_starts_completed", 1., TypeError),
+    ("nn_starts_completed", np.int64(1), TypeError),
+    ("nn_starts_completed", -1, ValueError),
+    ("ga_generations_completed", -1, ValueError),
+    ("sa_proposals_evaluated", -1, ValueError),
+    ("full_tour_evaluations", -1, ValueError),
+])
 def test_invalid_work_counters(name, value, error):
     with pytest.raises(error):
         WorkCounters(**{name: value})

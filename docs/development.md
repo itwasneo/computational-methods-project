@@ -95,7 +95,7 @@ Run `uv sync --locked` again to restore the normal development environment.
 | Path | Purpose |
 | --- | --- |
 | [src/tsp_hpc](../src/tsp_hpc/__init__.py) | Importable package with CLI, data/objective utilities, manifest/stream planning, instance generation/storage, compiled distance backends, serial NN, and shared result records |
-| [tests](../tests/test_numerical_stack.py) | pytest checks, including the compiled numerical smoke test |
+| [tests](../tests/test_native_runtime.py) | pytest checks, including production-kernel compilation and cache replay |
 | [pyproject.toml](../pyproject.toml) | Package metadata, entry point, dependency groups, build backend, and pytest settings |
 | [uv.lock](../uv.lock) | Version-controlled dependency resolution |
 | [Shared contracts](contracts.md) and [algorithm baselines](algorithm-baselines.md) | Specifications for the later implementation tasks |
