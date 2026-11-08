@@ -13,13 +13,17 @@ import numpy as np
 from tsp_hpc.data import TSPInstance, validate_city_index, validate_coordinates
 from tsp_hpc.distances import PreparedDistances, prepare_distances
 from tsp_hpc.nn_visited_scan import search_kernel as _search_kernel
+from tsp_hpc.nn_remaining_array import search_kernel as _remaining_array_kernel
 from tsp_hpc.objective import validate_solution
 from tsp_hpc.random_streams import validate_seed
 from tsp_hpc.results import SolverResult, WorkCounters
 
 VARIANT = "nn-fixed-starts-v1"
 DEFAULT_IMPLEMENTATION = "visited-scan-v1"
-_IMPLEMENTATIONS = MappingProxyType({"visited-scan-v1": _search_kernel})
+_IMPLEMENTATIONS = MappingProxyType({
+    "visited-scan-v1": _search_kernel,
+    "remaining-array-v1": _remaining_array_kernel,
+})
 
 
 def implementation_names() -> tuple[str, ...]:

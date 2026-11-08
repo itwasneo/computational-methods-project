@@ -110,7 +110,14 @@ The module-level `tsp_hpc.nearest_neighbour.solve(instance, *, seed, budget, par
 
 ### Implementation selection
 
-The adapter follows scientific variant `nn-fixed-starts-v1`. `implementation_names()` lists executable serial implementations; the default is `visited-scan-v1`, preserved in [nn_visited_scan.py](../src/tsp_hpc/nn_visited_scan.py). It scans city IDs, skipping visited entries, in O(S n²) time for S starts, using O(n) candidate/visited/best arrays and an O(S) start snapshot. Distance storage is separate.
+Both serial implementations follow `nn-fixed-starts-v1` and are listed by `implementation_names()`:
+
+| Implementation | Candidate search |
+| --- | --- |
+| `visited-scan-v1` (unchanged default) | [Baseline](../src/tsp_hpc/nn_visited_scan.py): scan all city IDs, skipping visited entries |
+| `remaining-array-v1` | [Compact pool](../src/tsp_hpc/nn_remaining_array.py): scan only unvisited IDs and remove the winner by swapping with the last active entry; explicit `(cost, city ID)` comparison preserves ties despite reordered storage |
+
+Select the alternative with `NearestNeighbourSolver(prepared, implementation="remaining-array-v1")`. Both take O(S n²) time for S starts and O(n) working storage, plus an O(S) start snapshot. Per start, the compact pool reduces candidate-loop iterations from `n*(n-1)` to `n*(n-1)/2`; both evaluate that same latter number of candidate distances plus n edges for final tour scoring. It trades a boolean visited mask for int64 remaining IDs: raw working-array elements occupy `24*n-8` bytes versus `17*n` in the baseline, excluding starts, array overhead, result copies and separately prepared distance storage. All workspace allocation/reset stays inside search timing. These are operation/storage counts, **not a measured speedup**.
 
 Register optimized kernels explicitly alongside that baseline in [nearest_neighbour.py](../src/tsp_hpc/nearest_neighbour.py), under new stable IDs. The adapter resolves, warms and executes the selected callable and exposes its ID in metadata; unavailable IDs fail before warm-up. There is no filename-based discovery. Implementations must share scientific conformance tests; changes to search rules require a different variant, not an optimization label.
 
