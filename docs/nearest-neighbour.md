@@ -41,7 +41,9 @@ from tsp_hpc.nearest_neighbour import NearestNeighbourSolver
 
 instance = fixture("square").instance
 prepared = prepare_distances(instance, mode="dense", max_matrix_bytes=1024)
-solver = NearestNeighbourSolver(prepared)  # Warm-up happens here, before search.
+solver = NearestNeighbourSolver(
+    prepared, implementation="visited-scan-v1"
+)  # Warm-up of the selected implementation happens here, before search.
 
 result = solver.solve(
     instance, seed=42, budget={"start_cities": [2, 0]}, parameters={}
@@ -50,12 +52,36 @@ assert result.best_tour.tolist() == [2, 1, 0, 3]
 assert result.best_cost == 4.0
 assert solver.metadata["variant"] == "nn-fixed-starts-v1"
 assert solver.metadata["backend"] == "serial"
+assert solver.metadata["implementation"] == "visited-scan-v1"
 assert solver.metadata["distance_mode"] == "dense"
 ```
 
 The adapter is bound to the **same instance object** supplied to distance preparation, not merely its label. Another object, even one with the same ID, requires a new adapter; this prevents accidental use of a stale matrix for different coordinates. Follow the [distance backend](distances.md) immutability and resource rules.
 
 The adapter stores no last-run best tour, counters, or RNG state. Each call initializes private working buffers and returns an owned read-only tour. A returned result does not alias later search workspace. Its metadata is a detached snapshot containing distance preparation information, the serial backend/variant labels and `solver_warmup_time_s`.
+
+## Scientific variants versus implementation versions
+
+`algorithm="nn"` names the family. `variant="nn-fixed-starts-v1"` names the scientific rules. `implementation="visited-scan-v1"` names the concrete implementation of those rules. Dense/on-demand remains a separate representation choice.
+
+The original kernel is preserved in `src/tsp_hpc/nn_visited_scan.py`. Add future optimized kernels alongside it under new stable implementation IDs rather than replacing the baseline. `implementation_names()` lists executable serial NN implementations; currently it returns only `("visited-scan-v1",)`. Unknown or unavailable IDs fail before solver warm-up, with no silent fallback. The adapter warms and executes the selected kernel, and reports its ID in `.metadata`.
+
+An execution entry can explicitly select it:
+
+```json
+{
+  "backend": "serial",
+  "implementation": "visited-scan-v1",
+  "distance_mode": "dense",
+  "resources": {"profile": "local-cpu"}
+}
+```
+
+The manifest planner accepts nonempty implementation labels without certifying availability, just as it can plan not-yet-implemented execution backends. An explicit label participates in `execution_id`, but not `search_id` or RNG derivation. Different implementations can therefore share the same scientific workload without colliding as execution configurations. For compatibility, omitted labels remain omitted and retain existing plan IDs; such legacy plans do **not** identify an implementation. The adapter and convenience API default to `visited-scan-v1`, but comparison manifests should always specify the label explicitly. A future runner must resolve legacy omissions before recording the effective execution identity, check availability/backend compatibility, and persist the actual implementation ID and Git revision. An unspecified legacy ID must not be reused to label a resolved implementation comparison.
+
+Pass an explicit plan label as `NearestNeighbourSolver(prepared, implementation=plan.execution["implementation"])`; implementation selection is not an algorithm parameter. The module-level `solve()` retains the common scientific interface and always uses the default implementation. Manifest execution and persisted benchmark envelopes are still future work.
+
+Future implementations must pass the same scientific conformance tests, including tours, exact tie rules, counters and deterministic replay. Changes to search rules require a different scientific variant, not merely an implementation ID. The current dispatch boundary supports kernels taking coordinates, a prepared distance matrix, its mode flag and ordered starts. An optimization requiring additional preprocessed state will need an explicit adapter/preprocessing extension and separate timing; do not hide that work in warm-up or omit it from end-to-end costs. No second optimized implementation or performance claim is introduced here.
 
 ## Search and tie rules
 
@@ -100,7 +126,7 @@ The result constructor checks structure and owns its tour snapshot; by itself it
 ## Timing boundaries
 
 - Distance JIT warm-up and preprocessing remain in `prepared.metadata`.
-- Adapter construction calls `warmup_nearest_neighbour()` on fixed tiny inputs for both representations. `solver_warmup_time_s` includes helper dispatch, compilation/cache loading if needed, and tiny warm-up searches.
+- Adapter construction calls `warmup_nearest_neighbour(implementation=...)` on fixed tiny inputs for both representations. `solver_warmup_time_s` includes helper dispatch, compilation/cache loading if needed, and tiny warm-up searches.
 - Request validation and start-list marshalling occur before the search clock.
 - `search_time_s` covers the warmed compiled call, including allocation/reset of candidate/visited/best workspace, all constructions, full-tour scoring, best-tour copying and completed-work accounting.
 - `validation_time_s` covers independent post-search permutation/cost checking.

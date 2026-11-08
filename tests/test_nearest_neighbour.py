@@ -29,19 +29,21 @@ def python_greedy(instance, start):
     return np.array(route, dtype=np.int64)
 
 
-def adapter(instance, mode):
-    return nn.NearestNeighbourSolver(prepare_distances(instance, mode=mode))
+def adapter(instance, mode, implementation="visited-scan-v1"):
+    return nn.NearestNeighbourSolver(prepare_distances(instance, mode=mode),
+                                     implementation=implementation)
 
 
 def run(solver, instance, starts, seed=42):
     return solver.solve(instance, seed=seed, budget={"start_cities": starts}, parameters={})
 
 
+@pytest.mark.parametrize("implementation", nn.implementation_names())
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("name", fixture_names())
-def test_all_fixture_starts_and_multistart_reference(mode, name):
+def test_all_fixture_starts_and_multistart_reference(mode, name, implementation):
     instance = fixture(name).instance
-    solver = adapter(instance, mode)
+    solver = adapter(instance, mode, implementation)
     starts = list(reversed(range(instance.n_cities)))
     expected_tours = []
     for start in starts:
@@ -65,15 +67,16 @@ def test_all_fixture_starts_and_multistart_reference(mode, name):
     assert validate_solution(instance, result.best_tour, result.best_cost) == result.best_cost
 
 
+@pytest.mark.parametrize("implementation", nn.implementation_names())
 @pytest.mark.parametrize("builder", [uniform_instance, clustered_instance])
-def test_generated_instances_backend_equivalence_and_replay(builder):
+def test_generated_instances_backend_equivalence_and_replay(builder, implementation):
     instance = builder(24, seed=17, side_length=100.).instance
     before = instance.coordinates.copy()
     starts = [7, 2, 0, 23, 11]
     original_starts = starts.copy()
     results = []
     for mode in MODES:
-        solver = adapter(instance, mode)
+        solver = adapter(instance, mode, implementation)
         for seed in (0, 42, 2**64 - 1):
             result = run(solver, instance, starts, seed)
             validate_tour(result.best_tour, instance.n_cities)
@@ -136,6 +139,38 @@ def test_improvement_and_later_worse_candidate_do_not_overwrite_best(mode, scale
     best_then_worse.best_tour[:] = 0
     replay = run(solver, instance, [2, 1])
     np.testing.assert_array_equal(replay.best_tour, [2, 1, 0, 3, 4])
+
+
+@pytest.mark.parametrize("implementation,error", [(None, TypeError), (True, TypeError),
+                                                  ("", ValueError), ("remaining-array-v1", ValueError)])
+def test_unavailable_implementations_fail_before_warmup(implementation, error, monkeypatch):
+    prepared = prepare_distances(fixture("square").instance, mode="dense")
+    monkeypatch.setattr(nn, "warmup_nearest_neighbour", lambda **kw: pytest.fail("unexpected warm-up"))
+    with pytest.raises(error):
+        nn.NearestNeighbourSolver(prepared, implementation=implementation)
+
+
+def test_selected_kernel_is_warmed_and_executed(monkeypatch):
+    instance = fixture("square").instance
+    prepared = prepare_distances(instance, mode="dense")
+    calls = []
+    original = nn._resolve_implementation
+    def observed_kernel(coordinates, matrix, use_dense, starts):
+        calls.append(len(coordinates))
+        return nn._search_kernel(coordinates, matrix, use_dense, starts)
+    def resolve(name):
+        return observed_kernel if name == "test-only" else original(name)
+    monkeypatch.setattr(nn, "_resolve_implementation", resolve)
+    solver = nn.NearestNeighbourSolver(prepared, implementation="test-only")
+    assert calls == [2, 2]
+    assert run(solver, instance, [2, 0]).best_cost == 4.
+    assert calls == [2, 2, 4]
+    assert solver.metadata["implementation"] == "test-only"
+    assert nn.implementation_names() == ("visited-scan-v1",)
+    default = nn.NearestNeighbourSolver(prepared)
+    assert default.metadata["implementation"] == "visited-scan-v1"
+    assert run(default, instance, [2, 0]).best_cost == 4.
+    assert calls == [2, 2, 4]
 
 
 def test_empty_convenience_request_skips_preparation_warmup_search_and_validation(monkeypatch):
@@ -279,11 +314,16 @@ def test_manifest_scientific_fields_connect_to_serial_solver():
             "instance_id": record.instance.instance_id, "algorithm": "nn",
             "budget": {"start_cities": [2, 0]}, "solver_seed": 42, "repetitions": [0],
             "executions": [{"backend": "serial", "distance_mode": "dense",
+                            "implementation": "visited-scan-v1",
                             "resources": {"profile": "local-cpu"}}],
         }],
     })
     plan = manifest.expand()[0]
-    solver = adapter(record.instance, plan.execution["distance_mode"])
+    solver = nn.NearestNeighbourSolver(
+        prepare_distances(record.instance, mode=plan.execution["distance_mode"]),
+        implementation=plan.execution["implementation"],
+    )
+    assert solver.metadata["implementation"] == plan.execution["implementation"]
     result = solver.solve(record.instance, seed=plan.trial_seed, budget=plan.search["budget"],
                           parameters=plan.search["parameters"], record_history=plan.search["record_history"])
     np.testing.assert_array_equal(result.best_tour, [2, 1, 0, 3])

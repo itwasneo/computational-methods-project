@@ -5,81 +5,51 @@ progress history, solver persistence, or parallel execution are added implicitly
 """
 
 from dataclasses import dataclass, field
-import math
 from time import perf_counter
+from types import MappingProxyType
 
-from numba import njit
 import numpy as np
 
 from tsp_hpc.data import TSPInstance, validate_city_index, validate_coordinates
-from tsp_hpc.distances import (
-    PreparedDistances, distance_edge_kernel, distance_tour_kernel, prepare_distances,
-)
-from tsp_hpc.objective import NumericalError, validate_solution
+from tsp_hpc.distances import PreparedDistances, prepare_distances
+from tsp_hpc.nn_visited_scan import search_kernel as _search_kernel
+from tsp_hpc.objective import validate_solution
 from tsp_hpc.random_streams import validate_seed
 from tsp_hpc.results import SolverResult, WorkCounters
 
 VARIANT = "nn-fixed-starts-v1"
+DEFAULT_IMPLEMENTATION = "visited-scan-v1"
+_IMPLEMENTATIONS = MappingProxyType({"visited-scan-v1": _search_kernel})
 
 
-@njit(cache=True, fastmath=False)
-def _search_kernel(coordinates, matrix, use_dense, starts):
-    """Trusted canonical arrays and distinct in-range starts; no Python callbacks.
-
-    All workspace initialization is inside search. Scratch storage is O(n),
-    reused across starts; the returned best buffer never aliases the candidate.
-    """
-    if len(starts) == 0:
-        return np.empty(0, dtype=np.int64), 0.0, 0
-    n = len(coordinates)
-    candidate = np.empty(n, dtype=np.int64)
-    visited = np.empty(n, dtype=np.bool_)
-    best = np.empty(n, dtype=np.int64)
-    best_cost = math.inf  # Internal sentinel only; never exposed as a result.
-    completed = 0
-    for start in starts:
-        for city in range(n):
-            visited[city] = False
-        candidate[0] = start
-        visited[start] = True
-        current = start
-        for position in range(1, n):
-            nearest = -1
-            nearest_cost = math.inf
-            # Ascending city IDs plus strict improvement implement the tie rule.
-            for city in range(n):
-                if not visited[city]:
-                    cost = distance_edge_kernel(coordinates, matrix, use_dense, current, city)
-                    if cost < nearest_cost:
-                        nearest = city
-                        nearest_cost = cost
-            if nearest < 0:
-                raise NumericalError("NN could not select a finite unvisited city")
-            candidate[position] = nearest
-            visited[nearest] = True
-            current = nearest
-        cost = distance_tour_kernel(coordinates, matrix, use_dense, candidate)
-        if completed == 0 or cost < best_cost:
-            best_cost = cost
-            for city in range(n):
-                best[city] = candidate[city]
-        completed += 1
-    return best, best_cost, completed
+def implementation_names() -> tuple[str, ...]:
+    """Available serial implementations of the same scientific NN variant."""
+    return tuple(_IMPLEMENTATIONS)
 
 
-def warmup_nearest_neighbour() -> None:
+def _resolve_implementation(implementation: str):
+    if type(implementation) is not str:
+        raise TypeError("implementation must be a string")
+    try:
+        return _IMPLEMENTATIONS[implementation]
+    except KeyError:
+        raise ValueError(f"unsupported serial NN implementation: {implementation!r}") from None
+
+
+def warmup_nearest_neighbour(*, implementation: str = DEFAULT_IMPLEMENTATION) -> None:
     """Warm both NN distance paths on fixed tiny data, outside measured search.
 
     Actual solver invocations use the same readonly coordinate/matrix and
     writable int64 start-array signatures. No caller data or RNG is consumed.
     """
+    kernel = _resolve_implementation(implementation)
     coordinates = np.array([[0., 0.], [1., 0.]], dtype=np.float64)
     matrix = np.array([[0., 1.], [1., 0.]], dtype=np.float64)
     coordinates.flags.writeable = False
     matrix.flags.writeable = False
     starts = np.array([0, 1], dtype=np.int64)
     for use_dense in (False, True):
-        _search_kernel(coordinates, matrix, use_dense, starts)
+        kernel(coordinates, matrix, use_dense, starts)
 
 
 def _request(instance, seed, budget, parameters, record_history) -> np.ndarray:
@@ -120,11 +90,11 @@ def _empty_result() -> SolverResult:
     return SolverResult("no_solution", None, None, WorkCounters(), "work_limit")
 
 
-def _run(prepared: PreparedDistances, starts: np.ndarray) -> SolverResult:
+def _run(prepared: PreparedDistances, starts: np.ndarray, kernel) -> SolverResult:
     if starts.size == 0:
         return _empty_result()
     start = perf_counter()
-    tour, cost, completed = _search_kernel(
+    tour, cost, completed = kernel(
         prepared.coordinates, prepared.matrix, prepared.use_dense, starts,
     )
     search_time = perf_counter() - start
@@ -148,20 +118,24 @@ class NearestNeighbourSolver:
     """
 
     prepared: PreparedDistances
+    implementation: str = field(default=DEFAULT_IMPLEMENTATION, kw_only=True)
     solver_warmup_time_s: float = field(init=False)
+    _kernel: object = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.prepared, PreparedDistances):
             raise TypeError("prepared must come from prepare_distances()")
+        kernel = _resolve_implementation(self.implementation)
         start = perf_counter()
-        warmup_nearest_neighbour()
+        warmup_nearest_neighbour(implementation=self.implementation)
         object.__setattr__(self, "solver_warmup_time_s", perf_counter() - start)
+        object.__setattr__(self, "_kernel", kernel)
 
     @property
     def metadata(self) -> dict:
         return {
             **self.prepared.metadata, "algorithm": "nn", "variant": VARIANT,
-            "backend": "serial",
+            "backend": "serial", "implementation": self.implementation,
             "solver_warmup_time_s": self.solver_warmup_time_s,
         }
 
@@ -171,7 +145,7 @@ class NearestNeighbourSolver:
         if instance is not self.prepared.instance:
             raise ValueError("solver is bound to a different instance; prepare a new adapter")
         starts = _request(instance, seed, budget, parameters, record_history)
-        return _run(self.prepared, starts)
+        return _run(self.prepared, starts, self._kernel)
 
 
 def solve(instance, *, seed, budget, parameters, record_history=False) -> SolverResult:
@@ -185,4 +159,4 @@ def solve(instance, *, seed, budget, parameters, record_history=False) -> Solver
     if starts.size == 0:
         return _empty_result()
     solver = NearestNeighbourSolver(prepare_distances(instance, mode="on_demand"))
-    return _run(solver.prepared, starts)
+    return _run(solver.prepared, starts, solver._kernel)

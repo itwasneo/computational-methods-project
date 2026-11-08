@@ -131,7 +131,7 @@ def _budget(algorithm: str, value: object, n_cities: int) -> dict:
 
 
 def _execution(value: object) -> dict:
-    item = _object(value, {"backend", "resources"}, {"distance_mode"}, "execution")
+    item = _object(value, {"backend", "resources"}, {"distance_mode", "implementation"}, "execution")
     backend = _text(item["backend"], "backend")
     if backend not in ("serial", "multicore"):
         raise ValueError("v1 plans only serial/multicore CPU execution")
@@ -144,8 +144,13 @@ def _execution(value: object) -> dict:
     threads = _integer(resources.get("threads_per_worker", 1), 1, "threads_per_worker")
     if backend == "serial" and (workers != 1 or threads != 1):
         raise ValueError("serial execution requires one worker and one thread")
-    return dict(backend=backend, distance_mode=mode,
-                resources=dict(profile=profile, workers=workers, threads_per_worker=threads))
+    result = dict(backend=backend, distance_mode=mode,
+                  resources=dict(profile=profile, workers=workers, threads_per_worker=threads))
+    # Preserve legacy plans/IDs when unspecified. Labels identify execution, not
+    # scientific variants. Planning does not certify runtime availability.
+    if "implementation" in item:
+        result["implementation"] = _text(item["implementation"], "implementation")
+    return result
 
 
 def _experiment(value: object, instances: dict[str, dict]) -> dict:

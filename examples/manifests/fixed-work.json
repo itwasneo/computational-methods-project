@@ -17,7 +17,11 @@
       "solver_seed": 42,
       "repetitions": [0],
       "executions": [
-        {"backend": "serial", "resources": {"profile": "local-cpu"}}
+        {
+          "backend": "serial",
+          "implementation": "visited-scan-v1",
+          "resources": {"profile": "local-cpu"}
+        }
       ]
     },
     {
