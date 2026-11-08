@@ -7,6 +7,11 @@ let camera = {x: 0, y: 0, zoom: 0.85}, drag, measure, latest;
 let pickTimes = [], uploadTimes = [], frameTimes = [], previousFrame, edited = false, setupMs;
 const seed = 12345;
 const status = message => { $('status').textContent = message; };
+function controls(busy) {
+  for (const id of ['load', 'api', 'kind', 'count']) $(id).disabled = busy;
+  for (const id of ['tour', 'inspect', 'move', 'fit', 'measure']) $(id).disabled = busy || !renderer;
+  $('export').disabled = busy || !latest;
+}
 function transform() {
   const side = Math.min(canvas.clientWidth, canvas.clientHeight) * camera.zoom;
   const sx = 2 * side / canvas.clientWidth, sy = 2 * side / canvas.clientHeight;
@@ -61,9 +66,8 @@ function draw(time) {
 }
 function failed(message) {
   generation++; // Ignore asynchronous device-loss callbacks during cleanup.
-  const old = renderer; renderer = null; measure = null; old?.destroy();
-  for (const id of ['load', 'api', 'kind', 'count', 'tour', 'inspect', 'move']) $(id).disabled = false;
-  $('measure').disabled = true;
+  const old = renderer; renderer = null; measure = null; drag = null; old?.destroy();
+  dirty.clear(); latest = null; $('report').textContent = ''; controls(false);
   status(message); // Explicit failure, never silently change API.
 }
 const stats = values => ({samples: values.length, p50: percentile(values, 0.5),
@@ -71,8 +75,7 @@ const stats = values => ({samples: values.length, p50: percentile(values, 0.5),
 function finish() {
   const config = measure.config;
   const saved = measure.camera;
-  measure = null; camera = saved; $('measure').disabled = false;
-  for (const id of ['load', 'api', 'kind', 'count', 'tour', 'inspect', 'move']) $(id).disabled = false;
+  measure = null; camera = saved;
   latest = {schema: 'tsp-rendering-diagnostic-v1', synthetic: true, acceptance: 'NOT EVALUATED',
     limitations: ['RAF intervals are not GPU/presentation timings', 'Submission CPU time does not wait for GPU',
       'Picking samples are isolated CPU timings, not input-to-present latency',
@@ -80,7 +83,7 @@ function finish() {
     browser: navigator.userAgent, viewport: {width: innerWidth, height: innerHeight, dpr: devicePixelRatio},
     canvas: {width: canvas.clientWidth, height: canvas.clientHeight}, gpu: renderer.info, ...config,
     rafIntervalMs: stats(frameTimes), submissionCpuMs: stats(uploadTimes), pickingCpuMs: stats(pickTimes)};
-  $('report').textContent = JSON.stringify(latest, null, 2);
+  $('report').textContent = JSON.stringify(latest, null, 2); controls(false);
   status('Diagnostic complete; not an acceptance result. Export and record environment/revision separately.');
   requestDraw();
 }
@@ -131,25 +134,26 @@ function bindCanvas() {
 }
 async function load() {
   const current = ++generation;
-  $('load').disabled = true; $('measure').disabled = true;
   const old = renderer; renderer = null; old?.destroy();
-  dirty.clear(); selected = -1; latest = null; $('report').textContent = '';
-  canvas = document.createElement('canvas'); canvas.tabIndex = 0;
-  canvas.setAttribute('aria-label', 'Synthetic city view; arrows pan, plus/minus zoom. City inspection controls follow.');
-  $('surface').replaceChildren(canvas); bindCanvas();
+  dirty.clear(); drag = null; selected = -1; latest = null; $('report').textContent = ''; controls(true);
   const start = performance.now();
-  const count = Number($('count').value), kind = $('kind').value, api = $('api').value;
-  loadedConfig = {cities: count, fixture: kind, seed};
-  scene = new Scene(fixture(count, kind, seed)); edited = false; camera = {x: 0, y: 0, zoom: 0.85};
   try {
-    renderer = await (api === 'WebGPU' ? webgpu : webgl)(canvas, scene.display,
+    const count = Number($('count').value), kind = $('kind').value, api = $('api').value;
+    const nextScene = new Scene(fixture(count, kind, seed));
+    canvas = document.createElement('canvas'); canvas.tabIndex = 0;
+    canvas.setAttribute('aria-label', 'Synthetic city view; arrows pan, plus/minus zoom. City inspection controls follow.');
+    $('surface').replaceChildren(canvas); bindCanvas();
+    const next = await (api === 'WebGPU' ? webgpu : webgl)(canvas, nextScene.display,
       message => { if (generation === current) failed(message); });
+    // A failed/lost initialization may finish after a retry. It never owns current UI state.
+    if (current !== generation) { next.destroy(); return; }
+    renderer = next; scene = nextScene; loadedConfig = {cities: count, fixture: kind, seed};
+    edited = false; camera = {x: 0, y: 0, zoom: 0.85};
     $('city').max = count - 1; inspect(0);
     setupMs = performance.now() - start;
     status(`Ready: ${api}, ${count} ${kind} cities; fixture + setup ${setupMs.toFixed(1)} ms. Verify hardware acceleration before recording evidence.`);
-    $('measure').disabled = false;
-  } catch (error) { failed(error.message); }
-  finally { $('load').disabled = false; }
+  } catch (error) { if (current === generation) failed(error.message); }
+  finally { if (current === generation) controls(false); }
 }
 $('load').onclick = load;
 $('fit').onclick = () => { if (!measure) { camera = {x: 0, y: 0, zoom: 0.85}; requestDraw(); } };
@@ -163,6 +167,7 @@ $('move').onclick = () => {
 };
 $('measure').onclick = () => {
   if (!renderer || measure) return;
+  latest = null; $('report').textContent = '';
   pickTimes = []; uploadTimes = []; frameTimes = []; previousFrame = undefined;
   // Deterministic spatial queries, outside the frame diagnostic; not real pointer latency.
   for (let i = 0; i < 100; i++) {
@@ -172,7 +177,7 @@ $('measure').onclick = () => {
   measure = {start: performance.now(), camera: {...camera}, config: {...loadedConfig,
     tour: $('tour').checked, edited, fixtureAndSetupMs: setupMs,
     note: 'Reload fixture before each reproducible diagnostic; edited scenes are not reproducible fixtures'}};
-  for (const id of ['load', 'api', 'kind', 'count', 'tour', 'measure', 'inspect', 'move']) $(id).disabled = true;
+  controls(true);
   status('Running 10-second scripted pan/zoom; leave this tab visible.'); requestDraw();
 };
 $('export').onclick = () => {

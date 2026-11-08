@@ -33,13 +33,22 @@ export function bounds(points) {
     minX = Math.min(minX, points[i]); maxX = Math.max(maxX, points[i]);
     minY = Math.min(minY, points[i + 1]); maxY = Math.max(maxY, points[i + 1]);
   }
-  return {x: (minX + maxX) / 2, y: (minY + maxY) / 2,
-    span: Math.max(maxX - minX, maxY - minY) || 1};
+  const extent = Math.max(maxX - minX, maxY - minY);
+  return {x: minX / 2 + maxX / 2, y: minY / 2 + maxY / 2,
+    span: (Number.isFinite(extent) ? extent : Math.max(Math.abs(minX), Math.abs(maxX), Math.abs(minY), Math.abs(maxY))) || 1};
+}
+
+function project(value, center, span) {
+  const delta = value - center;
+  return Number.isFinite(delta) ? delta / span : value / span - center / span;
 }
 
 // Fixed projection is display-only; never round-trip through float32 to edit data.
 export class Scene {
   constructor(points) {
+    if (!(points instanceof Float64Array) || points.length < 4 || points.length % 2 || !points.every(Number.isFinite)) {
+      throw new Error('Scene requires at least two finite float64 coordinate pairs');
+    }
     this.points = points.slice();
     this.bounds = bounds(points);
     this.display = new Float32Array(points.length);
@@ -47,37 +56,54 @@ export class Scene {
     for (let id = 0; id < points.length / 2; id++) this.update(id);
   }
   normalized(id) {
-    return [(this.points[id * 2] - this.bounds.x) / this.bounds.span,
-      (this.points[id * 2 + 1] - this.bounds.y) / this.bounds.span];
+    return [project(this.points[id * 2], this.bounds.x, this.bounds.span),
+      project(this.points[id * 2 + 1], this.bounds.y, this.bounds.span)];
   }
   key(x, y) { return `${Math.floor(x * 50)},${Math.floor(y * 50)}`; }
   update(id, coordinates) {
+    if (!Number.isInteger(id) || id < 0 || id >= this.points.length / 2) throw new Error('Invalid city ID');
+    if (coordinates && (coordinates.length !== 2 || !coordinates.every(Number.isFinite))) {
+      throw new Error('Coordinates must be finite pairs');
+    }
+    const next = coordinates ?? this.points.subarray(id * 2, id * 2 + 2);
+    const x = project(next[0], this.bounds.x, this.bounds.span);
+    const y = project(next[1], this.bounds.y, this.bounds.span);
+    // Reject an unsupported edit before changing canonical data, the grid or GPU staging data.
+    // A production viewer may instead rebase its projection; never clamp scientific coordinates.
+    if (![x, y].every(value => Number.isFinite(Math.fround(value)))) {
+      throw new Error('Edit exceeds this fixture’s float32 display projection; reload/rebase before editing');
+    }
     const [oldX, oldY] = this.normalized(id);
     const oldKey = this.key(oldX, oldY), oldCell = this.grid.get(oldKey);
     oldCell?.delete(id);
     if (oldCell?.size === 0) this.grid.delete(oldKey);
     if (coordinates) this.points.set(coordinates, id * 2);
-    const [x, y] = this.normalized(id);
     this.display.set([x, y], id * 2);
     const key = this.key(x, y);
     if (!this.grid.has(key)) this.grid.set(key, new Set());
     this.grid.get(key).add(id);
   }
   pick(x, y, radius) {
+    if (![x, y, radius].every(Number.isFinite) || radius < 0) throw new Error('Pick requires finite coordinates and a nonnegative radius');
     const hits = [];
-    // Avoid walking millions of empty cells at extreme zoom-out.
-    const cells = (Math.ceil(radius * 100) + 2) ** 2;
+    const minX = Math.floor((x - radius) * 50), maxX = Math.floor((x + radius) * 50);
+    const minY = Math.floor((y - radius) * 50), maxY = Math.floor((y + radius) * 50);
+    const width = maxX - minX + 1, height = maxY - minY + 1;
+    // Large float64 cell indices cannot reliably advance by one. Bound traversal by
+    // safe integer offsets, falling back to a finite scan for unsafe or huge ranges.
+    const scan = ![minX, maxX, minY, maxY].every(Number.isSafeInteger)
+      || width * height > this.points.length / 2;
     const consider = id => {
       const [px, py] = this.normalized(id);
       const distance = Math.hypot(px - x, py - y);
       if (distance <= radius) hits.push({id, distance});
     };
-    if (cells > this.points.length / 2) {
+    if (scan) {
       for (let id = 0; id < this.points.length / 2; id++) consider(id);
     } else {
-      for (let gx = Math.floor((x - radius) * 50); gx <= Math.floor((x + radius) * 50); gx++) {
-        for (let gy = Math.floor((y - radius) * 50); gy <= Math.floor((y + radius) * 50); gy++) {
-          for (const id of this.grid.get(`${gx},${gy}`) ?? []) consider(id);
+      for (let ix = 0; ix < width; ix++) {
+        for (let iy = 0; iy < height; iy++) {
+          for (const id of this.grid.get(`${minX + ix},${minY + iy}`) ?? []) consider(id);
         }
       }
     }

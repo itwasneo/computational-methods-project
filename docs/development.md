@@ -65,7 +65,7 @@ Tests mirror these contexts under `tests/`; CLI and cross-package cold/cache che
 
 ## Local interface scope and performance acceptance
 
-This is the **owner-approved acceptance baseline** for [#68](https://github.com/itwasneo/computational-methods-project/issues/68), under the [interface roadmap #67](https://github.com/itwasneo/computational-methods-project/issues/67). The owner accepted the reference desktop, browser/profile matrix, workloads and budgets during task planning. This is not an implemented-feature list or measured performance claim; rendering/data prototypes (#69–#70) must supply evidence before selecting the production stack. Change a failing budget only through an explicit reviewed decision, not by silently reducing the workload.
+This is the **proposed acceptance baseline** for [#68](https://github.com/itwasneo/computational-methods-project/issues/68), under the [interface roadmap #67](https://github.com/itwasneo/computational-methods-project/issues/67). Confirm the exact reference desktop, browser/profile matrix, workloads and budgets in the issue/PR review before treating them as agreed gates. This is not an implemented-feature list or measured performance claim; rendering/data prototypes (#69–#70) must supply evidence before selecting the production stack. Change an agreed budget only through an explicit reviewed decision, not by silently reducing the workload.
 
 ### First-release journeys and boundaries
 
@@ -83,7 +83,7 @@ The interface is optional, local-first, workspace-bounded and usable without ext
 
 ### Reference environment
 
-Use a physical desktop session, local SSD workspace, AC power, normal browser hardware acceleration and a 60 Hz display. The candidate primary machine available during drafting has an Intel Core i7-9700K (8 cores), about 78 GiB OS-visible RAM and an NVIDIA RTX 2060. This is the accepted reference machine, **not evidence of performance on lower-end laptops**. Cap application memory through the budgets below rather than treating all host RAM as available.
+Use a physical desktop session, local SSD workspace, AC power, normal browser hardware acceleration and a 60 Hz display. The candidate primary machine available during drafting has an Intel Core i7-9700K (8 cores), about 78 GiB OS-visible RAM and an NVIDIA RTX 2060. This is the proposed reference machine, **not evidence of performance on lower-end laptops**. Cap application memory through the budgets below rather than treating all host RAM as available.
 
 Test both Chromium stable and Firefox stable on that same machine. Record exact browser builds, OS/kernel, GPU driver, graphics API/adapter, acceleration status and refresh rate in every evidence set; “latest” alone is not reproducible. Firefox 159.0 was detected during drafting; Chromium availability and browser GPU support have not been verified. Do not count software rendering as a passing GPU run. WebGPU availability is not a release assumption: #69 must document a supported fallback or an explicit unsupported-browser state.
 
@@ -102,7 +102,7 @@ Keep graphics and campaign workloads separate; do not require their full Cartesi
 
 Retain exact seeds, generator parameters, artifact checksums, shard layout/byte sizes and scripted actions with the harness. Keep coordinate/row generation outside measured interactions. Synthetic rendering tours and campaign records are interface fixtures, never solver-quality or speedup evidence; isolate and label them, and use real runner output for E. Keep invalid shards in separate diagnostic cases so they do not accidentally invalidate the valid-data performance fixture. Do not bypass scientific validation to improve timings.
 
-### Blocking budgets
+### Proposed blocking budgets
 
 These targets apply to every listed scale of G/R on both reference browsers, including G at DPR 2 and the C repetitions. Times are end-to-end from browser input/request to presented feedback/result, not just backend compute. Use monotonic clocks within each process; correlate request IDs rather than subtracting unsynchronized browser/server clocks.
 
@@ -128,21 +128,30 @@ Cold means a stopped application, a fresh browser profile/cache and no interface
 4. Retain a reproducible harness and sanitized compact measurements with the prototype work; record interpretation and acceptance links in the issue/PR. Keep raw traces, generated large fixtures and private machine details out of Git. No measurements have been collected for this baseline.
 5. A correctness/accessibility failure, stale-response overwrite, unsupported required profile, missing evidence or budget breach blocks acceptance for that profile. Record failures and mitigation/retest explicitly. Functional CI checks remain required, but shared-runner CI timings are not these hardware performance gates. UI speed must never be reported as solver speedup or scaling efficiency.
 
-**Decision:** use the desktop and two-browser/profile matrix, workload scales and numerical budgets above. Budget feasibility remains unverified: #69–#70 must measure it and justify the stack. Final release checks (#92) repeat this matrix rather than introducing unmeasured responsiveness claims.
+**Proposal for review:** use the desktop and two-browser/profile matrix, workload scales and numerical budgets above. Owner confirmation and budget feasibility remain unverified: #69–#70 must measure it and justify the stack. Final release checks (#92) repeat this matrix rather than introducing unmeasured responsiveness claims.
 
 ### Rendering prototype (#69)
 
 `examples/interface-rendering/` is an isolated, dependency-free browser harness, not the optional application scaffold or a stack decision. From the repository root:
 
 ```bash
-node --test examples/interface-rendering/model.test.mjs
+node --test examples/interface-rendering/*.test.mjs
 python3 -m http.server 8765 --bind 127.0.0.1 --directory examples/interface-rendering
 # Open http://127.0.0.1:8765 in the reference browser; stop the server after use.
 ```
 
-Use the API selector and explicitly load/reset each fixture. Both candidates use instanced circular quads, display-only float32 buffers, a CPU spatial grid for picking, frame-batched changed-point uploads and an optional O(n) row-order closed polyline. Canonical synthetic coordinates remain float64. Coincident picks cycle through distinct city IDs; city fields provide non-canvas inspection/movement. Drag pans, wheel zooms, shift-drag moves the selected city; resizing uses the actual browser DPR. DPR 2 requires a real/emulated DPR profile, not simply increasing canvas dimensions. Context/device loss is an explicit error requiring reload; unavailable WebGPU must not silently switch to WebGL2.
+Use the API selector and explicitly load/reset each fixture. Both candidates use instanced circular quads with a final selection overlay, display-only float32 buffers, a CPU spatial grid for picking, frame-batched changed-point uploads and an optional O(n) row-order closed polyline. Canonical synthetic coordinates remain float64. Unsafe/oversized grid ranges fall back to a bounded city scan; edits outside the fixture's finite float32 projection are rejected atomically, not clamped. Automatic projection rebasing remains future viewer work. Coincident picks cycle through distinct city IDs; city fields provide non-canvas inspection/movement. Drag pans, wheel zooms, shift-drag moves the selected city; resizing uses the actual browser DPR. DPR 2 requires a real/emulated DPR profile, not simply increasing canvas dimensions. Context/device loss is an explicit error requiring reload; unavailable WebGPU must not silently switch to WebGL2.
 
-For each G profile/browser/DPR, reset the fixture, check navigation/picking/selected updates and repeat with the synthetic tour on. Run the 10-second scripted pan/zoom diagnostic and export JSON outside Git. The export records configuration, browser, viewport, API metadata, setup time, RAF intervals, CPU submission and 100 isolated picking queries. It rejects hidden-tab runs and labels edited scenes. These are **diagnostics, not acceptance results**: RAF is not presentation timing; no synchronous GPU readback or GPU-idle wait is added. Capture real input-to-present feedback, GPU support/driver, process memory, idle CPU, cold/warm repetitions and concurrency separately using the acceptance procedure above. Record shader/adapter failures as unsupported cases, not zero timings. Model tests check fixtures, precision separation, picking against a brute-force oracle and bounded grid updates; they do not validate shaders or GPU behavior.
+For each G profile/browser/DPR, reset the fixture, check navigation/picking/selected updates and repeat with the synthetic tour on. Run the 10-second scripted pan/zoom diagnostic and export JSON outside Git. The export records configuration, browser, viewport, API metadata, setup time, RAF intervals, CPU submission and 100 isolated picking queries. It rejects hidden-tab runs and labels edited scenes. These are **diagnostics, not acceptance results**: RAF is not presentation timing; no synchronous GPU readback or GPU-idle wait is added. Capture real input-to-present feedback, GPU support/driver, process memory, idle CPU, cold/warm repetitions and concurrency separately using the acceptance procedure above. Record shader/adapter failures as unsupported cases, not zero timings. Node 24.14.0 tests cover model correctness, bounded picking, atomic edits, renderer resource ownership and stale initialization/diagnostic state. Renderer fault-injection doubles do not compile shaders or prove GPU behavior. CI runs these dependency-free tests and module syntax checks separately from Python checks; neither job is a performance gate.
+
+For optional real-browser functional checks, start a local WebDriver (for example, `geckodriver --host 127.0.0.1 --port 4444`), then run:
+
+```bash
+node examples/interface-rendering/browser-check.mjs http://127.0.0.1:4444 firefox 1
+node examples/interface-rendering/browser-check.mjs http://127.0.0.1:4444 firefox 2
+```
+
+The script starts its own loopback static server and isolated headless session, checks selected pixels at all graphics scales/fixture types with the tour visible, and closes its session/server. Stop the WebDriver afterward. Use `chrome` with a local ChromeDriver endpoint for Chromium. No browsers/drivers are downloaded automatically. Pixel readback occurs only in this functional test, never in rendering measurements. Unavailable WebGPU is reported explicitly; shader/validation failures fail the check. Headless/software-rendered success is not reference-hardware acceptance.
 
 The harness contains no framework, CDN dependencies, solver invocation or production API. Synthetic paths are not valid solver evidence. The full browser/hardware evidence and a justified reusable renderer choice remain prerequisites for completing #69; table/chart measurements and the production stack decision remain #70.
 

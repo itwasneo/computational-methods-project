@@ -67,3 +67,25 @@ jobs:
 
       - name: Build package distributions
         run: uv build --no-sources
+
+  interface-prototype-checks:
+    name: Interface prototype checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.14.0"
+          package-manager-cache: false
+
+      - name: Check prototype syntax and correctness
+        run: |
+          node --version
+          for file in examples/interface-rendering/*.mjs; do node --check "$file"; done
+          node --test examples/interface-rendering/*.test.mjs
