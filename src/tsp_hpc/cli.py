@@ -38,11 +38,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 0
     # Keep help/version independent of numerical imports and JIT startup.
-    from tsp_hpc.manifests import Manifest
+    from tsp_hpc.experiments.manifests import Manifest
     if args.command == "analyze":
         try:
             from tsp_hpc.analysis import load_references
-            from tsp_hpc.analysis_reports import write_report
+            from tsp_hpc.analysis.reports import write_report
         except ModuleNotFoundError as error:
             parser.exit(2, f"Analysis dependencies unavailable ({error}); in the checkout use uv run --locked --group analysis tsp-hpc analyze ...\n")
         try:
@@ -58,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{report['observed_trials']} observations; {len(report['diagnostics'])} diagnostics; "
               f"{report['comparison']['blocked_pairs']} blocked comparisons; report: {args.output}")
         return 1 if report["has_issues"] else 0
-    from tsp_hpc.runner import run_manifest
+    from tsp_hpc.experiments.runner import run_manifest
     bindings = {}
     for binding in args.instance:
         identifier, separator, path = binding.partition("=")

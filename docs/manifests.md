@@ -6,14 +6,14 @@ This reference owns the fixed-work CPU schema, identity encoding and logical RNG
 
 | API | Purpose |
 | --- | --- |
-| `tsp_hpc.identity.coordinate_checksum(coordinates)` | Fingerprint canonical coordinate content |
+| `tsp_hpc.reproducibility.identity.coordinate_checksum(coordinates)` | Fingerprint canonical coordinate content |
 | `make_instance_id(coordinates, distance_kind="euclidean_2d")` | Generate a stable content-based instance ID |
 | `describe_instance(instance, instance_seed=None)` | Describe an existing `TSPInstance` for a manifest; preserve its supplied ID |
-| `tsp_hpc.manifests.Manifest(document)` | Validate a JSON-compatible dictionary and snapshot resolved defaults |
+| `tsp_hpc.experiments.manifests.Manifest(document)` | Validate a JSON-compatible dictionary and snapshot resolved defaults |
 | `Manifest.from_json(text)` / `Manifest.from_file(path)` | Load strict JSON; reject duplicate keys and non-finite values |
 | `manifest.to_dict()` | Return a detached, normalized document |
 | `manifest.expand()` | Return immutable `TrialPlan` records in declared order; reject duplicate executions |
-| `tsp_hpc.random_streams.derive_stream(root_seed, role, *logical_ids)` | Plan a role-specific stream without consuming RNG state |
+| `tsp_hpc.reproducibility.random_streams.derive_stream(root_seed, role, *logical_ids)` | Plan a role-specific stream without consuming RNG state |
 | `stream.generator()` | Create fresh, privately owned NumPy `Generator(PCG64(seed))` state |
 
 [The example manifest](../examples/manifests/fixed-work.json) describes the unit square with city rows `[(0, 0), (1, 0), (1, 1), (0, 1)]`. Its checksum matches those exact `float64` coordinates. It expands to seven plans: one NN, two GA repetitions, and two SA repetitions each under serial and multicore execution. These are toy configurations, not tuned parameters or equal-compute comparisons.
@@ -21,7 +21,7 @@ This reference owns the fixed-work CPU schema, identity encoding and logical RNG
 Run this from the repository root in the installed environment:
 
 ```python
-from tsp_hpc.manifests import Manifest
+from tsp_hpc.experiments.manifests import Manifest
 
 manifest = Manifest.from_file("examples/manifests/fixed-work.json")
 plans = manifest.expand()
