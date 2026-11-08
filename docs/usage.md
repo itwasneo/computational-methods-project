@@ -207,3 +207,52 @@ A trial's `pre_persistence_time_s` ends before its JSON serialization/write. Its
 Runtime observations are sampled at campaign start and include package/compiler-library versions, platform/CPU/affinity observations, one runner worker/serial solver thread, host physical memory and address-space soft limit where available, and an allowlist of numerical/Slurm environment settings. Host memory is not a container/cgroup or job allocation limit, and profile labels/environment variables do not certify resources. Source revision/dirty state come only from the package's source checkout; unavailable provenance (e.g. an ordinary installed wheel) is null, never inferred from an unrelated working directory. Retain image/build provenance separately for packaged deployments.
 
 The shard has one writer, exclusive creation, and a flush/`fsync` after each line. Serialization finishes before writing, but I/O failure or interruption can still leave a partial last line. Failed writes abort; completed prefixes are retained. A missing summary marks an incomplete campaign. This is not transactional storage, automatic retry or resume support; do not append to or silently reuse an incomplete shard.
+
+## Analyze result shards
+
+Use the existing NN run as a small correctness example, not a speedup experiment:
+
+```bash
+uv run --locked --group analysis tsp-hpc analyze results/nn.jsonl \
+  --output results/nn-report \
+  --manifest examples/manifests/nn-fixed-work.json \
+  --baseline visited-scan-v1 \
+  --references examples/references/square.json
+```
+
+Supply multiple shard paths to combine campaigns. The output directory must be new and its parent must exist. The command leaves raw shards unchanged and creates:
+
+| File | Contents |
+| --- | --- |
+| `trials.csv` | Compact observations, identities, configuration/context grouping keys, phase/receipt timings, outcomes and exclusion flags; no tour arrays |
+| `summary.csv` | Per-group attempt/failure/no-solution/incomplete/duplicate/usable counts and count/min/median/mean/max/sample-standard-deviation statistics |
+| `comparisons.csv` | When a baseline is supplied: paired attempt IDs, selected metric, baseline/target duration ratio or a rejection reason |
+| `gaps.csv` | When references are supplied: matched usable attempts, reference kind/source/cost, absolute and percentage gaps |
+| `report.json` | Source file hashes, analysis runtime versions/provenance, manifest/reference/plot configuration, diagnostics, requested comparison, available figures and limitations |
+| PNG figures | Runtime summaries and quality distributions; speed ratios and reference gaps only when applicable |
+
+Groups retain the exact workload (including parameters, ordered starts, solver root seed and instance), execution configuration and observed runtime; only repetition is removed from the scientific grouping key. Unknown/dirty source provenance is isolated per campaign instead of pooled across campaigns; paired ratios still require a known clean revision. `G1`, `G2`, … are plot labels mapped to full group IDs in `summary.csv`, not new scientific identities. Different instances/configurations are not pooled into one quality distribution. Plot labels show usable/attempt counts; quality distributions are conditional on usable results. Statistics are descriptive: one observation is not a variance estimate, and repetitions do not prove independence. Means/standard deviations use scaled arithmetic; medians avoid overflowing the average of central values. Singleton sample standard deviations are blank, not zero.
+
+The CLI exits **0** for analysis without detected issues, **1** when reports contain failed/incomplete/missing/duplicate observations or blocked comparisons, and **2** for invalid records/options or I/O errors. Figures are omitted with an explicit note if usable groups exceed `--max-plot-groups` (default 40); tables remain complete. Large campaigns should be filtered through the data API or future interface, not silently sampled into unreadable static charts. Review paths/provenance before sharing reports.
+
+### Validation and comparison rules
+
+The reader accepts current runner-v1 envelopes: successful fixed-work serial NN trials, plus recorded capability/execution failures. It reconstructs requested plans through `Manifest`, checking scientific/execution IDs, seeds and logical streams; validates effective choices, recorded tour structure, NN work, adapter metadata, phase durations, summary counts and timing-receipt linkage. It does **not** independently re-evaluate objective costs without the original input artifacts, authenticate provenance, or establish reference optimality.
+
+Malformed complete records, unsupported versions, duplicate attempts/campaigns, conflicting IDs and contradictory summaries are errors, not silently skipped rows. A missing summary or unterminated final line is an incomplete campaign: retain the validated prefix for inspection, but exclude it from numerical aggregates. Repeated execution IDs with distinct attempt IDs are retries/duplicate observations—not new statistical repetitions—and all ambiguous copies are excluded. Select the intended shard(s) explicitly; there is no automatic “latest wins” policy. `--manifest` detects entirely absent or unexpected requested executions; absent runs cannot be inferred from the available shards alone.
+
+`--baseline` names an explicit implementation. By default it is matched within the target's distance mode; `--baseline-distance-mode on_demand` can explicitly compare representations too. `--metric` selects `search_time_s` (default) or `end_to_end_time_s` from the post-write receipts. Each ratio is paired by **search ID**, not file order or a ratio of aggregate medians. Require unique usable attempts, equal actual work and returned tours/costs (within objective tolerance), clean known source revision, and matching observed runtime/resources/setup. Incompatible or missing baselines get reasons, never a substitute chosen for being fastest.
+
+These are **observed execution-time ratios**, not proof of a controlled speedup. Warm-up/cache state and trial order can dominate end-to-end comparisons; source/context matching does not certify identical hardware. Phase timings overlap and must not be stacked indiscriminately. Parallel efficiency, quality-over-time and time-to-target remain unavailable until corresponding execution/history evidence exists; final costs are not synthetic progress curves.
+
+### Explicit reference costs
+
+The [square reference](../examples/references/square.json) illustrates the versioned JSON format: `schema_version: 1` and a `references` list, each with `instance_id`, `coordinate_checksum`, `distance_kind`, `kind` (`exact` or `best_known`), finite non-negative `cost`, and a non-empty `source` citation/explanation. At most one reference per instance is accepted. References must match both coordinate checksum and objective; rounded optima cannot be used for unrounded executions.
+
+Absolute gap is `observed_cost - reference_cost`; percentage gap is `100 * absolute_gap / reference_cost`. Zero references or unrepresentable percentages produce a blank percentage, retaining the absolute gap. A negative best-known gap is valid; a cost below a declared exact optimum beyond validation tolerance is rejected. The reference kind is preserved in tables/plots rather than turning every supplied value into an optimum claim. Unmatched references/observations are not assigned fabricated gaps.
+
+### Reusable data API
+
+`tsp_hpc.analysis` supplies `read_shards(paths, *, expected_manifest=None, max_record_bytes=...)`, `summary_table(analysis)`, `paired_comparisons(analysis, *, baseline_implementation, baseline_distance_mode=None, metric=...)`, and `reference_gaps(analysis, document)`. The first returns an `Analysis` with a compact pandas `.trials` table, structured `.diagnostics` and hashed `.sources`; the other functions return DataFrames. `tsp_hpc.analysis_reports.write_report(...)` is a separate Matplotlib/CSV presentation layer, not part of the numerical calculation API.
+
+Ingestion reads one bounded JSONL record at a time (default limit 64 MiB per encoded line), validates then discards tours/full plans, and retains O(trial count) scalar summaries and byte locators. Peak memory also depends on the largest decoded record; the line limit is not an RSS ceiling. `analysis.trial(attempt_id)` loads full details only on demand, checking source stat information and the record digest before returning them. Changing a source requires reloading analysis. Source SHA-256 hashes and grouping keys provide a basis for future interface caches; no web server, persistent cache or browser renderer is introduced here.

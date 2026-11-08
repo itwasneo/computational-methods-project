@@ -14,9 +14,9 @@ This is the project-wide implementation-status summary; specifications describe 
 | --- | --- | --- |
 | Inputs and objective | Canonical data/validation, independent objective, seeded generators, saved artifacts and fixtures | TSPLIB import and production datasets |
 | Execution | Dense/on-demand distances; serial NN with `visited-scan-v1` and `remaining-array-v1` implementations | GA/SA, multicore and optional accelerator backends |
-| Experiments | Manifests, identities, logical RNG planning; sequential NN runner with versioned JSONL results | Campaign scheduling, resume, production protocol and analysis |
+| Experiments | Manifests, logical RNG planning, sequential NN runner, versioned JSONL results and validated analysis tables/plots | Campaign scheduling, resume and production protocol |
 | Stopping and progress | Fixed-work NN and phase timing | Time budgets and progress histories |
-| Tooling | Locked environment, tests/builds in CI; manifest-run CLI | — |
+| Tooling | Locked environment, tests/builds in CI; run/analyze CLI | Interactive interface |
 | Cluster deployment | ULHPC selected; local image build evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) | Finished-image and allocated-cluster runtime validation |
 
 Solver execution uses **unrounded Euclidean distances** on complete symmetric 2D instances. Rounded data/reference compatibility is retained, but is not an executable solver mode. See the [objective contract](docs/contracts.md#distance-conventions-and-representations) before choosing benchmark reference costs.
@@ -33,7 +33,7 @@ uv run --locked tsp-hpc --help
 uv run --locked pytest -W error
 ```
 
-To run and save NN experiments, follow [Run a manifest](docs/usage.md#run-a-manifest); individual Python solver calls are covered in [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour). For installation groups, dependency updates and builds, see [development](docs/development.md).
+To run and save NN experiments, follow [Run a manifest](docs/usage.md#run-a-manifest), then [Analyze result shards](docs/usage.md#analyze-result-shards). Individual Python solver calls are covered in [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour). For installation groups, dependency updates and builds, see [development](docs/development.md).
 
 ## Documentation
 
