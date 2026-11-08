@@ -13,7 +13,7 @@ This is the project-wide implementation-status summary; specifications describe 
 | Area | Available | Remaining work |
 | --- | --- | --- |
 | Inputs and objective | Canonical data/validation, independent objective, seeded generators, saved artifacts and fixtures | TSPLIB import and production datasets |
-| Execution | Dense/on-demand distances; serial NN with explicit implementation selection (`visited-scan-v1`) | Optimized NN alternatives, GA/SA, multicore and optional accelerator backends |
+| Execution | Dense/on-demand distances; serial NN with `visited-scan-v1` and `remaining-array-v1` implementations | GA/SA, multicore and optional accelerator backends |
 | Experiment configuration | Manifest validation, identities and logical RNG planning | Automatic dispatch, persisted run envelopes, benchmark campaigns and analysis commands |
 | Stopping and progress | Fixed-work NN and phase timing | Time budgets and progress histories |
 | Tooling | Locked environment, tests and package builds in CI; CLI help/version | Solver-running CLI commands |

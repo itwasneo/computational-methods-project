@@ -62,24 +62,24 @@ def test_all_fixture_starts_and_multistart_reference(mode, name, implementation)
     assert validate_solution(instance, result.best_tour, result.best_cost) == result.best_cost
 
 
-@pytest.mark.parametrize("implementation", nn.implementation_names())
 @pytest.mark.parametrize("builder", [uniform_instance, clustered_instance])
-def test_generated_instances_backend_equivalence_and_replay(builder, implementation):
+def test_generated_instances_backend_equivalence_and_replay(builder):
     instance = builder(24, seed=17, side_length=100.).instance
     before = instance.coordinates.copy()
     starts = [7, 2, 0, 23, 11]
     original_starts = starts.copy()
     results = []
-    for mode in MODES:
-        solver = adapter(instance, mode, implementation)
-        for seed in (0, 42, 2**64 - 1):
-            result = run(solver, instance, starts, seed)
-            validate_tour(result.best_tour, instance.n_cities)
-            assert result.best_cost == tour_cost(instance, result.best_tour)
-            results.append(result)
-        for start in starts:
-            np.testing.assert_array_equal(run(solver, instance, [start]).best_tour,
-                                          python_greedy(instance, start))
+    for implementation in nn.implementation_names():
+        for mode in MODES:
+            solver = adapter(instance, mode, implementation)
+            for seed in (0, 42, 2**64 - 1):
+                result = run(solver, instance, starts, seed)
+                validate_tour(result.best_tour, instance.n_cities)
+                assert result.best_cost == tour_cost(instance, result.best_tour)
+                results.append(result)
+            for start in starts:
+                np.testing.assert_array_equal(run(solver, instance, [start]).best_tour,
+                                              python_greedy(instance, start))
     for result in results[1:]:
         np.testing.assert_array_equal(result.best_tour, results[0].best_tour)
         assert result.best_cost == results[0].best_cost
@@ -89,17 +89,21 @@ def test_generated_instances_backend_equivalence_and_replay(builder, implementat
     assert starts == original_starts
 
 
+@pytest.mark.parametrize("implementation", nn.implementation_names())
 @pytest.mark.parametrize("mode", MODES)
-def test_close_but_unequal_edges_are_not_ties(mode):
+def test_close_but_unequal_edges_are_not_ties(mode, implementation):
     instance = TSPInstance("near-tie", np.array([[0., 0.], [1. + 2e-12, 0.], [1., 0.]]))
-    result = run(adapter(instance, mode), instance, [0])
+    result = run(adapter(instance, mode, implementation), instance, [0])
     np.testing.assert_array_equal(result.best_tour, [0, 2, 1])
 
 
+@pytest.mark.parametrize("implementation", nn.implementation_names())
 @pytest.mark.parametrize("mode", MODES)
-def test_equal_best_keeps_earliest_logical_start_without_zero_cost_stop(mode):
+def test_equal_best_keeps_earliest_logical_start_without_zero_cost_stop(mode, implementation):
     instance = fixture("coincident").instance
-    solver = adapter(instance, mode)
+    solver = adapter(instance, mode, implementation)
+    # Removing city 0 swaps city 2 ahead of city 1 in the compact array.
+    # Equal edges must still choose city 1, not the first remaining slot.
     result = run(solver, instance, [3, 1, 0])
     np.testing.assert_array_equal(result.best_tour, [3, 0, 1, 2])
     assert result.best_cost == 0. and result.work.nn_starts_completed == 3
@@ -108,14 +112,15 @@ def test_equal_best_keeps_earliest_logical_start_without_zero_cost_stop(mode):
     assert reverse.work.full_tour_evaluations == 3
 
 
+@pytest.mark.parametrize("implementation", nn.implementation_names())
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("scale", [1., 1e-13])
-def test_improvement_and_later_worse_candidate_do_not_overwrite_best(mode, scale):
+def test_improvement_and_later_worse_candidate_do_not_overwrite_best(mode, scale, implementation):
     # The tiny scale also checks strict best-cost comparison: the improvement
     # is smaller than the objective validator's absolute tolerance.
     points = np.array([[0., 0.], [1., 0.], [3., 0.], [0., 4.], [3., 4.]])
     instance = TSPInstance("multi", points * scale)
-    solver = adapter(instance, mode)
+    solver = adapter(instance, mode, implementation)
     improved = run(solver, instance, [1, 0, 2])
     np.testing.assert_array_equal(improved.best_tour, [0, 1, 2, 4, 3])
     assert improved.best_cost == pytest.approx(14. * scale, rel=1e-15, abs=0.)
@@ -241,15 +246,16 @@ def test_adapter_rejects_other_instance_even_with_same_label():
         run(solver, None, [0])
 
 
-@pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("points", [
-    [(-np.finfo(np.float64).max, 0.), (np.finfo(np.float64).max, 0.)],
-    [(0., 0.), (np.finfo(np.float64).max, 0.)],
+@pytest.mark.parametrize("implementation", nn.implementation_names())
+@pytest.mark.parametrize("mode,points", [
+    ("on_demand", [(-np.finfo(np.float64).max, 0.), (np.finfo(np.float64).max, 0.)]),
+    ("dense", [(0., 0.), (np.finfo(np.float64).max, 0.)]),
 ])
-def test_numerical_failures_propagate_not_no_solution(points, mode):
+def test_numerical_failures_propagate_not_no_solution(points, mode, implementation):
+    # Exercise edge and total failures during search, not dense preparation.
     instance = TSPInstance("overflow", np.array(points))
     with pytest.raises(NumericalError):
-        run(adapter(instance, mode), instance, [0])
+        run(adapter(instance, mode, implementation), instance, [0])
 
 
 def test_final_reference_validation_failure_propagates(monkeypatch):
@@ -307,17 +313,21 @@ def test_manifest_scientific_fields_connect_to_serial_solver():
             "instance_id": record.instance.instance_id, "algorithm": "nn",
             "budget": {"start_cities": [2, 0]}, "solver_seed": 42, "repetitions": [0],
             "executions": [{"backend": "serial", "distance_mode": "dense",
-                            "implementation": "visited-scan-v1",
-                            "resources": {"profile": "local-cpu"}}],
+                            "implementation": implementation,
+                            "resources": {"profile": "local-cpu"}}
+                           for implementation in nn.implementation_names()],
         }],
     })
-    plan = manifest.expand()[0]
-    solver = nn.NearestNeighbourSolver(
-        prepare_distances(record.instance, mode=plan.execution["distance_mode"]),
-        implementation=plan.execution["implementation"],
-    )
-    assert solver.metadata["implementation"] == plan.execution["implementation"]
-    result = solver.solve(record.instance, seed=plan.trial_seed, budget=plan.search["budget"],
-                          parameters=plan.search["parameters"], record_history=plan.search["record_history"])
-    np.testing.assert_array_equal(result.best_tour, [2, 1, 0, 3])
-    assert result.work.nn_starts_completed == 2
+    plans = manifest.expand()
+    assert len({plan.search_id for plan in plans}) == 1
+    assert len({plan.execution_id for plan in plans}) == len(plans)
+    for plan in plans:
+        solver = nn.NearestNeighbourSolver(
+            prepare_distances(record.instance, mode=plan.execution["distance_mode"]),
+            implementation=plan.execution["implementation"],
+        )
+        assert solver.metadata["implementation"] == plan.execution["implementation"]
+        result = solver.solve(record.instance, seed=plan.trial_seed, budget=plan.search["budget"],
+                              parameters=plan.search["parameters"], record_history=plan.search["record_history"])
+        np.testing.assert_array_equal(result.best_tour, [2, 1, 0, 3])
+        assert result.work.nn_starts_completed == 2
