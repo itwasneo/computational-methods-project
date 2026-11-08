@@ -1,117 +1,70 @@
-# Local development
+# Development
 
-**Status:** the Python package, CLI scaffold, locked dependencies, numerical-stack smoke tests, and automated CI workflow are implemented. The [serial NN solver](nearest-neighbour.md) is implemented; GA/SA, experiment commands, and the cluster image remain separate tasks.
+Use the [README](../README.md#current-capabilities) for current capabilities and the [usage guide](usage.md) for library examples.
 
-## Environment and dependency policy
+## Environment and dependencies
 
-Use Python **3.12** and **uv**. The repository's `.python-version` selects the Python minor version, and `pyproject.toml` currently supports only that minor version. The scaffold was validated with CPython **3.12.3** and uv **0.10.4** on Linux; other platforms and the cluster image still need validation.
+Use Python 3.12 and uv. [`.python-version`](../.python-version) selects the minor release; [pyproject.toml](../pyproject.toml) declares supported versions, dependency groups, the CLI entry point and the pinned build backend. [uv.lock](../uv.lock) is the authoritative list of resolved package versions and artifacts.
 
-The initial locked stack is:
+| Layer | Tools and role |
+| --- | --- |
+| Runtime | Python orchestration; NumPy arrays; Numba native loops, with `prange` for planned shared-memory paths |
+| `dev` (default group) | pytest correctness and integration checks |
+| Optional `analysis` | pandas aggregation and Matplotlib figures |
+| Cluster environment | Apptainer application image, launched through Slurm; see [HPC operations](hpc-resources.md) |
 
-| Component | Locked version | Installation group |
-| --- | --- | --- |
-| NumPy | `2.5.4` | Runtime |
-| Numba | `0.68.1` | Runtime |
-| llvmlite | `0.50.0` | Runtime, through Numba |
-| pytest | `9.2.0` | `dev` (installed by default) |
-| pandas | `3.1.0` | Optional `analysis` |
-| Matplotlib | `3.11.2` | Optional `analysis` |
+Use `--locked` routinely: it fails if declarations and the lockfile disagree instead of silently resolving a different environment. Do not establish experiment environments with unrelated ad-hoc `pip install` commands. The lockfile does not pin Python's patch version, OS, CPU or drivers; record the actual runtime for experiments.
 
-Numba's dependency constraints permit this NumPy version; the tests additionally compile and execute a small `float64` kernel. The dependency declarations bound the numerical packages to the selected minor release lines. [uv.lock](../uv.lock) fixes the resolved versions and artifacts for runtime and dependency groups; the build backend is pinned separately in [pyproject.toml](../pyproject.toml).
+## Install, test and build
 
-The lockfile does **not** pin the Python patch release, operating system, CPU, or drivers. Record the actual runtime for experiments. The future container task will pin its interpreter and system environment; this local setup is not evidence of cluster compatibility.
-
-## Set up and validate
-
-With uv available on `PATH`, run these commands from the project root:
+From the repository root:
 
 ```bash
-uv --version
 uv sync --locked
 uv run --locked tsp-hpc --help
-uv run --locked tsp-hpc --version
-uv run --locked pytest
-```
-
-uv locates a compatible Python 3.12 interpreter or can download one if needed. It creates `.venv`, installs the package in editable mode, and includes the default `dev` group. No global NumPy/Numba installation or manual `PYTHONPATH` changes are needed. The `src/` layout makes tests exercise an installed package rather than accidentally importing code from the repository root.
-
-Use `--locked` in routine commands: it fails when dependency declarations and the committed lockfile disagree instead of silently resolving a new environment. Do not use an unrelated `pip install` workflow to establish the experiment environment.
-
-The CLI currently provides help and version information only. Running `tsp-hpc` without arguments shows help; unknown options are rejected. The module entry point is equivalent:
-
-```bash
-uv run --locked python -m tsp_hpc --help
-```
-
-The tests check package metadata, console-entry registration, CLI behavior from outside the checkout, actual Numba nopython compilation/execution, the [shared TSP data/objective utilities](data-and-objective.md), [manifest/stream invariants](manifests.md), [instance generation/artifact integrity](instances.md), [compiled distance/numerical-boundary checks](distances.md), and [serial NN/results](nearest-neighbour.md). These correctness checks do not establish benchmark performance. No cluster account, GPU, container runtime, or network access is required to run the tests once the environment is installed. The CI workflow below runs these checks automatically.
-
-## Automated correctness checks
-
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs the **CI / Python checks** job on branch pushes and pull requests targeting `master`. It uses GitHub-hosted Ubuntu 24.04, Python 3.12 selected through `.python-version`, and uv `0.10.4`. Python patch versions and runner software may change; tool versions are printed in the log. This is not a substitute for a pinned experiment image.
-
-The validation commands are the same locally and in CI:
-
-```bash
-uv sync --locked
-uv run --locked pytest
+uv run --locked python -m tsp_hpc --version
+uv run --locked pytest -W error
 uv build --no-sources
 ```
 
-The first command rejects a missing or inconsistent lockfile rather than silently updating it. pytest discovers the complete `tests/` suite, including actual Numba compilation/execution; future solver tests join automatically. The final command builds the source distribution and wheel without relying on local uv source overrides. It checks packaging, not installation of the resulting wheel in a separate environment. The optional `analysis` group is not installed in this initial job.
+uv locates or downloads a compatible interpreter, creates `.venv`, and installs the project in editable mode with the default development group. The `src/` layout tests an installed package without manual `PYTHONPATH` changes. Builds write a source distribution and wheel to ignored `dist/`; building alone does not test a clean wheel installation.
 
-Operational policy:
+Tests exercise production native kernels, independent references, reproducibility and public contracts. They need no cluster account, GPU or container runtime, and no network once dependencies are installed. Test timings are not benchmark evidence. During refactors, replace obsolete checks, consolidate overlap, and share conformance tests across implementations rather than copying suites.
 
-- GitHub Actions are pinned to full commit IDs; uv is explicitly versioned. Update those pins deliberately.
-- The job has read-only repository permissions, does not persist checkout credentials, and requires no custom secrets or cluster credentials. Fork PRs use ordinary `pull_request`, not privileged `pull_request_target`; GitHub may require approval before running a first-time contributor's workflow.
-- Cache only uv's dependency cache, not `.venv` or native Numba caches. Tests use a separate temporary Numba cache, and numerical libraries are limited to one thread.
-- A 15-minute timeout bounds a job. New commits cancel superseded runs for the same branch/event or PR. A same-repository PR can have both a branch-push run and a separate PR merge-result run.
-- Run checks even for documentation-only changes; no path filters or performance thresholds are used. **CI timings are not benchmark evidence.**
-- No Apptainer build, container execution, cluster connection, Slurm job, GPU/MPI check, deployment, or automated merge is part of this workflow.
-
-Following successful GitHub runs and explicit owner approval, `Python checks` is now required on `master`, bound to the GitHub Actions app. Branches must be up to date before merging; the existing administrator enforcement and review rules are preserved. This gate is a GitHub repository setting, not something enabled by the workflow file alone.
-
-## Optional analysis environment
-
-pandas and Matplotlib are kept out of the base numerical runtime:
+Optional environments:
 
 ```bash
 uv sync --locked --group analysis
-uv run --locked --group analysis pytest
-```
-
-This includes both the default development dependencies and the analysis group. No plotting or aggregation commands exist yet. When running future analysis scripts, use the same `--group analysis` selection so uv supplies their dependencies explicitly.
-
-For a runtime-only installation without pytest or analysis packages:
-
-```bash
+uv run --locked --group analysis pytest -W error
 uv sync --locked --no-dev
 uv run --locked --no-dev tsp-hpc --help
+uv sync --locked  # Restore development dependencies.
 ```
 
-Run `uv sync --locked` again to restore the normal development environment.
+Select `--group analysis` when running analysis code; it is not part of the base numerical runtime.
 
-## Repository layout
+## CI and review
 
-| Path | Purpose |
-| --- | --- |
-| [src/tsp_hpc](../src/tsp_hpc/__init__.py) | Importable package with CLI, data/objective utilities, manifest/stream planning, instance generation/storage, compiled distance backends, serial NN, and shared result records |
-| [tests](../tests/test_native_runtime.py) | pytest checks, including production-kernel compilation and cache replay |
-| [pyproject.toml](../pyproject.toml) | Package metadata, entry point, dependency groups, build backend, and pytest settings |
-| [uv.lock](../uv.lock) | Version-controlled dependency resolution |
-| [Shared contracts](contracts.md) and [algorithm baselines](algorithm-baselines.md) | Specifications for the later implementation tasks |
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) is authoritative for runner/tool versions, action pins and commands. It installs the locked environment, runs the full suite and builds distributions on branch pushes and PRs to `master`, including documentation-only changes.
 
-[.gitignore](../.gitignore) excludes local environments, Python/Numba/tool caches, build outputs, `.env` files, generated or downloaded data under `data/generated/` and `data/downloaded/`, outputs under `results/`, `outputs/`, and `artifacts/`, and Apptainer `*.sif` images. Keep small intentional correctness fixtures under `tests/fixtures/`; they are not covered by those generated-data exclusions. A sanitized `.env.example` may be committed, but actual credentials must never be included.
+- Actions are pinned to commit IDs. Repository permissions are read-only, checkout credentials are not persisted, and no custom or cluster secrets are needed. Forks use ordinary `pull_request`, not privileged `pull_request_target`; GitHub may require contributor approval.
+- Cache dependencies, not `.venv` or restored native JIT artifacts. Numba uses a separate temporary cache; numerical thread limits are one.
+- Jobs have a bounded timeout; superseded runs are cancelled separately for push and PR events. A same-repository PR can have both checks.
+- CI performs no cluster operations, container builds, deployments or automatic merges.
+- Repository protection requires passing `Python checks` from GitHub Actions and an up-to-date branch, together with the existing review rules. This is a repository setting, not a property of the workflow file.
 
-## Updating dependencies and building
+## Dependency updates and repository hygiene
 
-Make dependency updates on their own branch. Change declarations deliberately when moving outside the current bounds, regenerate `uv.lock`, and commit both files. For example, to refresh NumPy within its declared range:
+Make dependency changes on a separate branch, regenerate the lock deliberately, and commit declarations and lock together. For example:
 
 ```bash
 uv lock --upgrade-package numpy
 uv sync --locked
-uv run --locked pytest
-uv run --locked --group analysis pytest
+uv run --locked pytest -W error
+uv run --locked --group analysis pytest -W error
 uv build --no-sources
 ```
 
-`uv build` writes a source distribution and wheel to the ignored `dist/` directory. It validates packaging, not application performance or cluster execution. The project does not depend on an external TSP solver or benchmark framework.
+Code lives in `src/tsp_hpc/`, tests in `tests/`, and small intentional inputs in `examples/instances/`. [`.gitignore`](../.gitignore) excludes environments, caches, build products, generated/downloaded data, result directories and SIF images. Keep credentials, private account settings and unreviewed logs out of Git; a sanitized `.env.example` is acceptable.
+
+Keep documentation focused: status belongs in the README, rules in their reference, and completion evidence in PRs/issues. Add or update an example when behavior warrants it, not a new page automatically for each module.

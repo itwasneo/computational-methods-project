@@ -1,14 +1,12 @@
 # HPC resources and execution
 
-**Status:** ULHPC is the selected execution platform; account-specific access and runtime compatibility still require validation.
+This is the operating reference for University of Luxembourg HPC experiments, not evidence that a particular account or image is validated. Begin with CPU execution on one node and expand only when measurements justify it. See the [README](../README.md#current-capabilities) for current deployment status and [development guide](development.md) for the application stack.
 
-Use the University of Luxembourg HPC facility for substantial experiments. Begin with CPU execution on one node, then expand only when measurements justify additional resources. Distributed computation and GPU acceleration remain optional investigations, not required backends for all three algorithms.
-
-The application stack and container workflow are described in [Technology stack and execution architecture](tech-stack.md).
+**The project owner performs cluster connections, transfers, allocations and jobs.** Coding-agent and CI workflows do not operate the cluster.
 
 ## Resource strategy
 
-This document defines how the project will use resources, not a fixed inventory of the cluster. Confirm the team's access, available hardware, and allocation limits before running experiments. No live cluster validation has been performed yet.
+This document defines how the project will use resources, not a fixed inventory of the cluster. Confirm the team's access, available hardware, and allocation limits before running experiments.
 
 | Resource | Planned use | Allocation approach |
 | --- | --- | --- |
@@ -47,6 +45,18 @@ Array elements share their requested scheduler resources. Group experiments by r
 - Monitor utilization and use measured runtimes and memory consumption to refine subsequent requests.
 - Keep credentials and private account configuration out of Git; supply deployment-specific values separately.
 - Separate scheduler waiting time from application execution time in performance reports.
+
+## Reproducible container environment
+
+Use an Apptainer SIF to package Python, numerical dependencies and the application rather than depending on a particular host Python/Numba module release. The cluster host needs the Apptainer runtime, not uv or a duplicate project environment.
+
+1. Keep the image definition, dependency lock and application revision in Git. Pin the base image and dependencies rather than floating tags; revalidate dependency changes locally.
+2. The owner builds off-cluster with the required privileges, validates the image, then transfers it to the workspace. Do not assume an in-cluster build facility.
+3. Use a fixed image for recorded campaigns; retain its checksum and source revision. Keep measured runs on the packaged revision without source or local-venv overlays.
+4. Keep shared inputs, persistent outputs and writable temporary/cache directories outside the immutable image through deliberate mounts. Validate permissions and persistence, not just imports.
+5. Inside an allocation, load `tools/Apptainer` and launch through Slurm. Control inherited settings and Python user-package visibility; the default home mount can override container configuration, so use `--no-mount home` where appropriate and expose needed data paths explicitly.
+
+Validate packaged tests, actual JIT execution/cache writes and result persistence before a campaign. Compiled artifacts must suit the target CPU; a development-machine-specific binary is not automatically portable. Match process/thread limits to the allocation and prevent nested oversubscription. Containerization does not replace [placement controls](#cpu-placement-and-numa). GPU and MPI images require their separate compatibility checks below.
 
 ## CPU placement and NUMA
 
@@ -97,7 +107,7 @@ Before TSP scaling runs, launch a small multi-node correctness and communication
 
 Persist completed result batches outside node-local temporary storage during long runs, and copy remaining outputs before normal job completion. Do not rely on working directories being backed up. Keep an independent backup of important inputs, configurations, and results.
 
-Write separate result shards per worker or batch, then aggregate them. Avoid both a shared multi-writer CSV and excessive tiny-file traffic on shared storage. Keep generated results and container images out of Git; retain the manifests, build definitions, checksums, and instructions needed to reproduce them.
+Write separate result shards per worker or batch, then aggregate them; JSON Lines is a suitable initial raw format. Avoid both a shared multi-writer CSV and excessive tiny-file traffic on shared storage. Keep generated results and container images out of Git; retain the manifests, build definitions, checksums, and instructions needed to reproduce them.
 
 ## Checks before production experiments
 

@@ -224,7 +224,7 @@ def fixture_names() -> tuple[str, ...]:
 
 
 def fixture(name: str, *, distance_kind: str = "euclidean_2d") -> InstanceRecord:
-    """Return a fresh deterministic fixture; see docs/instances.md for optima."""
+    """Return a fresh deterministic fixture; see docs/usage.md#correctness-fixtures."""
     _distance_kind(distance_kind)
     parameters = _parameters("fixture-v1", {"name": name})
     coordinates = np.array(_FIXTURES[name], dtype=np.float64)

@@ -1,6 +1,6 @@
 # Shared development inputs
 
-These eight saved artifacts contain actual coordinates, content IDs/checksums and generation provenance. They are tiny correctness/development inputs, not benchmark results or a representative experimental sample. See the [generation and artifact API](../../docs/instances.md) for precise distribution definitions and fixture optima.
+These eight saved artifacts contain actual coordinates, content IDs/checksums and generation provenance. They are tiny correctness/development inputs, not benchmark results or a representative experimental sample. See the [generation and artifact API](../../docs/usage.md#instances-and-artifacts) for precise distribution definitions and fixture optima.
 
 | Artifact | Cities | Construction |
 | --- | --- | --- |

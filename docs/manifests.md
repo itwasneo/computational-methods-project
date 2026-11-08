@@ -1,6 +1,6 @@
 # Experiment manifests, identities, and random streams
 
-**Status:** task #6 implements fixed-work CPU manifest validation and planning. The planner does not generate instances, execute solvers, allocate resources, or write benchmark results. Task #7 separately provides [generated instances and saved artifacts](instances.md), and task #12 provides a [serial NN API](nearest-neighbour.md); automatic plan execution remains future work. No new dependencies are required.
+This reference owns the fixed-work CPU schema, identity encoding and logical RNG protocol. `Manifest` validates and plans; it does not generate inputs, execute solvers, allocate resources or persist benchmark results. See the [usage guide](usage.md) for data and solver APIs.
 
 ## API and example
 
@@ -57,7 +57,7 @@ Each instance requires:
 - `distance_kind`: `euclidean_2d` or `tsplib_euc_2d`.
 - Optional `instance_seed`: the generation seed as a Python integer in `[0, 2**64)`, or `null` for deterministic/imported data. Omission resolves to `null`.
 
-Descriptors refer to **already resolved data**, not generation requests or file locations. Parsing validates metadata, not the existence or content of a data file. A future loader/runner must resolve the ID and compare the actual instance's ID, checksum, size and distance convention before execution. Generation provenance is saved with the [task #7 instance artifacts](instances.md#saved-artifacts-and-shared-inputs); task #10 will add TSPLIB source provenance.
+Descriptors refer to **already resolved data**, not generation requests or file locations. Parsing validates metadata, not file existence/content. Before execution, a loader/runner must resolve the ID and compare the actual instance's ID, checksum, size and convention. Generation provenance belongs in the [saved artifact](usage.md#artifact-guarantees).
 
 For new generated data, use `make_instance_id()` when constructing the instance, then `describe_instance()` to create its descriptor. Existing meaningful logical IDs are also allowed: the checksum prevents a changed dataset from retaining the same search identity merely because its label was reused.
 
@@ -76,17 +76,32 @@ For new generated data, use `make_instance_id()` when constructing the instance,
 | `record_history` | Optional; only `false` is supported in v1 |
 | `executions` | Required non-empty list of requested execution configurations |
 
-Scientific configuration follows the agreed variants without adding implicit restarts or initialization changes:
+Parameter defaults/ranges and work semantics are defined in the [algorithm specifications](algorithm-baselines.md), not redefined by the schema. Work budgets must be explicit; development presets are not implicit budget defaults.
 
-- **NN:** parameters must be empty. `budget.start_cities` is an explicit ordered list of distinct in-range city IDs, possibly empty. It defines the logical starts; a separate `logical_search_ids` field is rejected.
-- **GA:** require `budget.max_generations >= 0`. Defaults are population 128, tournament 3, elites 1, crossover probability 0.9 and per-child mutation probability 0.2. Validate population >= 2, tournament >= 1, `0 <= elites < population`, and probabilities in `[0, 1]`. Sampling with replacement allows tournaments larger than the population. Each logical search ID denotes an **independent population**, not a migrating island.
-- **SA:** require `budget.max_proposals >= 0` **per chain**. Defaults are initial temperature 1.0, cooling factor 0.999, temperature floor `1e-12`, and cost-check interval 1024. Temperatures must be finite and positive, the floor must not exceed the initial temperature, cooling must lie in `(0, 1]`, and the check interval must be a positive integer.
+| Algorithm | Required budget | Logical search unit |
+| --- | --- | --- |
+| NN | `start_cities`: ordered distinct in-range Python integer IDs; empty allowed | A start; parameters must be empty and `logical_search_ids` is rejected |
+| GA | `max_generations >= 0` | An independent population, not a migrating island |
+| SA | `max_proposals >= 0` per chain | An independent chain |
 
-Empty NN start lists and zero GA/SA budgets remain explicit plans; they are not dropped. GA/SA initialization and small-instance stopping belong to the future solvers. Time limits, history requests, other variants, and extra parameters are rejected rather than ignored.
+Zero-work plans are not dropped. Time limits, history requests, other variants and extra parameters are rejected rather than ignored.
 
 ### Execution configurations
 
-Each execution requires `backend` (`serial` or `multicore`) and a `resources` object. Optional `implementation` is a nonempty string identifying a concrete implementation, for example `visited-scan-v1` for serial NN. It is distinct from the scientific variant and belongs to execution identity, not search identity or RNG derivation. Labels are planning metadata, not a guarantee that a runtime adapter supports them. Omission preserves legacy plans/IDs and means unspecified, not an implicitly pinned implementation. Use explicit labels for implementation comparisons; a future runner must resolve omissions before assigning effective execution identity and recording implementation/Git-revision provenance. See [NN implementation selection](nearest-neighbour.md#scientific-variants-versus-implementation-versions). Optional `distance_mode` is `dense` or `on_demand`, defaulting to `on_demand`. Both [distance backends](distances.md) are implemented for unrounded `euclidean_2d` only; a [serial NN adapter](nearest-neighbour.md#explicit-preparation-and-reuse) is available, while automatic solver/runner dispatch remains future work. The schema retains `tsplib_euc_2d` descriptors for compatibility, but distance preparation rejects them. Schema validation is not an execution-capability guarantee.
+Each execution requires `backend` (`serial` or `multicore`) and `resources`. Optional `distance_mode` is `dense` or `on_demand`, defaulting to `on_demand`. For example:
+
+```json
+{
+  "backend": "serial",
+  "implementation": "visited-scan-v1",
+  "distance_mode": "dense",
+  "resources": {"profile": "local-cpu"}
+}
+```
+
+Optional `implementation` is a non-blank literal string identifying concrete code, distinct from the scientific `variant`. It affects execution identity, not search identity or RNG derivation. Omission preserves legacy plans/IDs and means **unspecified**, not implicitly pinned. Comparisons should name implementations explicitly. A runner must resolve omissions before recording effective execution IDs and implementation/Git-revision provenance; do not use an unspecified legacy ID to label a resolved comparison.
+
+Schema acceptance is not a runtime capability guarantee: labels need not be installed, profiles need not exist, and retained distance conventions need not be executable. The adapter must reject unsupported choices rather than substitute another implementation or objective. See [implementation selection](usage.md#implementation-selection) and the [objective scope](contracts.md#distance-conventions-and-representations).
 
 Resources require a non-blank `profile` label, with positive integer `workers` and `threads_per_worker`, each defaulting to one. Serial execution requires both counts to be one. A multicore request may use one worker/thread as a scaling baseline. No request may increase the number of logical searches implicitly.
 
@@ -97,10 +112,10 @@ A profile is an opaque deployment label, ideally versioned when its meaning chan
 Three identities have distinct meanings:
 
 1. **Instance content:** `make_instance_id()` hashes coordinate checksum, city count and distance convention. Dense/on-demand representation and resources are excluded.
-2. **Scientific search:** `search_id` hashes the complete resolved instance descriptor (including generation-seed provenance), algorithm/variant, effective parameters, per-search budget, solver root seed, repetition, ordered logical searches, history flag, and RNG scheme identifiers. Backend, worker counts, resource profile and distance representation are excluded.
+2. **Scientific search:** `search_id` hashes the complete resolved instance descriptor (including generation-seed provenance), algorithm/variant, effective parameters, per-search budget, solver root seed, repetition, ordered logical searches, history flag, and RNG scheme identifiers. Backend, implementation label, worker counts, resource profile and distance representation are excluded.
 3. **Requested execution:** `execution_id` hashes `search_id` together with the resolved execution configuration.
 
-These are **configuration IDs, not unique run-attempt IDs or result checksums**. Repeating an identical configuration produces the same IDs. Task #18 must add actual execution provenance; retries/campaigns need their own attempt identifiers rather than overwriting previous results under an unchanged configuration ID.
+These are **configuration IDs, not unique run-attempt IDs or result checksums**. Repeating an identical configuration produces the same IDs. Run envelopes must add actual execution provenance and separate attempt identifiers for retries/campaigns rather than overwriting results under an unchanged configuration ID.
 
 Changing parameters or work budgets changes the search ID. Changing workers, threads, backend, implementation label, profile or distance representation changes only the execution ID. Reordering experiment/repetition/execution lists changes expansion order, not the corresponding IDs. Inserting unrelated entries does not renumber existing trials.
 
@@ -144,16 +159,12 @@ The instance-reference ID includes logical instance ID, coordinate checksum, siz
 
 The experiment's `solver_seed` is the user-supplied root, `trial_seed` is an intermediate namespace seed, and each logical search's `stream.seed` is its effective seed. Future GA/SA calls must receive the logical population/chain seed, not the root or intermediate seed. NN can receive the trial seed with its complete ordered start list; it does not use randomness.
 
-For GA's future parallel operators, derive from the **population stream's seed** using `("initialization", slot)` and `("offspring", generation, slot)`; generation numbering starts at one. This prevents offspring scheduling order from selecting the random stream. A distinct `"warmup"` role separates warm-up from measured streams. The generic `"island"` role can reserve future island streams, but does not enable an island algorithm or MPI execution.
+For GA's parallel operator stream assignments, derive from the **population stream's seed** using `("initialization", slot)` and `("offspring", generation, slot)`; generation numbering starts at one. This prevents offspring scheduling order from selecting the random stream. A distinct `"warmup"` role separates warm-up from measured streams. The generic `"island"` role can reserve future island streams, but does not enable an island algorithm or MPI execution.
 
 Parameters, budgets and collection size are deliberately absent from seed derivation. This provides paired initial streams across parameter/budget comparisons; adding a chain does not reseed existing chains. Different algorithms or draw-consumption patterns need not follow the same trajectories. Changing actual instance identity/content, solver root seed, repetition, role or logical ID changes the corresponding streams.
 
-For [stochastic instance generation](instances.md), derive a separate `"instance"` stream from an independently supplied generation root and generator/sample IDs. Store the actual generator seed in `instance_seed` and retain full generation provenance with the dataset. Never derive instance generation from a solver's mutable RNG state.
+For [stochastic instance generation](usage.md#generation-protocols), derive a separate `"instance"` stream from an independently supplied generation root and generator/sample IDs. Store the actual generator seed in `instance_seed` and retain full generation provenance with the dataset. Never derive instance generation from a solver's mutable RNG state.
 
 Each `stream.generator()` call creates fresh state at the stream's beginning. Retain and advance that object within one search; do not recreate it for every draw. Never share a mutable generator between workers/threads or seed process-global NumPy/Python RNG state. The tests include passing one owned generator to a serial Numba kernel; this is not a claim of parallel thread safety.
 
 Hash-derived 64-bit seeds are practical stream assignments, not proofs of independent or non-overlapping sequences. Expansion detects a seed collision within a logical search collection and fails instead of silently reseeding. Golden vectors and tested distinct assignments do not eliminate the theoretical collision possibility. Bitwise agreement across different runtimes or distribution implementations is not promised; record package and backend versions with actual results.
-
-## Validation
-
-Run `uv run --locked pytest`. Tests cover strict schema boundaries, resolved defaults, zero budgets, detached snapshots, content fingerprints, golden identity/RNG vectors, independent global RNG state, separate starts/chains/populations/islands, per-slot GA stream paths, simulated scheduling reordering, and fresh processes with different `PYTHONHASHSEED` values. These are planning/correctness checks, not benchmark results.
