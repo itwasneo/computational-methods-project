@@ -1,8 +1,6 @@
 # Initial algorithm variants and stopping semantics
 
-**Status:** v1 design for task #2. The [serial NN baseline](nearest-neighbour.md) is implemented; GA/SA and parameter tuning remain pending. Configuration validation and stream planning are [implemented](manifests.md). These are reproducible starting variants, not claims of optimal parameters or finalized benchmark settings.
-
-This document complements the [shared contracts](contracts.md). The required algorithms remain nearest-neighbour (NN), a genetic algorithm (GA), and simulated annealing (SA). An exact reference and SA's reversal moves do not add primary solvers.
+This is the scientific specification for the NN, GA and SA baseline variants, complementing the [shared contracts](contracts.md). It includes the planned time-budget extension; consult the [README](../README.md#current-capabilities) for executable capabilities. These are reproducible starting rules, not tuned or finalized campaign settings.
 
 ## Common decisions
 
@@ -130,7 +128,7 @@ For independent chains or populations, specify logical IDs, seeds, and per-searc
 
 ### Time-budget extension
 
-Task #19 adds optional `budget.time_limit_s`, a finite positive duration. GA and SA may then omit their work-limit field for time-only runs, or provide both limits. NN always has a finite start list, even in a timed run; finishing it early is a work-limit termination, not permission to repeat starts. No variant may run without a stopping limit.
+This planned extension adds optional `budget.time_limit_s`, a finite positive duration. GA and SA may then omit their work-limit field for time-only runs, or provide both limits. NN always has a finite start list, even in a timed run; finishing it early is a work-limit termination, not permission to repeat starts. No variant may run without a stopping limit.
 
 Start the monotonic search clock immediately before initializing solver working state. Include initialization, numerical checks, and progress instrumentation. Exclude input loading, distance preprocessing, and JIT warm-up. Final verification and persistence must still appear in end-to-end measurements; they do not make the stopping limit a hard job deadline.
 
@@ -156,7 +154,7 @@ Before or during unfinished GA/SA initialization, check the deadline without tre
 
 On a time stop, return the best complete tour observed so far, or `no_solution` with null tour/cost if none exists. Never return a partial permutation. Record actual work and elapsed time; do not truncate reported runtime to the requested limit. Checkpoint overshoot, especially a large NN construction or GA generation, must be visible in comparisons. Finer interruption rules would change the stopping specification and must be recorded rather than introduced silently.
 
-There is no baseline quality-target early stopping. Later time-to-target analysis records the first observed target crossing without changing the search, and retains runs that never reach it. Unsupported timed/history requests fail explicitly until task #19 is implemented.
+There is no baseline quality-target early stopping. Later time-to-target analysis records the first observed target crossing without changing the search, and retains runs that never reach it. An implementation without time/history support must reject those requests explicitly.
 
 ## Starting values, not tuned conclusions
 
@@ -173,12 +171,12 @@ These values provide development/pilot presets. Manifests must record the resolv
 | SA cost-check interval | `1024` completed proposals |
 | Time limit / history | Disabled for initial fixed-work baselines |
 
-Temperature is expressed in the instance's edge-cost units: `1.0` is a development value, not scale-invariant calibration. Task #27 will tune temperatures and other numeric settings on a tuning split, with declared comparable tuning opportunities; task #35 freezes the production protocol.
+Temperature is expressed in the instance's edge-cost units: `1.0` is a development value, not scale-invariant calibration. Tune temperatures and other numeric settings on a tuning split with comparable tuning opportunities, then freeze the production protocol before evaluation.
 
 Changing a documented numeric parameter or workload remains within the named variant but creates a different scientific configuration. Changing initialization strategy, selection/replacement rules, crossover, mutation/neighborhood, cooling law, or early-stopping behavior requires a separately identified variant. Do not present such changes as pure implementation speedups.
 
 ## Implementation checks
 
-Follow-up implementation tasks must cover deterministic NN ties and start ordering; OX cut boundaries, permutation validity, and parent immutability; GA tournament ties, elitism, and initialization accounting; SA wraparound deltas, rejected moves, geometric cooling, and numerical checks; and zero-work/expired-time precedence for every solver.
+Conformance tests must cover deterministic NN ties and start ordering; OX cut boundaries, permutation validity, and parent immutability; GA tournament ties, elitism, and initialization accounting; SA wraparound deltas, rejected moves, geometric cooling, and numerical checks; and zero-work/expired-time precedence for every solver.
 
-Include two- and three-city inputs, duplicate coordinates, all-zero distances, and probability boundaries under unrounded Euclidean distances. The current solver execution scope is `euclidean_2d` only; unsupported rounded instances must be rejected rather than reinterpreted. This document selects behavior; executable solvers and their tests remain in their implementation tasks.
+Include two- and three-city inputs, duplicate coordinates, all-zero distances and probability boundaries. Numerical and unsupported-capability behavior follows the [shared contract](contracts.md#validation-and-failure-behavior).

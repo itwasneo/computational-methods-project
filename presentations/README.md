@@ -1,6 +1,8 @@
 # Project presentations
 
-## Current progress — 10 slides
+## Progress snapshot — 10 slides
+
+This deck records the evidence snapshot below. Use the [README](../README.md#current-capabilities) for current capabilities.
 
 - [PDF deck](tsp_progress_presentation.pdf): ready for presentation or sharing.
 - [HTML source](tsp_progress_presentation.html): open directly in a browser; works offline.
