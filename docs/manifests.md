@@ -105,7 +105,7 @@ Schema acceptance is not a runtime capability guarantee: labels need not be inst
 
 Resources require a non-blank `profile` label, with positive integer `workers` and `threads_per_worker`, each defaulting to one. Serial execution requires both counts to be one. A multicore request may use one worker/thread as a scaling baseline. No request may increase the number of logical searches implicitly.
 
-A profile is an opaque deployment label, ideally versioned when its meaning changes. It does not prove hardware availability or authorize an allocation. Actual hardware, affinity, memory limits, image/source versions and job information must be recorded by the future runner. MPI/GPU backends and arbitrary resource fields are not supported in v1.
+A profile is an opaque deployment label, ideally versioned when its meaning changes. It does not prove hardware availability or authorize an allocation. Execution provenance must record observed resources and disclose unknown limits; the [runner envelope](usage.md#jsonl-records-and-timing-boundaries) specifies current observations and their limits. MPI/GPU backends and arbitrary resource fields are not supported in v1.
 
 ## Identity rules
 
