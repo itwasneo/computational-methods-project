@@ -130,6 +130,22 @@ Cold means a stopped application, a fresh browser profile/cache and no interface
 
 **Decision:** use the desktop and two-browser/profile matrix, workload scales and numerical budgets above. Budget feasibility remains unverified: #69–#70 must measure it and justify the stack. Final release checks (#92) repeat this matrix rather than introducing unmeasured responsiveness claims.
 
+### Rendering prototype (#69)
+
+`examples/interface-rendering/` is an isolated, dependency-free browser harness, not the optional application scaffold or a stack decision. From the repository root:
+
+```bash
+node --test examples/interface-rendering/model.test.mjs
+python3 -m http.server 8765 --bind 127.0.0.1 --directory examples/interface-rendering
+# Open http://127.0.0.1:8765 in the reference browser; stop the server after use.
+```
+
+Use the API selector and explicitly load/reset each fixture. Both candidates use instanced circular quads, display-only float32 buffers, a CPU spatial grid for picking, frame-batched changed-point uploads and an optional O(n) row-order closed polyline. Canonical synthetic coordinates remain float64. Coincident picks cycle through distinct city IDs; city fields provide non-canvas inspection/movement. Drag pans, wheel zooms, shift-drag moves the selected city; resizing uses the actual browser DPR. DPR 2 requires a real/emulated DPR profile, not simply increasing canvas dimensions. Context/device loss is an explicit error requiring reload; unavailable WebGPU must not silently switch to WebGL2.
+
+For each G profile/browser/DPR, reset the fixture, check navigation/picking/selected updates and repeat with the synthetic tour on. Run the 10-second scripted pan/zoom diagnostic and export JSON outside Git. The export records configuration, browser, viewport, API metadata, setup time, RAF intervals, CPU submission and 100 isolated picking queries. It rejects hidden-tab runs and labels edited scenes. These are **diagnostics, not acceptance results**: RAF is not presentation timing; no synchronous GPU readback or GPU-idle wait is added. Capture real input-to-present feedback, GPU support/driver, process memory, idle CPU, cold/warm repetitions and concurrency separately using the acceptance procedure above. Record shader/adapter failures as unsupported cases, not zero timings. Model tests check fixtures, precision separation, picking against a brute-force oracle and bounded grid updates; they do not validate shaders or GPU behavior.
+
+The harness contains no framework, CDN dependencies, solver invocation or production API. Synthetic paths are not valid solver evidence. The full browser/hardware evidence and a justified reusable renderer choice remain prerequisites for completing #69; table/chart measurements and the production stack decision remain #70.
+
 ## CI and review
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) is authoritative for runner/tool versions, action pins and commands. It installs the locked environment, runs the full suite and builds distributions on branch pushes and PRs to `master`, including documentation-only changes.
