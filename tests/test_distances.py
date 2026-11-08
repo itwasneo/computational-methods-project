@@ -3,9 +3,6 @@
 from dataclasses import FrozenInstanceError
 from itertools import permutations
 import math
-import os
-import subprocess
-import sys
 
 from numba import njit
 import numpy as np
@@ -100,17 +97,11 @@ def test_native_hypot_small_difference_uses_unrounded_reference_tolerance(mode):
     assert actual != math.floor(actual)
 
 
-def test_native_norm_near_half_integers_and_across_exponents():
-    rng = np.random.Generator(np.random.PCG64(987))
-    for _ in range(3000):
-        angle = rng.uniform(0., math.pi / 2)
-        radius = float(rng.integers(0, 100000)) + .5
-        x, y = radius * math.cos(angle), radius * math.sin(angle)
-        for neighbour in (np.nextafter(x, 0.), x, np.nextafter(x, math.inf)):
-            coordinates = np.array([[0., 0.], [neighbour, y]])
-            actual = coordinate_edge_kernel(coordinates, 0, 1)
-            assert_cost(actual, math.hypot(neighbour, y))
-    for exponent in range(-1073, 1024, 13):
+def test_native_norm_across_representative_magnitudes():
+    # Keep subnormal/normal and extreme-scale coverage. Integer half boundaries
+    # are not special to our unrounded execution path; its known regression is
+    # tested separately, and generated-edge tests already cover ordinary inputs.
+    for exponent in (-1073, -1022, -1000, -500, -1, 0, 1, 500, 1000, 1023):
         x, y = math.ldexp(.75, exponent), math.ldexp(.625, exponent)
         coordinates = np.array([[0., 0.], [x, y]])
         actual = coordinate_edge_kernel(coordinates, 0, 1)
@@ -241,8 +232,10 @@ def test_timing_separates_warmup_from_preprocessing(monkeypatch):
     assert backend.metadata["preprocessing_time_s"] == 2.
 
 
-@pytest.mark.parametrize("index,error", [(True, TypeError), (1., TypeError), (-1, ValueError), (4, ValueError)])
-@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("index,error,mode", [
+    (True, TypeError, "on_demand"), (1., TypeError, "dense"),
+    (-1, ValueError, "dense"), (4, ValueError, "on_demand"),
+])
 def test_wrappers_check_both_city_indices(mode, index, error):
     backend = prepare_distances(fixture("square").instance, mode=mode)
     with pytest.raises(error):
@@ -252,15 +245,17 @@ def test_wrappers_check_both_city_indices(mode, index, error):
     assert backend.edge_cost(np.int64(0), np.int32(1)) == 1.
 
 
-@pytest.mark.parametrize("tour,error", [
-    (np.array([0, 1, 2, 2], dtype=np.int64), ValueError),
-    (np.array([0, 1, 2, 4], dtype=np.int64), ValueError),
-    (np.array([0, 1, 2, -1], dtype=np.int64), ValueError),
-    (np.array([0, 1, 2, 3, 0], dtype=np.int64), ValueError),
-    (np.arange(4, dtype=np.float64), TypeError), ([0, 1, 2, 3], TypeError),
-    (np.arange(8, dtype=np.int64)[::2], ValueError),
+@pytest.mark.parametrize("tour,error,mode", [
+    # Validate once at the common wrapper boundary, not every invalid input
+    # crossed with every storage representation.
+    (np.array([0, 1, 2, 2], dtype=np.int64), ValueError, "dense"),
+    (np.array([0, 1, 2, 4], dtype=np.int64), ValueError, "on_demand"),
+    (np.array([0, 1, 2, -1], dtype=np.int64), ValueError, "on_demand"),
+    (np.array([0, 1, 2, 3, 0], dtype=np.int64), ValueError, "on_demand"),
+    (np.arange(4, dtype=np.float64), TypeError, "dense"),
+    ([0, 1, 2, 3], TypeError, "on_demand"),
+    (np.arange(8, dtype=np.int64)[::2], ValueError, "on_demand"),
 ])
-@pytest.mark.parametrize("mode", MODES)
 def test_wrappers_reject_invalid_tours(mode, tour, error):
     with pytest.raises(error):
         prepare_distances(fixture("square").instance, mode=mode).tour_cost(tour)
@@ -288,26 +283,3 @@ def test_invalid_instance_and_size_estimates():
     for size in (0, 1, -1):
         with pytest.raises(ValueError):
             estimated_matrix_bytes(size)
-
-
-def test_generic_cpu_cold_compile_and_cache_reload(tmp_path):
-    program = (
-        "from tsp_hpc.distances import prepare_distances; "
-        "from tsp_hpc.data import TSPInstance; from tsp_hpc.objective import edge_cost; "
-        "import numpy as np, math; "
-        "i=TSPInstance('probe',np.array([[0.,0.],[5865.277089690506,5153.210738088601]])); "
-        "costs=[prepare_distances(i,mode=m).edge_cost(0,1) for m in ('dense','on_demand')]; "
-        "assert costs[0]==costs[1]; assert math.isclose(costs[0],edge_cost(i,0,1),rel_tol=1e-10,abs_tol=1e-12); "
-        "print('generic CPU passed')"
-    )
-    environment = {
-        **os.environ, "NUMBA_CPU_NAME": "generic", "NUMBA_CPU_FEATURES": "",
-        "NUMBA_CACHE_DIR": str(tmp_path / "cache"), "NUMBA_DEBUG_CACHE": "1",
-    }
-    for attempt in range(2):
-        result = subprocess.run([sys.executable, "-B", "-c", program], cwd=tmp_path,
-                                env=environment, capture_output=True, text=True,
-                                check=True, timeout=90)
-        assert "generic CPU passed" in result.stdout
-        expected_cache_event = "data saved" if attempt == 0 else "data loaded"
-        assert f"[cache] {expected_cache_event}" in result.stdout

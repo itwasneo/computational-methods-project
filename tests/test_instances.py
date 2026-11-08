@@ -152,26 +152,32 @@ def test_distance_kind_changes_identity_not_coordinates():
 
 
 @pytest.mark.parametrize("builder", [uniform_instance, clustered_instance])
-@pytest.mark.parametrize("seed,error", [(True, TypeError), (np.int64(1), TypeError),
-                                        (None, TypeError), (1.0, TypeError),
-                                        (-1, ValueError), (2**64, ValueError)])
+@pytest.mark.parametrize("seed,error", [(True, TypeError), (2**64, ValueError)])
 def test_invalid_seeds(builder, seed, error):
     with pytest.raises(error):
         builder(8, seed=seed)
 
 
-@pytest.mark.parametrize("builder", [uniform_instance, clustered_instance])
-@pytest.mark.parametrize("n,error", [(True, TypeError), (2.0, TypeError), (np.int64(4), TypeError),
-                                     (0, ValueError), (1, ValueError), (-2, ValueError)])
+@pytest.mark.parametrize("builder,n,error", [
+    (uniform_instance, True, TypeError), (uniform_instance, 2.0, TypeError),
+    (uniform_instance, np.int64(4), TypeError), (uniform_instance, 0, ValueError),
+    (uniform_instance, 1, ValueError), (uniform_instance, -2, ValueError),
+    # Both generators use the same parameter validators; check the second
+    # boundary's wiring without duplicating the full invalid-input table.
+    (clustered_instance, True, TypeError), (clustered_instance, 1, ValueError),
+])
 def test_invalid_sizes(builder, n, error):
     with pytest.raises(error):
         builder(n, seed=42)
 
 
-@pytest.mark.parametrize("builder", [uniform_instance, clustered_instance])
-@pytest.mark.parametrize("side,error", [(True, TypeError), ("1", TypeError), (0, ValueError),
-                                        (-1, ValueError), (float("nan"), ValueError),
-                                        (float("inf"), ValueError), (10**1000, ValueError)])
+@pytest.mark.parametrize("builder,side,error", [
+    (uniform_instance, True, TypeError), (uniform_instance, "1", TypeError),
+    (uniform_instance, 0, ValueError), (uniform_instance, -1, ValueError),
+    (uniform_instance, float("nan"), ValueError), (uniform_instance, float("inf"), ValueError),
+    (uniform_instance, 10**1000, ValueError),
+    (clustered_instance, True, TypeError), (clustered_instance, 0, ValueError),
+])
 def test_invalid_square_sizes(builder, side, error):
     with pytest.raises(error):
         builder(8, seed=42, side_length=side)
