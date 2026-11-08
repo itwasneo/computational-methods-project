@@ -1,6 +1,6 @@
 # Initial algorithm variants and stopping semantics
 
-**Status:** v1 design for task #2; solver implementation and parameter tuning are pending. Configuration validation and stream planning are [implemented](manifests.md). These are reproducible starting variants, not claims of optimal parameters or finalized benchmark settings.
+**Status:** v1 design for task #2. The [serial NN baseline](nearest-neighbour.md) is implemented; GA/SA and parameter tuning remain pending. Configuration validation and stream planning are [implemented](manifests.md). These are reproducible starting variants, not claims of optimal parameters or finalized benchmark settings.
 
 This document complements the [shared contracts](contracts.md). The required algorithms remain nearest-neighbour (NN), a genetic algorithm (GA), and simulated annealing (SA). An exact reference and SA's reversal moves do not add primary solvers.
 

@@ -1,6 +1,6 @@
 # Technology stack and execution architecture
 
-**Status:** decided; the local package, data/objective utilities, manifest/stream planning, instance generation/storage, and compiled distance backends are implemented and tested. Solver/runner implementation and cluster validation are pending.
+**Status:** decided; the local package, data/objective utilities, manifest/stream planning, instance generation/storage, and compiled distance backends are implemented and tested. The [serial NN solver](nearest-neighbour.md) and shared in-memory results are implemented; GA/SA, runner integration, and cluster validation remain pending.
 
 Use a Python-first stack with compiled numerical kernels, a small project-specific experiment runner, and an Apptainer image for reproducible cluster execution. The required solvers remain nearest-neighbour, genetic algorithm (GA), and simulated annealing (SA).
 
@@ -39,7 +39,7 @@ Keep configuration, scheduling decisions, logging, and result serialization in o
 - **GA:** compile and profile fitness evaluation and permutation operators; independent tasks must write to separate output regions.
 - **SA:** compile the iteration loop rather than calling a tiny compiled function from Python for every proposed move. Independent chains provide the initial parallelism.
 
-The [shared v1 contracts](contracts.md) define instance and tour representations, distance conventions, solver inputs, result fields, and validation boundaries. Each solver accepts an instance, solver seed, search budget, and algorithm parameters, and returns its best complete tour with search statistics. Backend and resource selection belong in the run configuration. Instance/objective utilities and [manifest planning](manifests.md) are implemented; [distance preparation and kernels](distances.md) are available, while solver wrappers, result records, and search execution backends remain follow-up work.
+The [shared v1 contracts](contracts.md) define instance and tour representations, distance conventions, solver inputs, result fields, and validation boundaries. Each solver accepts an instance, solver seed, search budget, and algorithm parameters, and returns its best complete tour with search statistics. Backend and resource selection belong in the run configuration. Instance/objective utilities and [manifest planning](manifests.md) are implemented; [distance preparation and kernels](distances.md) are available, and [serial NN with shared result records](nearest-neighbour.md) is available. GA/SA and parallel search backends remain follow-up work.
 
 ## Own the experiment runner, not the scheduler
 

@@ -1,6 +1,6 @@
 # Shared instance, tour, solver, and result contracts
 
-**Status:** v1 design for task #1. Task #5 implements the [instance, tour validation, and independent objective utilities](data-and-objective.md). Task #6 implements [manifests, identities, and random-stream planning](manifests.md). Task #8 implements [distance backends and explicit preprocessing](distances.md). Solver/result records and execution remain specifications. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
+**Status:** v1 design for task #1. Task #5 implements the [instance, tour validation, and independent objective utilities](data-and-objective.md). Task #6 implements [manifests, identities, and random-stream planning](manifests.md). Task #8 implements [distance backends and explicit preprocessing](distances.md). Task #12 implements [serial NN and shared in-memory result records](nearest-neighbour.md). GA/SA and runner execution remain future work. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
 
 These contracts keep the three required solvers compatible with one objective function and one experiment runner. They describe logical records and boundaries, not a required class hierarchy or a generic solver framework. See the [technology stack](tech-stack.md) for implementation tools and the [resource plan](hpc-resources.md) for execution responsibilities.
 
@@ -68,7 +68,7 @@ Each algorithm exposes the same logical boundary through a Python wrapper:
 solve(instance, *, seed, budget, parameters, record_history=False) -> SolverResult
 ```
 
-This is an interface specification, not implemented Python code. Wrappers validate records and pass primitive scalars and arrays into Numba kernels; kernels need not accept Python dictionaries or rich objects.
+This boundary is implemented for [serial NN](nearest-neighbour.md) and remains the interface specification for GA/SA. Wrappers validate records and pass primitive scalars and arrays into Numba kernels; kernels need not accept Python dictionaries or rich objects.
 
 | Input | Contract |
 | --- | --- |
@@ -94,6 +94,8 @@ The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) def
 | `work` | Non-negative integer counters for actual completed work, as below; never substitute the requested limits for observed counts. |
 | `termination_reason` | `work_limit`, `time_limit`, or `algorithm_stop`. The last requires an explicit variant-specific rule, such as the baseline SA's empty neighborhood for fewer than four cities; it is not an implicit convergence claim. |
 | `history` | `None` when recording is disabled; otherwise an ordered sequence of progress points. An enabled history is empty if no complete solution was observed. |
+
+The implemented `tsp_hpc.results.SolverResult` owns a read-only tour snapshot and uses immutable `WorkCounters`. It also exposes phase-only `search_time_s` and `validation_time_s` observations; see the [NN timing boundaries](nearest-neighbour.md#timing-boundaries). These fields do not replace the future runner's end-to-end timing or provenance envelope. History is currently restricted to `None`.
 
 Use these common counters, with zero for algorithms to which they do not apply:
 
@@ -140,6 +142,7 @@ The runner selects a compatible solver adapter and prepares its numerical inputs
 - **Task #2:** the [companion baseline specification](algorithm-baselines.md) records variants, tie-breaking, budgets, initialization accounting, and stop precedence/checkpoints against this boundary.
 - **Task #5:** canonical data, validation, and independent tour cost are implemented in [the shared data/objective API](data-and-objective.md), with boundary and numerical tests. **Task #8** implements [compiled distance paths](distances.md), with reference comparisons and explicit preparation/memory accounting.
 - **Task #6:** [manifests, logical identities, and random-stream planning](manifests.md) are implemented. **Task #18** will add execution dispatch and persisted result envelopes.
+- **Task #12:** [serial NN](nearest-neighbour.md) implements fixed ordered starts, both distance representations, shared result/counter records, separate warm-up/search/validation phases and independent final validation.
 - **Task #19:** implement time limits and progress recording without hiding missing solutions or instrumentation costs.
 
 Task #3 can scaffold the package independently; it does not need to implement these data structures or any solver.

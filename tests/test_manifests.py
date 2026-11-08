@@ -75,6 +75,40 @@ def test_resolved_roundtrip_and_declared_expansion_order(algorithm, tmp_path):
     assert plans[0].trial_seed != plans[2].trial_seed
 
 
+@pytest.mark.parametrize("algorithm", ["nn", "ga", "sa"])
+def test_implementation_changes_execution_identity_only(algorithm):
+    document = make_document(algorithm)
+    legacy = Manifest(document).expand()[0]
+    execution = document["experiments"][0]["executions"][0]
+    execution["implementation"] = "visited-scan-v1" if algorithm == "nn" else "candidate-v1"
+    first = Manifest(document).expand()[0]
+    execution["implementation"] = "future-optimization-v1"
+    second = Manifest(document).expand()[0]
+    assert legacy.search_id == first.search_id == second.search_id
+    assert legacy.trial_seed == first.trial_seed == second.trial_seed
+    assert legacy.logical_searches == first.logical_searches == second.logical_searches
+    assert len({legacy.execution_id, first.execution_id, second.execution_id}) == 3
+    assert "implementation" not in legacy.execution
+    assert first.execution["implementation"] != second.execution["implementation"]
+    normalized = Manifest(document).to_dict()
+    assert Manifest(normalized).expand() == Manifest(document).expand()
+    second.execution["implementation"] = "mutated"
+    assert second.execution["implementation"] == "future-optimization-v1"
+    document["experiments"][0]["executions"] = [first.execution, second.execution]
+    together = Manifest(document).expand()
+    assert together[0].search_id == together[1].search_id
+    assert [p.execution_id for p in together[:2]] == [first.execution_id, second.execution_id]
+
+
+@pytest.mark.parametrize("value,error", [(None, TypeError), (True, TypeError),
+                                        (1, TypeError), ("", ValueError), ("  ", ValueError)])
+def test_implementation_label_validation(value, error):
+    document = make_document("nn")
+    document["experiments"][0]["executions"][0]["implementation"] = value
+    with pytest.raises(error):
+        Manifest(document)
+
+
 def test_trial_identity_golden_vectors(document):
     plan = Manifest(document).expand()[0]
     assert plan.search_id == "search-v1-c2bb8c335a781201649de6a2906d129320fce75c1c1e6382eb9e3089dc65912d"
