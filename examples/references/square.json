@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "references": [{
+    "instance_id": "instance-v1-434c24120a05da693ed0f22582acc664ddef0f054a900905b4cf275ba68f5699",
+    "coordinate_checksum": "5bd594629b558cec3174cb988c57d2c4dc5e8ef38a0d352d32ee9e535ddc5275",
+    "distance_kind": "euclidean_2d",
+    "kind": "exact",
+    "cost": 4.0,
+    "source": "Unit-square fixture: four edges of length at least 1 give lower bound 4; the perimeter attains it."
+  }]
+}

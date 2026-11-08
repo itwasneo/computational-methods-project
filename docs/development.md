@@ -9,7 +9,7 @@ Use Python 3.12 and uv. [`.python-version`](../.python-version) selects the mino
 | Layer | Tools and role |
 | --- | --- |
 | Runtime | Python orchestration; NumPy arrays; Numba native loops, with `prange` for planned shared-memory paths |
-| `dev` (default group) | pytest correctness and integration checks |
+| `dev` (default group) | pytest plus the `analysis` group, so the full suite exercises reports without skips |
 | Optional `analysis` | pandas aggregation and Matplotlib figures |
 | Cluster environment | Apptainer application image, launched through Slurm; see [HPC operations](hpc-resources.md) |
 
@@ -41,7 +41,7 @@ uv run --locked --no-dev tsp-hpc --help
 uv sync --locked  # Restore development dependencies.
 ```
 
-Select `--group analysis` when running analysis code; it is not part of the base numerical runtime.
+For analysis without development tools, use `uv sync --locked --no-dev --group analysis`. pandas/Matplotlib remain outside the base numerical runtime; the default development environment includes them to test the complete feature set.
 
 ## CI and review
 

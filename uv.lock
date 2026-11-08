@@ -298,6 +298,8 @@ analysis = [
     { name = "pandas" },
 ]
 dev = [
+    { name = "matplotlib" },
+    { name = "pandas" },
     { name = "pytest" },
 ]
 
@@ -312,7 +314,11 @@ analysis = [
     { name = "matplotlib", specifier = ">=3.11.2,<3.12" },
     { name = "pandas", specifier = ">=3.1,<3.2" },
 ]
-dev = [{ name = "pytest", specifier = ">=9.2,<10" }]
+dev = [
+    { name = "matplotlib", specifier = ">=3.11.2,<3.12" },
+    { name = "pandas", specifier = ">=3.1,<3.2" },
+    { name = "pytest", specifier = ">=9.2,<10" },
+]
 
 [[package]]
 name = "tzdata"

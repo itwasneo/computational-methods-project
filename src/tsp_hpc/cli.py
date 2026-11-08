@@ -24,12 +24,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--output", required=True, help="new JSONL shard; parent directory must exist")
     run.add_argument("--max-matrix-bytes", type=int,
                      help="dense matrix ceiling per trial (not total process memory)")
+    analyze = commands.add_parser("analyze", help="validate result shards and generate tables/plots")
+    analyze.add_argument("shards", nargs="+", help="runner JSONL shards")
+    analyze.add_argument("--output", required=True, help="new report directory")
+    analyze.add_argument("--manifest", help="optional expected manifest for detecting absent executions")
+    analyze.add_argument("--references", help="explicit objective-compatible reference-cost JSON")
+    analyze.add_argument("--baseline", help="explicit baseline implementation for paired speed ratios")
+    analyze.add_argument("--baseline-distance-mode", choices=("dense", "on_demand"))
+    analyze.add_argument("--metric", choices=("search_time_s", "end_to_end_time_s"), default="search_time_s")
+    analyze.add_argument("--max-plot-groups", type=int, default=40)
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
         return 0
     # Keep help/version independent of numerical imports and JIT startup.
     from tsp_hpc.manifests import Manifest
+    if args.command == "analyze":
+        try:
+            from tsp_hpc.analysis import load_references
+            from tsp_hpc.analysis_reports import write_report
+        except ModuleNotFoundError as error:
+            parser.exit(2, f"Analysis dependencies unavailable ({error}); in the checkout use uv run --locked --group analysis tsp-hpc analyze ...\n")
+        try:
+            report = write_report(
+                args.shards, output_dir=args.output,
+                expected_manifest=None if args.manifest is None else Manifest.from_file(args.manifest),
+                references=None if args.references is None else load_references(args.references),
+                baseline_implementation=args.baseline, baseline_distance_mode=args.baseline_distance_mode,
+                metric=args.metric, max_plot_groups=args.max_plot_groups,
+            )
+        except (OSError, ValueError, TypeError) as error:
+            parser.exit(2, f"tsp-hpc: {error}\n")
+        print(f"{report['observed_trials']} observations; {len(report['diagnostics'])} diagnostics; "
+              f"{report['comparison']['blocked_pairs']} blocked comparisons; report: {args.output}")
+        return 1 if report["has_issues"] else 0
     from tsp_hpc.runner import run_manifest
     bindings = {}
     for binding in args.instance:
