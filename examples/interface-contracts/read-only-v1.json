@@ -5,6 +5,17 @@
     "request_id": "request-workspace",
     "workspace": {"workspace_id": "workspace-demo", "display_name": "Demo workspace", "access": "read_only"}
   },
+  "catalog": {
+    "api_version": 1,
+    "request_id": "request-catalog",
+    "workspace_id": "workspace-demo",
+    "revision": "catalog-revision-1",
+    "items": [
+      {"artifact_handle": "candidate-json", "display_name": "inputs/example.json", "kind": "json", "revision": "catalog-revision-1", "validation": "unvalidated"},
+      {"artifact_handle": "candidate-shard", "display_name": "runs/example.jsonl", "kind": "result_shard", "revision": "catalog-revision-1", "validation": "unvalidated"}
+    ],
+    "next_cursor": null
+  },
   "query": {
     "api_version": 1,
     "request_id": "request-query",

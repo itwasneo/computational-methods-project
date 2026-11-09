@@ -1,4 +1,5 @@
-// Read-only API v1 design types. Not runtime validation or frontend API wiring.
+// Read-only API v1 DTOs. Workspace/session/catalog endpoints now implement a subset.
+// Results operations remain design-only; these types are not runtime validation or API wiring.
 // Mirrors tsp_hpc.interface.contracts; all fields are required, even when nullable.
 export const API_VERSION = 1;
 export const PAGE_DEFAULT = 100;
@@ -18,9 +19,14 @@ export interface Workspace {
 export interface Artifact {
   artifact_handle: string;
   display_name: string;
-  kind: 'result_shard' | 'instance' | 'manifest' | 'reference';
+  kind: 'result_shard' | 'json' | 'instance' | 'manifest' | 'reference';
   revision: string;
+  validation: 'unvalidated';
 }
+export interface SessionRequest { api_version: 1; request_id: string; secret: string; }
+export interface SessionResponse { api_version: 1; request_id: string; token_type: 'Bearer'; session_token: string; }
+export interface CatalogRefreshRequest { api_version: 1; request_id: string; workspace_id: string; }
+export interface CatalogRefreshResponse extends CatalogRefreshRequest { revision: string; }
 export interface WorkspaceResponse {
   api_version: 1;
   request_id: string;
@@ -134,7 +140,8 @@ export interface ErrorResponse {
   request_id: string;
   code: 'invalid_request' | 'unauthorized' | 'workspace_unavailable' | 'artifact_not_found' |
     'invalid_artifact' | 'dataset_not_ready' | 'stale_revision' | 'cursor_invalid' |
-    'snapshot_mismatch' | 'geometry_too_large' | 'internal_error';
+    'snapshot_mismatch' | 'geometry_too_large' | 'internal_error' | 'catalog_busy' |
+    'catalog_limit_exceeded' | 'artifact_too_large' | 'request_too_large';
   message: string;
   retryable: boolean;
 }

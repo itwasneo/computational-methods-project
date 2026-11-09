@@ -11,6 +11,7 @@ Use Python 3.12 and uv. [`.python-version`](../.python-version) selects the mino
 | Runtime | Python orchestration; NumPy arrays; Numba native loops, with `prange` for planned shared-memory paths |
 | `dev` (default group) | pytest plus the `analysis` group, so the full suite exercises reports without skips |
 | Optional `analysis` | pandas aggregation and Matplotlib figures |
+| Optional `interface` extra | FastAPI, Pydantic and Uvicorn for the loopback workspace API; not required by numerical commands |
 | Cluster environment | Apptainer application image, launched through Slurm; see [HPC operations](hpc-resources.md) |
 
 Use `--locked` routinely: it fails if declarations and the lockfile disagree instead of silently resolving a different environment. Do not establish experiment environments with unrelated ad-hoc `pip install` commands. The lockfile does not pin Python's patch version, OS, CPU or drivers; record the actual runtime for experiments.
@@ -135,17 +136,49 @@ Review this slice locally before expanding it: expand/collapse each experiment u
 
 ### Read-only contract slice
 
-The [read-only API v1 design](contracts.md#read-only-local-interface-contract-design-v1) defines the initial fixed-workspace Results boundary for #72. It is not an implemented backend: the current UI still uses presentation fixtures. The workspace is configured at backend startup, remains fixed for that session and is read-only; no frontend root-path selector or database is introduced. HTTP routes, security enforcement, background indexing and UI wiring remain subsequent work under #73–#76/#80. Editing/job/summary-comparison contracts remain outstanding, so #72 stays open.
+The [read-only API v1 design](contracts.md#read-only-local-interface-contract-design-v1) defines the fixed-workspace Results boundary for #72. The workspace/session/catalog subset is now implemented below; dataset indexing, trial queries and geometry responses remain design-only, and the UI still uses presentation fixtures. Editing/job/summary-comparison contracts remain outstanding, so #72 stays open.
 
-`src/tsp_hpc/interface/contracts.py` contains standard-library-only design types; it does not import the numerical stack or require web dependencies. `frontend/src/contracts.ts` mirrors them. The shared JSON example under `examples/interface-contracts/` exercises the same values in both languages; update both declarations, the contract reference and affected fixtures/tests together. Neither type system replaces the future runtime validator.
+`src/tsp_hpc/interface/contracts.py` contains standard-library-only design types; it does not import the numerical stack or require web dependencies. `frontend/src/contracts.ts` mirrors them. The shared JSON example under `examples/interface-contracts/` exercises the same values in both languages; update both declarations, the contract reference and affected fixtures/tests together. Neither type system replaces runtime validation. The implemented workspace endpoints use strict Pydantic request models; the remaining Results DTOs are not yet runtime validators.
 
 ```bash
-uv run --locked pytest tests/interface -W error
+uv run --locked --extra interface pytest tests/interface -W error
 pnpm --dir frontend run check
 pnpm --dir frontend run test
 ```
 
-These checks cover schema shape and exact numeric transport, not filesystem authorization, HTTP behaviour or a working real-data viewer. The selected page/geometry bounds are conservative initial API limits, not browser performance gates.
+Wire-fixture checks cover schema shape and exact numeric transport. Separate backend tests exercise workspace authorization and HTTP behavior, but there is still no working real-data Results viewer. The selected page/geometry bounds are conservative initial API limits, not browser performance gates.
+
+### Local backend foundation
+
+Install and launch from the repository root:
+
+```bash
+uv sync --locked --extra interface
+uv run --locked --extra interface tsp-hpc serve --workspace /path/to/workspace --port 8000
+```
+
+Installed-package users can install `tsp-hpc[interface]`. The command binds **only `127.0.0.1`**; no remote host option, proxy-header trust, static frontend serving, uploads, arbitrary file/download endpoints, database or execution service is included. The current Vite preview remains independent. Missing optional dependencies fail with an installation hint, while `--help`, `--version` and numerical commands do not import the server. Startup validates the root and scan bounds before requesting a credential. An occupied port fails clearly; Ctrl-C closes the session and catalog.
+
+**Session bootstrap:** an owner client creates a fresh random URL-safe secret, e.g. with Python `secrets.token_urlsafe(32)`, and retains it privately. Interactive startup asks for that same 43–128-character secret using a hidden terminal prompt. Automated owner clients can start the command with `--session-secret-stdin` and pass the secret through a private stdin pipe, never command arguments, URLs, environment variables or shell history. The [loopback integration test](../tests/integration/test_local_backend.py) demonstrates the complete in-memory launch/pair/request/shutdown flow without printing credentials. This is a developer bootstrap, not an account/login system or the final browser pairing UI.
+
+The client then sends JSON `SessionRequest` (`api_version: 1`, `request_id`, `secret`) to `POST /api/session`. Exactly one successful exchange returns `SessionResponse` with a fresh random `session_token`; use `Authorization: Bearer <token>` thereafter. Pairing is disabled after success or five failed credential attempts. Restart to pair another client. Neither credential is logged or stored on disk. Use the token only in process memory in this slice. No endpoint reveals it without the private startup secret; raw ASGI tracebacks/access logs are disabled, and errors are sanitized.
+
+| Implemented route | Contract and behavior |
+| --- | --- |
+| `POST /api/session` | One-time private bootstrap exchange; origin/host/body checks apply before credential checking. |
+| `GET /api/workspace` | Authenticated `WorkspaceResponse`; optional `X-Request-ID`, otherwise a server correlation ID. |
+| `POST /api/artifacts/query` | Authenticated `ArtifactQuery` → `ArtifactPage`, at most 500 candidates per page. All fields are required, including nullable `cursor`. |
+| `POST /api/artifacts/refresh` | Authenticated `CatalogRefreshRequest` → `CatalogRefreshResponse`; atomically rebuilds the same root's catalog and rotates its revision/handles. |
+
+Use exactly `http://127.0.0.1:<port>` as authority and disable environment-configured proxies in owner clients so credentials stay on loopback. Foreign/null origins, foreign/duplicate Host headers, cross-site/same-site fetch requests, unauthorized sessions and all query strings are rejected. Native owner clients may omit Origin; they still require the secret/token. There is no permissive CORS, WebSocket channel, OpenAPI/docs endpoint or frontend proxy integration yet. Responses use no-store/no-sniff/frame-denial headers. JSON bodies are bounded to 16 KiB even without Content-Length; strict request validation rejects coercions and extra/path fields. Sync catalog operations run in FastAPI's worker pool with a nonblocking single-operation lock; startup performs the initial scan before accepting requests. Uvicorn concurrency is bounded to 32.
+
+**File policy:** the explicitly configured root is resolved once, pinned to an open directory descriptor and fixed for the session. It must be a trusted owner-controlled POSIX local workspace. Descendant directories/files are opened relative to that descriptor with no-follow flags; symlinks, special files, hidden entries/subtrees and extensions other than `.json`/`.jsonl` are excluded. `.json` is a generic JSON candidate; `.jsonl` is a result-shard candidate. Every listed item has `validation: unvalidated`; no parser, schema, checksum or scientific validity is implied. Original evidence is not modified. Absolute root paths/raw exceptions never appear in API responses. Candidate display names are relative labels, not accepted request paths.
+
+Scans count at most 10,000 entries and descend at most 16 levels; exceeding either bound fails explicitly without publishing a partial catalog. Metadata identity (device/inode/mode/size/mtime/ctime) and directory changes invalidate the catalog. Refresh rotates session-bound handles and HMAC-protected cursors, even if no file changed. An internal 64-KiB-bounded reader reopens known handles with no-follow/nonblocking flags, checks regular-file identity before/after reading and rechecks the catalog; it has **no HTTP endpoint**. Replaced/deleted files and observed races fail closed. These metadata revisions are not scientific content digests; #75 must establish content-verified dataset revisions before analysis caching.
+
+The trust boundary excludes hostile same-user processes, malicious filesystem owners/mounts and hard links created by the trusted owner: choosing a workspace authorizes its regular files. The implementation does not claim to defeat arbitrary same-user directory renames or metadata forgery between syscalls. Keep untrusted writers out of the root. Future scientific loaders must consume authorized verified bytes/handles, not reopen arbitrary embedded paths. No cluster operations are performed.
+
+Tests cover API credentials/authority/body limits, cursor/session isolation, hidden/symlink/special files, scan limits, replacements/deletions, changes during bounded reads, cleanup and a real loopback startup/shutdown. Run all backend checks with the extra enabled; without it, optional HTTP tests skip. CI installs the extra and runs them with warnings treated as errors. Security tests do not complete the remaining frontend lifecycle, upload/export or execution flows in #73/#74.
 
 ### Firefox rendering decision
 
@@ -169,7 +202,7 @@ Node 24.14.0 CI retains only model/picking and WebGL draw-order/resource-ownersh
 
 ## CI and review
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) is authoritative for runner/tool versions, action pins and commands. It installs the locked environment, runs the full suite and builds distributions on branch pushes and PRs to `master`, including documentation-only changes.
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) is authoritative for runner/tool versions, action pins and commands. It installs the locked environment with the optional `interface` extra, runs the full suite with warnings treated as errors and builds distributions on branch pushes and PRs to `master`, including documentation-only changes.
 
 - Actions are pinned to commit IDs. Repository permissions are read-only, checkout credentials are not persisted, and no custom or cluster secrets are needed. Forks use ordinary `pull_request`, not privileged `pull_request_target`; GitHub may require contributor approval.
 - Cache dependencies, not `.venv` or restored native JIT artifacts. Numba uses a separate temporary cache; numerical thread limits are one.

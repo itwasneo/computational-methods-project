@@ -33,11 +33,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     analyze.add_argument("--baseline-distance-mode", choices=("dense", "on_demand"))
     analyze.add_argument("--metric", choices=("search_time_s", "end_to_end_time_s"), default="search_time_s")
     analyze.add_argument("--max-plot-groups", type=int, default=40)
+    serve = commands.add_parser("serve", help="start the optional read-only local workspace API")
+    serve.add_argument("--workspace", required=True, help="fixed workspace directory for this session")
+    serve.add_argument("--port", type=int, default=8000, help="127.0.0.1 port (default: 8000)")
+    serve.add_argument("--session-secret-stdin", action="store_true",
+                       help="read a private session-pairing secret from stdin instead of a hidden terminal prompt")
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
         return 0
-    # Keep help/version independent of numerical imports and JIT startup.
+    # Keep help/version and the optional server independent of numerical imports/JIT.
+    if args.command == "serve":
+        try:
+            from tsp_hpc.interface.launcher import serve as serve_workspace
+        except ModuleNotFoundError:
+            parser.exit(2, "Interface dependencies unavailable; use uv sync --locked --extra interface or install tsp-hpc[interface].\n")
+        from tsp_hpc.interface.errors import InterfaceError
+        try:
+            return serve_workspace(args.workspace, port=args.port, session_secret_stdin=args.session_secret_stdin)
+        except (InterfaceError, ValueError) as error:
+            parser.exit(2, f"tsp-hpc: {error}\n")
     from tsp_hpc.experiments.manifests import Manifest
     if args.command == "analyze":
         try:

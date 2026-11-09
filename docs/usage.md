@@ -2,6 +2,10 @@
 
 Use the installed [development environment](development.md) and run examples from the repository root with `uv run --locked python`. The [README](../README.md#current-capabilities) lists available features. [Contracts](contracts.md) define the data/objective/result rules; this guide explains how to use their APIs.
 
+## Optional local workspace backend
+
+`tsp-hpc serve --workspace /path/to/workspace --port 8000` starts the optional loopback-only, read-only candidate catalog. Install the `interface` extra and follow the [startup/session instructions](development.md#local-backend-foundation). The frontend still uses fixtures: this command does not yet serve the UI, analyze shards or execute solvers. The workspace root is fixed at startup; API requests use session-authorized handles, not arbitrary file paths.
+
 ## Canonical data and independent validation
 
 `TSPInstance` takes a caller-supplied logical ID and owns a read-only coordinate copy. Its frozen fields use object-identity equality. The validators in [data.py](../src/tsp_hpc/problem/data.py) check canonical arrays without converting, reordering or mutating them. Normalize external lists, strided/non-native arrays or subclasses explicitly in a loader; do not coerce invalid solver tours into validity. Masked arrays are unsupported. Treat coordinates, flags and shape as immutable: NumPy read-only flags prevent accidental writes, not deliberate bypass.
