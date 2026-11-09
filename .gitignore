@@ -1,3 +1,6 @@
+# macOS filesystem metadata
+.DS_Store
+
 # Local Python environments and private configuration
 .venv/
 .venv-*/
