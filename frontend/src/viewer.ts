@@ -1,5 +1,5 @@
-import { Scene } from '../../examples/interface-rendering/model.mjs';
-import { webgl } from '../../examples/interface-rendering/webgl.mjs';
+import { Scene } from './rendering/model.mjs';
+import { webgl } from './rendering/webgl.mjs';
 import { nextPickedCity } from './inspection';
 import type { Inspection } from './inspection';
 import type { Theme } from './theme';

@@ -44,10 +44,9 @@ After the [frontend installation](interface.md#results-and-viewer-preview), run 
 pnpm --dir frontend run check
 pnpm --dir frontend run test
 pnpm --dir frontend run build
-node --test examples/interface-rendering/*.test.mjs
 ```
 
-Tests exercise native kernels, independent references, reproducibility and interface boundaries. They require no cluster account, GPU or container; backend integration tests use loopback networking. Test timings are not benchmark evidence, and mock GL checks do not certify browser rendering. Share scientific conformance tests across implementations rather than copying suites. No browser measurement campaign is required or planned.
+The frontend test command includes the rendering/model regressions in `frontend/src/rendering/`. Tests exercise native kernels, independent references, reproducibility and interface boundaries. They require no cluster account, GPU or container; backend integration tests use loopback networking. Test timings are not benchmark evidence, and mock GL checks do not certify browser rendering. Share scientific conformance tests across implementations rather than copying suites. No browser measurement campaign is required or planned.
 
 ## Package layout
 
@@ -63,7 +62,7 @@ src/tsp_hpc/
 ├── analysis/            # validated tables/comparisons and separate reports layer
 └── interface/           # optional session/catalog API and design DTOs
 frontend/                # fixture-only Svelte/TypeScript preview
-examples/interface-rendering/  # shared WebGL2/model code and standalone reference
+└── src/rendering/       # WebGL2/model code, declarations and focused tests
 ```
 
 Tests mirror the Python packages under `tests/`; CLI, local-server and native-cache integration checks live in `tests/integration/`. For example, `uv run --locked pytest tests/solvers/nn -W error` selects NN conformance tests.
@@ -79,7 +78,7 @@ Old flat imports have no compatibility aliases; use the paths in this guide and 
 - **Python checks:** locked installation with the interface extra, pytest with warnings as errors, and distribution builds.
 - **Rendering primitive checks:** Node syntax checks and the shared rendering/model tests.
 
-**Frontend type checks, frontend tests and the Vite build are not yet run by CI.** Use the commands above for changes affecting them; a green Python/rendering run does not establish frontend correctness.
+**Frontend type checks, non-rendering frontend tests and the Vite build are not yet run by CI.** Use the commands above for changes affecting them; a green Python/rendering run does not establish frontend correctness.
 
 Actions are commit-pinned, repository permissions are read-only, and checkout credentials are not persisted. CI uses ordinary `pull_request` events and no custom/cluster secrets. It caches dependencies, not `.venv` or restored native JIT artifacts; numerical thread limits are one and the Numba cache is temporary. Jobs have timeouts and superseded runs are cancelled separately for push and PR events.
 

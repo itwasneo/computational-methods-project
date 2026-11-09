@@ -1,4 +1,4 @@
-import { fixture } from '../../examples/interface-rendering/model.mjs';
+import { fixture } from './rendering/model.mjs';
 import type { Trial } from './fixtures';
 
 export type Inspection = {
