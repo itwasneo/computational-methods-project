@@ -68,8 +68,8 @@ jobs:
       - name: Build package distributions
         run: uv build --no-sources
 
-  interface-prototype-checks:
-    name: Interface prototype checks
+  rendering-checks:
+    name: Rendering primitive checks
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -84,7 +84,7 @@ jobs:
           node-version: "24.14.0"
           package-manager-cache: false
 
-      - name: Check prototype syntax and correctness
+      - name: Check retained rendering primitives
         run: |
           node --version
           for file in examples/interface-rendering/*.mjs; do node --check "$file"; done

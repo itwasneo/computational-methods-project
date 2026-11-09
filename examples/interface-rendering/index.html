@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
-<title>TSP graphics prototype — synthetic data</title>
+<title>TSP WebGL2 reference — synthetic data</title>
 <style>
   :root { color-scheme: dark; font: 16px system-ui; background: #091019; color: #e4edf5; }
   body { margin: 16px; } h1 { font-size: 1.25rem; }
@@ -11,18 +11,15 @@
   button, input, select { font: inherit; } input[type=number] { width: 130px; }
   canvas { display: block; width: 100%; height: 60vh; min-height: 260px; touch-action: none; }
   :focus-visible { outline: 3px solid #ffb84d; outline-offset: 3px; }
-  #status { white-space: pre-wrap; } pre { overflow: auto; max-height: 20rem; }
+  #status { white-space: pre-wrap; }
 </style>
-<h1>GPU city rendering prototype — synthetic data, not solver evidence</h1>
+<h1>WebGL2 city rendering reference — synthetic data, not solver evidence</h1>
 <div class="controls">
-  <label>API <select id="api"><option>WebGL2</option><option>WebGPU</option></select></label>
   <label>Cities <select id="count"><option>1000</option><option>10000</option><option>50000</option></select></label>
   <label>Fixture <select id="kind"><option>uniform</option><option>clustered</option><option>duplicates</option><option>collinear</option><option>coincident</option></select></label>
   <button id="load">Load / reset fixture</button>
   <label><input id="tour" type="checkbox">Synthetic row-order tour</label>
-  <button id="fit">Fit</button>
-  <button id="measure">10-second diagnostic</button>
-  <button id="export">Export diagnostics</button>
+  <button id="fit">Reset view</button>
 </div>
 <p>Drag to pan; wheel to zoom; click to pick (repeat to cycle coincident cities). Shift-drag moves the selected city.
   Focus the canvas: arrows pan, +/− zoom. Use city fields below for non-canvas inspection/editing.
@@ -36,6 +33,5 @@
   <button id="move">Move city</button>
 </div>
 <p id="status" role="status" aria-live="polite">Loading…</p>
-<pre id="report" aria-label="Latest diagnostic report"></pre>
 <script type="module" src="./app.mjs"></script>
 </html>

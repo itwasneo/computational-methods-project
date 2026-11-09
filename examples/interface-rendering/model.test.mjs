@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {fixture, bounds, Scene, percentile} from './model.mjs';
+import {fixture, bounds, Scene} from './model.mjs';
 
 test('fixtures are deterministic float64 and cover degenerate bounds', () => {
   for (const kind of ['uniform', 'clustered', 'duplicates', 'collinear', 'coincident']) {
@@ -92,12 +92,4 @@ test('extreme initial bounds stay finite and unsupported edits are atomic', () =
   }
   assert.throws(() => scene.update(-1, [0, 0]), /city ID/);
   assert.throws(() => scene.pick(0, 0, -1), /radius/);
-});
-
-test('percentiles use nearest rank and do not mutate samples', () => {
-  const values = [4, 1, 3, 2];
-  assert.equal(percentile(values, 0.5), 2);
-  assert.equal(percentile(values, 0.95), 4);
-  assert.equal(percentile([], 0.95), null);
-  assert.deepEqual(values, [4, 1, 3, 2]);
 });

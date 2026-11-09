@@ -136,30 +136,19 @@ Use **WebGL2** as the city/final-tour viewer baseline: instanced points, a final
 
 [Decision evidence and reproduction (#97)](https://github.com/itwasneo/computational-methods-project/pull/97) records the visible-Firefox hardware checks, workload matrix, timings and limitations. WebGPU was disabled by default on the tested Firefox/Linux profile; WebGL2 used the RTX 2060. These are Firefox-specific diagnostics, not proof of physical presentation latency or universal responsiveness. The DPR 2 transient RSS observation exceeded the proposed ceiling, and occasional stalls were observed. The actual viewer must reuse contexts/buffers, bound picking allocations and repeat application-level checks in #80/#92 rather than inheriting a performance-pass claim.
 
-### Rendering prototype (#69)
+### Small rendering reference
 
-`examples/interface-rendering/` is an isolated, dependency-free browser harness, not the optional application scaffold or a stack decision. From the repository root:
+`examples/interface-rendering/` retains only the adopted WebGL2/picking primitives, a small interactive example and focused regression checks—not a frontend scaffold or permanent benchmark subsystem. From the repository root:
 
 ```bash
 node --test examples/interface-rendering/*.test.mjs
 python3 -m http.server 8765 --bind 127.0.0.1 --directory examples/interface-rendering
-# Open http://127.0.0.1:8765 in the reference browser; stop the server after use.
+# Open http://127.0.0.1:8765 in Firefox; stop the server after use.
 ```
 
-Use the API selector and explicitly load/reset each fixture. Both candidates use instanced circular quads with a final selection overlay, display-only float32 buffers, a CPU spatial grid for picking, frame-batched changed-point uploads and an optional O(n) row-order closed polyline. Canonical synthetic coordinates remain float64. Unsafe/oversized grid ranges fall back to a bounded city scan; edits outside the fixture's finite float32 projection are rejected atomically, not clamped. Automatic projection rebasing remains future viewer work. Coincident picks cycle through distinct city IDs; city fields provide non-canvas inspection/movement. Drag pans, wheel zooms, shift-drag moves the selected city; resizing uses the actual browser DPR. DPR 2 requires a real/emulated DPR profile, not simply increasing canvas dimensions. Context/device loss is an explicit error requiring reload; unavailable WebGPU must not silently switch to WebGL2.
+Load/reset a synthetic fixture; drag pans, wheel zooms, shift-drag moves the selected city, and repeated coincident picks cycle IDs. Keyboard navigation and city fields offer non-canvas controls. The reference uses a fixed fixture projection: unsupported float32 edits are rejected atomically, not clamped; automatic rebasing, snapshot identity binding and undo remain future viewer/editor work. Context loss requires a reload. Synthetic row-order tours are not solver results. The page has no framework, external assets, solver execution or production API.
 
-For each G profile/browser/DPR, reset the fixture, check navigation/picking/selected updates and repeat with the synthetic tour on. Run the 10-second scripted pan/zoom diagnostic and export JSON outside Git. The export records configuration, browser, viewport, API metadata, setup time, RAF intervals, CPU submission and 100 isolated picking queries. It rejects hidden-tab runs and labels edited scenes. These are **diagnostics, not acceptance results**: RAF is not presentation timing; no synchronous GPU readback or GPU-idle wait is added. Capture real input-to-present feedback, GPU support/driver, process memory, idle CPU, cold/warm repetitions and concurrency separately using the acceptance procedure above. Record shader/adapter failures as unsupported cases, not zero timings. Node 24.14.0 tests cover model correctness, bounded picking, atomic edits, renderer resource ownership and stale initialization/diagnostic state. Renderer fault-injection doubles do not compile shaders or prove GPU behavior. CI runs these dependency-free tests and module syntax checks separately from Python checks; neither job is a performance gate.
-
-For optional real-browser functional checks, start a local WebDriver (for example, `geckodriver --host 127.0.0.1 --port 4444`), then run:
-
-```bash
-node examples/interface-rendering/browser-check.mjs http://127.0.0.1:4444 firefox 1
-node examples/interface-rendering/browser-check.mjs http://127.0.0.1:4444 firefox 2
-```
-
-The script starts its own loopback static server and isolated headless session, checks selected pixels at all graphics scales/fixture types with the tour visible, and closes its session/server. Stop the WebDriver afterward. Use `chrome` with a local ChromeDriver endpoint for Chromium. No browsers/drivers are downloaded automatically. Pixel readback occurs only in this functional test, never in rendering measurements. Unavailable WebGPU is reported explicitly; shader/validation failures fail the check. Headless/software-rendered success is not reference-hardware acceptance.
-
-The page contains no framework, CDN dependencies, solver invocation or production API. A temporary `measure-firefox.py` driver runs a bounded real NN process only for its explicitly labelled concurrency probe; it produces no solver benchmark records. Synthetic paths are not valid solver evidence. The comparison harness remains temporarily for reproduction and is retired in the separate cleanup following the decision above. Table/chart measurements and the production stack decision remain #70.
+Node 24.14.0 CI retains only model/picking and WebGL draw-order/resource-ownership regressions, plus syntax checks. Mock GL calls do not validate shaders, and CI timings are not performance evidence. WebGPU, diagnostic/export UI, browser-matrix drivers and their obsolete mocks/tests have been retired. The measured revision and reproduction procedure remain linked in the decision evidence above; browser/API conformance and performance checks belong with the eventual application, not a growing parallel test platform.
 
 ## CI and review
 
