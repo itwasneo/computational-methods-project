@@ -63,9 +63,9 @@ Tests mirror these contexts under `tests/`; CLI and cross-package cold/cache che
 
 **Import migration:** former flat modules move under the groups above: e.g. `tsp_hpc.data` → `tsp_hpc.problem.data`, `tsp_hpc.runner` → `tsp_hpc.experiments.runner`, and `tsp_hpc.nearest_neighbour` → `tsp_hpc.solvers.nn.solver`. The NN kernel modules are now `solvers.nn.visited_scan` and `solvers.nn.remaining_array`; `analysis_reports` is now `analysis.reports`. Update imports in downstream branches/scripts; no flat compatibility shims are retained. The public `tsp_hpc.analysis` data API, CLI commands, JSON formats, identities and implementation labels are unchanged. Native caches may be rebuilt after module relocation; cached machine code is not a portable project artifact.
 
-## Local interface scope and performance acceptance
+## Local interface scope
 
-This is the **proposed acceptance baseline** for [#68](https://github.com/itwasneo/computational-methods-project/issues/68), under the [interface roadmap #67](https://github.com/itwasneo/computational-methods-project/issues/67). Confirm the exact reference desktop, browser/profile matrix, workloads and budgets in the issue/PR review before treating them as agreed gates. This is not an implemented-feature list or measured performance claim; rendering/data prototypes (#69–#70) must supply evidence before selecting the production stack. Change an agreed budget only through an explicit reviewed decision, not by silently reducing the workload.
+The [interface roadmap #67](https://github.com/itwasneo/computational-methods-project/issues/67) remains subordinate to the TSP project. **The owner ended browser measurement work: no further browser benchmarks, profiling campaigns or numerical browser-performance gates are planned.** Earlier measurement requirements are superseded, not certified as passed. Keep implementation and functional checks focused; do not recreate a separate browser testing platform.
 
 ### First-release journeys and boundaries
 
@@ -81,60 +81,11 @@ The initial execution scope is the runner's serial NN implementations with fixed
 
 The interface is optional, local-first, workspace-bounded and usable without external assets. Accounts, cloud services, telemetry, cluster submission/operations, collaborative editing and a new scientific engine are out of scope. Reuse the [shared contracts](contracts.md) and [identity rules](manifests.md#identity-rules): finite float64 coordinates, legal duplicates, row order, exact uint64 seeds and immutable identities must survive transport. GPU display coordinates/level of detail never replace canonical scientific coordinates. Existing CLI and minimal numerical installations must not require interface dependencies.
 
-### Reference environment
-
-Use a physical desktop session, local SSD workspace, AC power, normal browser hardware acceleration and a 60 Hz display. The candidate primary machine available during drafting has an Intel Core i7-9700K (8 cores), about 78 GiB OS-visible RAM and an NVIDIA RTX 2060. This is the proposed reference machine, **not evidence of performance on lower-end laptops**. Cap application memory through the budgets below rather than treating all host RAM as available.
-
-Use Firefox only for the rendering decision (#69), as agreed by the owner. Record its exact build, OS/kernel, GPU driver, graphics API/adapter, acceleration status and refresh rate in every evidence set; “latest” alone is not reproducible. Do not extend conclusions to Chromium or other browsers without separate evidence. Do not count software rendering as a passing GPU run. WebGPU availability is not a release assumption: #69 must document a supported fallback or an explicit unsupported-browser state.
-
-Use a 1440 × 900 CSS-pixel viewport at DPR 1 for all performance gates. Repeat graphics gates at DPR 2 (same CSS viewport); check keyboard/focus, panel reflow and non-canvas inspection at 1024 × 768, DPR 1. These are selected profiles, not every viewport/browser/device combination. Freeze exact hardware/browser profiles with the first measurements and repeat final acceptance on the recorded profiles, documenting upgrades.
-
-### Reproducible workload matrix
-
-Keep graphics and campaign workloads separate; do not require their full Cartesian product or execute a 50k-city NN search to benchmark rendering.
-
-| Profile | Scales | Required exercise |
-| --- | --- | --- |
-| G: graphics/editor | 1k, 10k, 50k cities | Fixed-seed uniform and clustered coordinates plus duplicate/coincident, collinear and zero-extent cases; pan, zoom, resize, pick, inspect, move a selection, undo/redo and draw one closed final-tour polyline. Never render a complete graph. |
-| R: result explorer | 1k, 10k, 100k trial rows | Deterministic runner-v1-compatible shards with multiple instances/configurations/repetitions, valid outcomes, failures and incomplete trials; scroll, sort, filter, change baselines, inspect summaries and request lazy details. Include rejection/missing-artifact cases. |
-| C: concurrency | G at 10k; R at 100k, tested separately | Repeat interactions during bounded background ingestion, then during one real NN worker restricted to one CPU thread. Record worker workload and duration; do not saturate all cores or run ingestion and a solver together as an implicit requirement. |
-| E: end-to-end correctness | Small canonical fixtures | Import/edit/save, submit NN, continue editing, inspect original-snapshot results, cancel and replay through the CLI. Verify identities and shared-analysis decisions, not solver speed. |
-
-Retain exact seeds, generator parameters, artifact checksums, shard layout/byte sizes and scripted actions with the harness. Keep coordinate/row generation outside measured interactions. Synthetic rendering tours and campaign records are interface fixtures, never solver-quality or speedup evidence; isolate and label them, and use real runner output for E. Keep invalid shards in separate diagnostic cases so they do not accidentally invalidate the valid-data performance fixture. Do not bypass scientific validation to improve timings.
-
-### Proposed blocking budgets
-
-These proposed targets apply to every listed scale of G/R on the reference Firefox profile, including G at DPR 2 and the C repetitions. Times are end-to-end from browser input/request to presented feedback/result, not just backend compute. Use monotonic clocks within each process; correlate request IDs rather than subtracting unsynchronized browser/server clocks.
-
-| Measurement | Gate |
-| --- | --- |
-| Continuous pan/zoom, drag and table scroll | Frame interval p95 ≤ 16.7 ms (60 FPS target), p99 ≤ 33.4 ms over a 10-second scripted interaction; record dropped frames and worst stall. |
-| Local selection/edit/undo feedback | Input-to-visible-feedback p95 ≤ 50 ms; canonical commit may be asynchronous but must not be lost or reordered. |
-| Filter/sort/baseline request | Pending feedback p95 ≤ 50 ms; latest warm result rendered p95 ≤ 250 ms. Obsolete responses must never overwrite newer state. |
-| Cold application start | Launch to usable workspace shell ≤ 3 s; shell remains usable while sources are indexed. |
-| First result page | Once shell is ready, source-open to first usable page ≤ 5 s cold / ≤ 1 s warm, including required source validation/indexing. No partially validated data presented as accepted. |
-| Instance/tour open | Request to navigable G view ≤ 2 s cold / ≤ 500 ms warm, including transfer/parse/upload. |
-| Memory | Peak incremental browser process-tree RSS ≤ 512 MiB and API/index/ingestion process-tree RSS ≤ 512 MiB at the largest individual G/R scale. Record absolute RSS too; report GPU allocation separately. Solver process/matrix memory is separate, not hidden in these totals. |
-| Retained resources | After 20 open/filter/close or edit/undo cycles and a 30 s settle, retained RSS growth ≤ 32 MiB relative to the first settled cycle; histories/caches must remain bounded. |
-| Idle | With no job/ingestion and a static visible workspace, average application CPU ≤ 1% of one logical core over 60 s; no continuous animation/redraw or unbounded polling. Report browser and API separately and together. |
-
-Cold means a stopped application, a fresh browser profile/cache and no interface index/summary cache; OS filesystem caches are not forcibly dropped, and this limitation must be disclosed. Warm means the same source identities already validated/indexed in the current session, with no source changes. Separately measure invalidation after modifying/replacing a shard: stale data must be labelled immediately upon detection, and replacement data must satisfy the cold first-page budget. Report detection latency and invalidation work; do not claim warm hits for changed sources. Cold-start budgets exclude installation/build, but include normal application startup; report any first-job JIT preparation separately in canonical runner timings.
-
-### Evidence and acceptance procedure
-
-1. Run production builds without browser extensions, open developer tools or profiling instrumentation in the acceptance pass. Collect traces in a separate diagnostic pass. Record repository revision/dirty state, lockfile identities, environment, workloads, commands and harness version.
-2. For each required G/R/C browser/profile case, perform five independent cold trials and five warm trials. Each interaction trial includes a 10-second continuous segment and at least 100 discrete actions for feedback/query measurements. Report per-trial p50/p95/p99 and worst observations; do not pool a failing trial into a passing average. Startup/open gates must pass in all five trials.
-3. Record transfer/parse/upload, backend query/index time, frame/input timings, memory and idle CPU separately so a failure can be located. Sample process trees consistently, identify shared browser/GPU processes and avoid double-counting. Measure concurrency for the whole interaction window and retain worker settings.
-4. Retain the reproducible revision, sanitized compact measurements and interpretation in the issue/PR. After a decision, remove disposable comparison/testing machinery; keep only adopted primitives and focused regression checks. Git history preserves retired harnesses. Keep raw traces, generated large fixtures and private machine details out of Git. Prototype diagnostics do not certify the full application budgets.
-5. A correctness/accessibility failure, stale-response overwrite, unsupported required profile, missing evidence or budget breach blocks acceptance for that profile. Record failures and mitigation/retest explicitly. Functional CI checks remain required, but shared-runner CI timings are not these hardware performance gates. UI speed must never be reported as solver speedup or scaling efficiency.
-
-**Proposal for review:** use the desktop and Firefox/profile matrix, workload scales and numerical budgets above. Owner confirmation and budget feasibility remain unverified: #69–#70 must measure it and justify the stack. Final release checks (#92) repeat this matrix rather than introducing unmeasured responsiveness claims.
-
 ### Firefox rendering decision
 
 Use **WebGL2** as the city/final-tour viewer baseline: instanced points, a final selection overlay, one O(n) tour polyline, spatial picking and frame-batched changed-point uploads. Keep canonical float64 geometry separate from float32 display buffers. Do not introduce a WebGPU dependency or a second rendering backend without a demonstrated need. Framework/chart choices remain #70.
 
-[Decision evidence and reproduction (#97)](https://github.com/itwasneo/computational-methods-project/pull/97) records the visible-Firefox hardware checks, workload matrix, timings and limitations. WebGPU was disabled by default on the tested Firefox/Linux profile; WebGL2 used the RTX 2060. These are Firefox-specific diagnostics, not proof of physical presentation latency or universal responsiveness. The DPR 2 transient RSS observation exceeded the proposed ceiling, and occasional stalls were observed. The actual viewer must reuse contexts/buffers, bound picking allocations and repeat application-level checks in #80/#92 rather than inheriting a performance-pass claim.
+[Archived decision evidence (#97)](https://github.com/itwasneo/computational-methods-project/pull/97) records the completed Firefox work; it is not a request for more measurements. WebGPU was disabled by default on the tested profile; WebGL2 used the RTX 2060. Limitations remain recorded: occasional stalls and a transient RSS observation above the former proposed ceiling. These diagnostics do not establish universal responsiveness. Reuse contexts/buffers and avoid unnecessary allocations during ordinary implementation; no follow-up browser measurement campaign is required.
 
 ### Small rendering reference
 
@@ -148,7 +99,7 @@ python3 -m http.server 8765 --bind 127.0.0.1 --directory examples/interface-rend
 
 Load/reset a synthetic fixture; drag pans, wheel zooms, shift-drag moves the selected city, and repeated coincident picks cycle IDs. Keyboard navigation and city fields offer non-canvas controls. The reference uses a fixed fixture projection: unsupported float32 edits are rejected atomically, not clamped; automatic rebasing, snapshot identity binding and undo remain future viewer/editor work. Context loss requires a reload. Synthetic row-order tours are not solver results. The page has no framework, external assets, solver execution or production API.
 
-Node 24.14.0 CI retains only model/picking and WebGL draw-order/resource-ownership regressions, plus syntax checks. Mock GL calls do not validate shaders, and CI timings are not performance evidence. WebGPU, diagnostic/export UI, browser-matrix drivers and their obsolete mocks/tests have been retired. The measured revision and reproduction procedure remain linked in the decision evidence above; browser/API conformance and performance checks belong with the eventual application, not a growing parallel test platform.
+Node 24.14.0 CI retains only model/picking and WebGL draw-order/resource-ownership regressions, plus syntax checks. Mock GL calls do not validate shaders, and CI timings are not performance evidence. WebGPU, diagnostic/export UI, browser-matrix drivers and their obsolete mocks/tests have been retired. Historical evidence remains linked above. Future functional checks must stay proportionate to the application; do not restore browser measurement campaigns or the retired harnesses.
 
 ## CI and review
 
