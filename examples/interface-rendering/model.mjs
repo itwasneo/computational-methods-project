@@ -110,8 +110,3 @@ export class Scene {
     return hits.sort((a, b) => a.distance - b.distance || a.id - b.id).map(hit => hit.id);
   }
 }
-
-export function percentile(values, fraction) {
-  if (!values.length) return null;
-  return [...values].sort((a, b) => a - b)[Math.ceil(values.length * fraction) - 1];
-}
