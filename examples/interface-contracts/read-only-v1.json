@@ -1,0 +1,87 @@
+{
+  "description": "Contract-only wire examples, not runner records or benchmark evidence. IDs and handles are illustrative.",
+  "workspace": {
+    "api_version": 1,
+    "request_id": "request-workspace",
+    "workspace": {"workspace_id": "workspace-demo", "display_name": "Demo workspace", "access": "read_only"}
+  },
+  "query": {
+    "api_version": 1,
+    "request_id": "request-query",
+    "workspace_id": "workspace-demo",
+    "dataset_id": "dataset-demo",
+    "revision": "revision-1",
+    "filters": [
+      {"field": "n_cities", "values": [4, 8]},
+      {"field": "implementation", "values": ["visited-scan-v1", null]}
+    ],
+    "sort": {"field": "best_cost", "direction": "descending"},
+    "limit": 100,
+    "cursor": null
+  },
+  "page": {
+    "api_version": 1,
+    "request_id": "request-query",
+    "workspace_id": "workspace-demo",
+    "dataset_id": "dataset-demo",
+    "revision": "revision-1",
+    "query_key": "query-demo",
+    "next_cursor": null,
+    "items": [
+      {"attempt_id": "attempt-success", "instance_id": "contract-coincident", "implementation": "visited-scan-v1", "n_cities": 4, "algorithm": "nn", "outcome": "completed", "best_cost": 0.0, "search_time_s": 0.0, "campaign_complete": true, "duplicate_execution": false, "usable": true},
+      {"attempt_id": "attempt-failed", "instance_id": "contract-coincident", "implementation": null, "n_cities": 4, "algorithm": "nn", "outcome": "failed", "best_cost": null, "search_time_s": null, "campaign_complete": false, "duplicate_execution": false, "usable": false}
+    ]
+  },
+  "details": {
+    "api_version": 1,
+    "request_id": "request-details",
+    "workspace_id": "workspace-demo",
+    "dataset_id": "dataset-demo",
+    "revision": "revision-1",
+    "row": {"attempt_id": "attempt-success", "instance_id": "contract-coincident", "implementation": "visited-scan-v1", "n_cities": 4, "algorithm": "nn", "outcome": "completed", "best_cost": 0.0, "search_time_s": 0.0, "campaign_complete": true, "duplicate_execution": false, "usable": true},
+    "campaign_id": "campaign-demo",
+    "requested_execution_id": "execution-demo",
+    "execution_id": "execution-demo",
+    "search_id": "search-demo",
+    "instance": {"instance_id": "contract-coincident", "coordinate_checksum": "55235a4a5db45ab92bde658f0abd66f66e9e1438b3520b0d868897607cd78270", "n_cities": 4, "distance_kind": "euclidean_2d", "instance_seed": null},
+    "solver_seed": "18446744073709551615",
+    "trial_seed": "9007199254740993",
+    "source": {"revision": null, "dirty": null},
+    "artifact_state": "available",
+    "artifact_handle": "artifact-coincident",
+    "snapshot_id": "snapshot-demo"
+  },
+  "missing_details": {
+    "api_version": 1,
+    "request_id": "request-missing",
+    "workspace_id": "workspace-demo",
+    "dataset_id": "dataset-demo",
+    "revision": "revision-1",
+    "row": {"attempt_id": "attempt-failed", "instance_id": "contract-coincident", "implementation": null, "n_cities": 4, "algorithm": "nn", "outcome": "failed", "best_cost": null, "search_time_s": null, "campaign_complete": false, "duplicate_execution": false, "usable": false},
+    "campaign_id": "campaign-demo",
+    "requested_execution_id": "execution-failed",
+    "execution_id": null,
+    "search_id": "search-failed",
+    "instance": {"instance_id": "contract-coincident", "coordinate_checksum": "55235a4a5db45ab92bde658f0abd66f66e9e1438b3520b0d868897607cd78270", "n_cities": 4, "distance_kind": "euclidean_2d", "instance_seed": null},
+    "solver_seed": "0",
+    "trial_seed": "0",
+    "source": {"revision": null, "dirty": null},
+    "artifact_state": "missing",
+    "artifact_handle": null,
+    "snapshot_id": null
+  },
+  "geometry": {
+    "api_version": 1,
+    "request_id": "request-geometry",
+    "workspace_id": "workspace-demo",
+    "dataset_id": "dataset-demo",
+    "revision": "revision-1",
+    "attempt_id": "attempt-success",
+    "artifact_handle": "artifact-coincident",
+    "snapshot_id": "snapshot-demo",
+    "instance": {"instance_id": "contract-coincident", "coordinate_checksum": "55235a4a5db45ab92bde658f0abd66f66e9e1438b3520b0d868897607cd78270", "n_cities": 4, "distance_kind": "euclidean_2d", "instance_seed": null},
+    "coordinates": {"encoding": "f64-le-base64", "data": "AAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="},
+    "tour": {"encoding": "u32-le-base64", "data": "AgAAAAAAAAADAAAAAQAAAA=="}
+  },
+  "stale_error": {"api_version": 1, "request_id": "request-stale", "code": "stale_revision", "message": "Sources changed; reload the dataset.", "retryable": true}
+}
