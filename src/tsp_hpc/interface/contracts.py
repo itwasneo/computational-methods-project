@@ -1,4 +1,6 @@
-"""Read-only API v1 design types, not runtime validators or HTTP endpoints.
+"""Read-only API v1 DTO types, not runtime validators.
+
+Workspace/session/catalog endpoints implement a subset; Results DTOs remain design-only.
 
 See docs/contracts.md. Scientific validation remains in the shared Python APIs.
 All fields are required, including nullable fields. Wire seeds are decimal strings.
@@ -29,7 +31,31 @@ class Workspace(TypedDict):
 class Artifact(TypedDict):
     artifact_handle: str
     display_name: str
-    kind: Literal["result_shard", "instance", "manifest", "reference"]
+    kind: Literal["result_shard", "json", "instance", "manifest", "reference"]
+    revision: str
+    validation: Literal["unvalidated"]
+
+
+class SessionRequest(TypedDict):
+    api_version: Literal[1]
+    request_id: str
+    secret: str
+
+
+class SessionResponse(TypedDict):
+    api_version: Literal[1]
+    request_id: str
+    token_type: Literal["Bearer"]
+    session_token: str
+
+
+class CatalogRefreshRequest(TypedDict):
+    api_version: Literal[1]
+    request_id: str
+    workspace_id: str
+
+
+class CatalogRefreshResponse(CatalogRefreshRequest):
     revision: str
 
 
@@ -203,7 +229,8 @@ class ErrorResponse(TypedDict):
     code: Literal[
         "invalid_request", "unauthorized", "workspace_unavailable", "artifact_not_found",
         "invalid_artifact", "dataset_not_ready", "stale_revision", "cursor_invalid",
-        "snapshot_mismatch", "geometry_too_large", "internal_error",
+        "snapshot_mismatch", "geometry_too_large", "internal_error", "catalog_busy",
+        "catalog_limit_exceeded", "artifact_too_large", "request_too_large",
     ]
     message: str
     retryable: bool

@@ -1,1 +1,1 @@
-"""Optional interface contracts; no server or filesystem access is implemented."""
+"""Optional local interface; root import does not load web or numerical dependencies."""

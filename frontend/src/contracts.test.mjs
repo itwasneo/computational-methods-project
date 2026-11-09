@@ -15,7 +15,7 @@ test('shared wire examples satisfy the TypeScript design types', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tsp-contracts-'));
   try {
     const file = join(directory, 'golden.ts');
-    const types = { workspace: 'WorkspaceResponse', query: 'TrialQuery', page: 'TrialPage',
+    const types = { workspace: 'WorkspaceResponse', catalog: 'ArtifactPage', query: 'TrialQuery', page: 'TrialPage',
       details: 'TrialDetails', missing_details: 'TrialDetails', geometry: 'Geometry', stale_error: 'ErrorResponse' };
     const source = [`import type * as C from ${JSON.stringify(fileURLToPath(new URL('./contracts.ts', import.meta.url)))};`];
     for (const [name, type] of Object.entries(types)) {
