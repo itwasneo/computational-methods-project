@@ -41,11 +41,12 @@ Each reference owns one kind of information. Update that reference rather than c
 
 | Read this | For |
 | --- | --- |
-| [Usage guide](docs/usage.md) | Data, solver/runner usage, implementation selection, timings and saved results |
+| [Usage guide](docs/usage.md) | Run manifests, analyze saved results, then use the data/solver Python APIs |
 | [Shared contracts and experiment methodology](docs/contracts.md) | Data/objective/result rules, validation, execution boundaries and fair comparisons |
 | [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA variants, tie rules, operators, budgets, initialization accounting and stopping checkpoints |
 | [Manifests and reproducibility](docs/manifests.md) | Schema, implementation labels, scientific/execution identities and RNG ownership |
 | [Development](docs/development.md) | Environment, package layout, tests, CI and packaging |
+| [Optional local interface](docs/interface.md) | Preview/backend usage, security boundaries and clearly separated planned API contracts |
 | [HPC operations](docs/hpc-resources.md) | Owner-operated allocations, containers, placement, storage and deployment checks |
 
 The [saved input collection](examples/instances/README.md) contains tiny correctness examples, not a benchmark campaign. [Presentations](presentations/README.md) preserve the original proposal and a dated progress snapshot; they are not the current status reference.
