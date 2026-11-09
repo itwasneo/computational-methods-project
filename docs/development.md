@@ -85,7 +85,7 @@ The interface is optional, local-first, workspace-bounded and usable without ext
 
 Use a physical desktop session, local SSD workspace, AC power, normal browser hardware acceleration and a 60 Hz display. The candidate primary machine available during drafting has an Intel Core i7-9700K (8 cores), about 78 GiB OS-visible RAM and an NVIDIA RTX 2060. This is the proposed reference machine, **not evidence of performance on lower-end laptops**. Cap application memory through the budgets below rather than treating all host RAM as available.
 
-Test both Chromium stable and Firefox stable on that same machine. Record exact browser builds, OS/kernel, GPU driver, graphics API/adapter, acceleration status and refresh rate in every evidence set; “latest” alone is not reproducible. Firefox 159.0 was detected during drafting; Chromium availability and browser GPU support have not been verified. Do not count software rendering as a passing GPU run. WebGPU availability is not a release assumption: #69 must document a supported fallback or an explicit unsupported-browser state.
+Use Firefox only for the rendering decision (#69), as agreed by the owner. Record its exact build, OS/kernel, GPU driver, graphics API/adapter, acceleration status and refresh rate in every evidence set; “latest” alone is not reproducible. Do not extend conclusions to Chromium or other browsers without separate evidence. Do not count software rendering as a passing GPU run. WebGPU availability is not a release assumption: #69 must document a supported fallback or an explicit unsupported-browser state.
 
 Use a 1440 × 900 CSS-pixel viewport at DPR 1 for all performance gates. Repeat graphics gates at DPR 2 (same CSS viewport); check keyboard/focus, panel reflow and non-canvas inspection at 1024 × 768, DPR 1. These are selected profiles, not every viewport/browser/device combination. Freeze exact hardware/browser profiles with the first measurements and repeat final acceptance on the recorded profiles, documenting upgrades.
 
@@ -104,7 +104,7 @@ Retain exact seeds, generator parameters, artifact checksums, shard layout/byte 
 
 ### Proposed blocking budgets
 
-These targets apply to every listed scale of G/R on both reference browsers, including G at DPR 2 and the C repetitions. Times are end-to-end from browser input/request to presented feedback/result, not just backend compute. Use monotonic clocks within each process; correlate request IDs rather than subtracting unsynchronized browser/server clocks.
+These proposed targets apply to every listed scale of G/R on the reference Firefox profile, including G at DPR 2 and the C repetitions. Times are end-to-end from browser input/request to presented feedback/result, not just backend compute. Use monotonic clocks within each process; correlate request IDs rather than subtracting unsynchronized browser/server clocks.
 
 | Measurement | Gate |
 | --- | --- |
@@ -128,7 +128,7 @@ Cold means a stopped application, a fresh browser profile/cache and no interface
 4. Retain a reproducible harness and sanitized compact measurements with the prototype work; record interpretation and acceptance links in the issue/PR. Keep raw traces, generated large fixtures and private machine details out of Git. No measurements have been collected for this baseline.
 5. A correctness/accessibility failure, stale-response overwrite, unsupported required profile, missing evidence or budget breach blocks acceptance for that profile. Record failures and mitigation/retest explicitly. Functional CI checks remain required, but shared-runner CI timings are not these hardware performance gates. UI speed must never be reported as solver speedup or scaling efficiency.
 
-**Proposal for review:** use the desktop and two-browser/profile matrix, workload scales and numerical budgets above. Owner confirmation and budget feasibility remain unverified: #69–#70 must measure it and justify the stack. Final release checks (#92) repeat this matrix rather than introducing unmeasured responsiveness claims.
+**Proposal for review:** use the desktop and Firefox/profile matrix, workload scales and numerical budgets above. Owner confirmation and budget feasibility remain unverified: #69–#70 must measure it and justify the stack. Final release checks (#92) repeat this matrix rather than introducing unmeasured responsiveness claims.
 
 ### Rendering prototype (#69)
 
@@ -153,7 +153,7 @@ node examples/interface-rendering/browser-check.mjs http://127.0.0.1:4444 firefo
 
 The script starts its own loopback static server and isolated headless session, checks selected pixels at all graphics scales/fixture types with the tour visible, and closes its session/server. Stop the WebDriver afterward. Use `chrome` with a local ChromeDriver endpoint for Chromium. No browsers/drivers are downloaded automatically. Pixel readback occurs only in this functional test, never in rendering measurements. Unavailable WebGPU is reported explicitly; shader/validation failures fail the check. Headless/software-rendered success is not reference-hardware acceptance.
 
-The harness contains no framework, CDN dependencies, solver invocation or production API. Synthetic paths are not valid solver evidence. The full browser/hardware evidence and a justified reusable renderer choice remain prerequisites for completing #69; table/chart measurements and the production stack decision remain #70.
+The page contains no framework, CDN dependencies, solver invocation or production API. A temporary `measure-firefox.py` driver runs a bounded real NN process only for its explicitly labelled concurrency probe; it produces no solver benchmark records. Synthetic paths are not valid solver evidence. The full browser/hardware evidence and a justified reusable renderer choice remain prerequisites for completing #69; table/chart measurements and the production stack decision remain #70.
 
 ## CI and review
 
