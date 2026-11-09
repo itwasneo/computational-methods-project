@@ -17,9 +17,11 @@ precision highp float;
 in vec2 local;
 flat in int selected;
 out vec4 color;
+uniform vec4 pointColor;
+uniform vec4 selectionColor;
 void main() {
   if (dot(local,local) > 1.0) discard;
-  color = selected == 1 ? vec4(1,0.6,0.1,1) : vec4(0.2,0.75,0.95,1);
+  color = selected == 1 ? selectionColor : pointColor;
 }`;
 const lineVertex = `#version 300 es
 layout(location=0) in vec2 point;
@@ -28,7 +30,13 @@ void main() { gl_Position = vec4(point * transform.xy + transform.zw, 0, 1); }`;
 const lineFragment = `#version 300 es
 precision highp float;
 out vec4 color;
-void main() { color = vec4(0.2,0.35,0.45,1); }`;
+uniform vec4 lineColor;
+void main() { color = lineColor; }`;
+
+const palettes = {
+  dark: { background: [0.035, 0.06, 0.09, 1], point: [0.2, 0.75, 0.95, 1], selected: [1, 0.6, 0.1, 1], line: [0.35, 0.5, 0.6, 1] },
+  light: { background: [0.96, 0.97, 0.98, 1], point: [0.08, 0.32, 0.55, 1], selected: [0.78, 0.25, 0.02, 1], line: [0.55, 0.63, 0.7, 1] },
+};
 function program(gl, vertex, fragment) {
   const shaders = [], result = gl.createProgram();
   try {
@@ -45,15 +53,21 @@ function program(gl, vertex, fragment) {
   finally { for (const shader of shaders) gl.deleteShader(shader); }
 }
 
-export function webgl(canvas, display, lost) {
+export function webgl(canvas, display, lost, route = null) {
+  const count = display.length / 2;
+  if (route !== null && (!(route instanceof Uint32Array) || route.length !== count
+      || new Set(route).size !== count || route.some(id => id >= count))) {
+    throw new Error('Tour must be an open permutation of city IDs');
+  }
   const gl = canvas.getContext('webgl2', {antialias: false, alpha: false});
   if (!gl) throw new Error('WebGL2 unavailable; no software/CPU fallback claimed');
-  let dots, lines, buffer, vao, disposed = false;
+  let dots, lines, buffer, tourBuffer, vao, disposed = false;
   const onLoss = event => { event.preventDefault(); if (!disposed) lost('WebGL context lost; reload fixture to recover'); };
   const destroy = () => {
     if (disposed) return;
     disposed = true; canvas.removeEventListener('webglcontextlost', onLoss);
     if (buffer) gl.deleteBuffer(buffer);
+    if (tourBuffer) gl.deleteBuffer(tourBuffer);
     if (vao) gl.deleteVertexArray(vao);
     if (dots) gl.deleteProgram(dots);
     if (lines) gl.deleteProgram(lines);
@@ -65,23 +79,36 @@ export function webgl(canvas, display, lost) {
     gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, display, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
-    const count = display.length / 2;
+    if (route !== null) {
+      tourBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tourBuffer);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, route, gl.STATIC_DRAW);
+    }
     const locations = new Map([dots, lines].map(p => [p, gl.getUniformLocation(p, 'transform')]));
     const style = gl.getUniformLocation(dots, 'style');
+    const pointColor = gl.getUniformLocation(dots, 'pointColor');
+    const selectionColor = gl.getUniformLocation(dots, 'selectionColor');
+    const lineColor = gl.getUniformLocation(lines, 'lineColor');
     return {
       update(id) {
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, id * 8, display.subarray(id * 2, id * 2 + 2));
       },
-      draw(transform, selected, tour, dpr) {
+      draw(transform, selected, tour, dpr, theme = 'dark') {
+        const palette = palettes[theme] ?? palettes.dark;
         gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.clearColor(0.035, 0.06, 0.09, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.clearColor(...palette.background); gl.clear(gl.COLOR_BUFFER_BIT);
         gl.bindVertexArray(vao);
         if (tour) {
           gl.useProgram(lines); gl.uniform4fv(locations.get(lines), transform);
-          gl.vertexAttribDivisor(0, 0); gl.drawArrays(gl.LINE_LOOP, 0, count);
+          gl.uniform4fv(lineColor, palette.line);
+          gl.vertexAttribDivisor(0, 0);
+          if (tourBuffer) gl.drawElements(gl.LINE_LOOP, count, gl.UNSIGNED_INT, 0);
+          else gl.drawArrays(gl.LINE_LOOP, 0, count);
         }
         gl.useProgram(dots); gl.uniform4fv(locations.get(dots), transform);
+        gl.uniform4fv(pointColor, palette.point);
+        gl.uniform4fv(selectionColor, palette.selected);
         gl.uniform4f(style, 7 * dpr / canvas.width, 7 * dpr / canvas.height, selected, 0);
         gl.vertexAttribDivisor(0, 1); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
         if (Number.isInteger(selected) && selected >= 0 && selected < count) {
