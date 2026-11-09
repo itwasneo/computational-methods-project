@@ -87,5 +87,5 @@ jobs:
       - name: Check retained rendering primitives
         run: |
           node --version
-          for file in examples/interface-rendering/*.mjs; do node --check "$file"; done
-          node --test examples/interface-rendering/*.test.mjs
+          for file in frontend/src/rendering/*.mjs; do node --check "$file"; done
+          node --test frontend/src/rendering/*.test.mjs

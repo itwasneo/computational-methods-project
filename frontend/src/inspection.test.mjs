@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { trials } from './fixtures.ts';
 import { inspectFixture, nextPickedCity } from './inspection.ts';
-import { Scene } from '../../examples/interface-rendering/model.mjs';
+import { Scene } from './rendering/model.mjs';
 
 test('inspection resolves explicit fixture IDs, not names or missing artifacts', () => {
   const first = inspectFixture(trials[0]);

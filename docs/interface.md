@@ -38,14 +38,9 @@ The four rows are fictional presentation fixtures, not API records or solver evi
 - Drag/arrow keys pan; wheel/plus/minus zoom; Fit/Home resets the view. Repeated coincident picks cycle city IDs. Fullscreen exits with Escape; light/dark switching preserves geometry/camera. Theme preference uses local storage when available, otherwise system/in-session state.
 - Context loss exposes Retry; unmounting releases resources. Editing and non-canvas city inspection are not implemented in this preview. Functional checks do not certify complete accessibility.
 
-The viewer imports `model.mjs` and `webgl.mjs` from [examples/interface-rendering](../examples/interface-rendering/). Vite permits access to that directory and the frontend, not the whole repository. The standalone reference can also be served locally:
+The viewer uses `model.mjs` and `webgl.mjs` in [frontend/src/rendering](../frontend/src/rendering/), alongside their TypeScript declarations and focused tests. The Svelte preview is the only viewer entry point; the standalone demo has been removed. Vite permits filesystem access only within the frontend.
 
-```bash
-python3 -m http.server 8765 --bind 127.0.0.1 --directory examples/interface-rendering
-# Open http://127.0.0.1:8765 in Firefox; stop the server after use.
-```
-
-That reference supports synthetic fixtures, inspection fields and shift-drag edits. Its fixed projection rejects unsupported float32 edits atomically instead of clamping; automatic rebasing is not implemented. It is not a production editor. Both consumers preserve canonical float64 coordinates separately from display buffers; the renderer uses instanced points, a final selection overlay and an O(n) closed polyline. An explicit open tour permutation retains city IDs and implicit closure; the standalone example can instead draw a synthetic row-order loop.
+The model preserves canonical float64 coordinates separately from display buffers. Its fixed projection rejects unsupported float32 edits atomically instead of clamping; automatic rebasing and UI editing are not implemented. The renderer uses instanced points, a final selection overlay and an O(n) closed polyline. Explicit open tour permutations retain city IDs and implicit closure; the renderer's row-order fallback remains unchanged.
 
 WebGL2 is the selected Firefox baseline, not a solver accelerator or a universal responsiveness guarantee. [Archived rendering evidence](https://github.com/itwasneo/computational-methods-project/pull/97) records stalls and memory above a former proposed ceiling; it does not require more measurements. WebGPU and the diagnostic/export harnesses are retired.
 
