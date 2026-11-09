@@ -125,10 +125,16 @@ Cold means a stopped application, a fresh browser profile/cache and no interface
 1. Run production builds without browser extensions, open developer tools or profiling instrumentation in the acceptance pass. Collect traces in a separate diagnostic pass. Record repository revision/dirty state, lockfile identities, environment, workloads, commands and harness version.
 2. For each required G/R/C browser/profile case, perform five independent cold trials and five warm trials. Each interaction trial includes a 10-second continuous segment and at least 100 discrete actions for feedback/query measurements. Report per-trial p50/p95/p99 and worst observations; do not pool a failing trial into a passing average. Startup/open gates must pass in all five trials.
 3. Record transfer/parse/upload, backend query/index time, frame/input timings, memory and idle CPU separately so a failure can be located. Sample process trees consistently, identify shared browser/GPU processes and avoid double-counting. Measure concurrency for the whole interaction window and retain worker settings.
-4. Retain a reproducible harness and sanitized compact measurements with the prototype work; record interpretation and acceptance links in the issue/PR. Keep raw traces, generated large fixtures and private machine details out of Git. No measurements have been collected for this baseline.
+4. Retain the reproducible revision, sanitized compact measurements and interpretation in the issue/PR. After a decision, remove disposable comparison/testing machinery; keep only adopted primitives and focused regression checks. Git history preserves retired harnesses. Keep raw traces, generated large fixtures and private machine details out of Git. Prototype diagnostics do not certify the full application budgets.
 5. A correctness/accessibility failure, stale-response overwrite, unsupported required profile, missing evidence or budget breach blocks acceptance for that profile. Record failures and mitigation/retest explicitly. Functional CI checks remain required, but shared-runner CI timings are not these hardware performance gates. UI speed must never be reported as solver speedup or scaling efficiency.
 
 **Proposal for review:** use the desktop and Firefox/profile matrix, workload scales and numerical budgets above. Owner confirmation and budget feasibility remain unverified: #69–#70 must measure it and justify the stack. Final release checks (#92) repeat this matrix rather than introducing unmeasured responsiveness claims.
+
+### Firefox rendering decision
+
+Use **WebGL2** as the city/final-tour viewer baseline: instanced points, a final selection overlay, one O(n) tour polyline, spatial picking and frame-batched changed-point uploads. Keep canonical float64 geometry separate from float32 display buffers. Do not introduce a WebGPU dependency or a second rendering backend without a demonstrated need. Framework/chart choices remain #70.
+
+[Decision evidence and reproduction (#97)](https://github.com/itwasneo/computational-methods-project/pull/97) records the visible-Firefox hardware checks, workload matrix, timings and limitations. WebGPU was disabled by default on the tested Firefox/Linux profile; WebGL2 used the RTX 2060. These are Firefox-specific diagnostics, not proof of physical presentation latency or universal responsiveness. The DPR 2 transient RSS observation exceeded the proposed ceiling, and occasional stalls were observed. The actual viewer must reuse contexts/buffers, bound picking allocations and repeat application-level checks in #80/#92 rather than inheriting a performance-pass claim.
 
 ### Rendering prototype (#69)
 
@@ -153,7 +159,7 @@ node examples/interface-rendering/browser-check.mjs http://127.0.0.1:4444 firefo
 
 The script starts its own loopback static server and isolated headless session, checks selected pixels at all graphics scales/fixture types with the tour visible, and closes its session/server. Stop the WebDriver afterward. Use `chrome` with a local ChromeDriver endpoint for Chromium. No browsers/drivers are downloaded automatically. Pixel readback occurs only in this functional test, never in rendering measurements. Unavailable WebGPU is reported explicitly; shader/validation failures fail the check. Headless/software-rendered success is not reference-hardware acceptance.
 
-The page contains no framework, CDN dependencies, solver invocation or production API. A temporary `measure-firefox.py` driver runs a bounded real NN process only for its explicitly labelled concurrency probe; it produces no solver benchmark records. Synthetic paths are not valid solver evidence. The full browser/hardware evidence and a justified reusable renderer choice remain prerequisites for completing #69; table/chart measurements and the production stack decision remain #70.
+The page contains no framework, CDN dependencies, solver invocation or production API. A temporary `measure-firefox.py` driver runs a bounded real NN process only for its explicitly labelled concurrency probe; it produces no solver benchmark records. Synthetic paths are not valid solver evidence. The comparison harness remains temporarily for reproduction and is retired in the separate cleanup following the decision above. Table/chart measurements and the production stack decision remain #70.
 
 ## CI and review
 
