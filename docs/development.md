@@ -129,6 +129,20 @@ Review this slice locally before expanding it: expand/collapse each experiment u
 
 `frontend/pnpm-lock.yaml` pins the frontend dependency tree; generated `frontend/dist/` and `frontend/node_modules/` remain ignored. Dependency build scripts are allowlisted only for `esbuild`, which Vite uses for builds. At introduction, `pnpm --dir frontend audit` reports one low-severity `deepmerge` prototype-poisoning advisory through the Svelte Vite plugin, with no patched version offered. This is development/build tooling, not an excuse to accept untrusted configuration: the preview loads no user-provided configuration or data. Recheck before release and when updating dependencies; full dependency/license distribution review and CI integration remain scaffold/packaging work.
 
+### Read-only contract slice
+
+The [read-only API v1 design](contracts.md#read-only-local-interface-contract-design-v1) defines the initial fixed-workspace Results boundary for #72. It is not an implemented backend: the current UI still uses presentation fixtures. The workspace is configured at backend startup, remains fixed for that session and is read-only; no frontend root-path selector or database is introduced. HTTP routes, security enforcement, background indexing and UI wiring remain subsequent work under #73–#76/#80. Editing/job/summary-comparison contracts remain outstanding, so #72 stays open.
+
+`src/tsp_hpc/interface/contracts.py` contains standard-library-only design types; it does not import the numerical stack or require web dependencies. `frontend/src/contracts.ts` mirrors them. The shared JSON example under `examples/interface-contracts/` exercises the same values in both languages; update both declarations, the contract reference and affected fixtures/tests together. Neither type system replaces the future runtime validator.
+
+```bash
+uv run --locked pytest tests/interface -W error
+pnpm --dir frontend run check
+pnpm --dir frontend run test
+```
+
+These checks cover schema shape and exact numeric transport, not filesystem authorization, HTTP behaviour or a working real-data viewer. The selected page/geometry bounds are conservative initial API limits, not browser performance gates.
+
 ### Firefox rendering decision
 
 Use **WebGL2** as the city/final-tour viewer baseline: instanced points, a final selection overlay, one O(n) tour polyline, spatial picking and frame-batched changed-point uploads. Keep canonical float64 geometry separate from float32 display buffers. Do not introduce a WebGPU dependency or a second rendering backend without a demonstrated need. Framework/chart choices are recorded in the [stack decision above](#interface-stack-and-data-flow-decision).
