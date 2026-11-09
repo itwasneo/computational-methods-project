@@ -1,5 +1,13 @@
 <script lang="ts">
   import { trials } from './fixtures';
+  import InstanceInspection from './InstanceInspection.svelte';
+  import { applyTheme, type Theme } from './theme';
+
+  let theme = $state<Theme>(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+  function toggleTheme() {
+    theme = theme === 'light' ? 'dark' : 'light';
+    applyTheme(theme);
+  }
   import { sortTrials } from './sorting';
   import { filterTrials, resetColumn, resetTableState } from './table-state';
 
@@ -40,7 +48,19 @@
 </script>
 
 <main>
-  <h1>Results</h1>
+  <div class="page-header">
+    <h1>Results</h1>
+    <button class="theme-toggle" onclick={toggleTheme} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        {#if theme === 'light'}
+          <path d="M20.5 13.2A8.5 8.5 0 0 1 10.8 3.5a8.5 8.5 0 1 0 9.7 9.7Z" />
+        {:else}
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+        {/if}
+      </svg>
+    </button>
+  </div>
 
   <div class="toolbar">
     <button
@@ -150,6 +170,9 @@
                 </dl>
                 <p>{trial.explanation}</p>
               </section>
+              {#if selectedId === trial.id}
+                <InstanceInspection {trial} {theme} />
+              {/if}
             </td>
           </tr>
         {/each}
