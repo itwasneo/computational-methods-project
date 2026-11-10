@@ -16,6 +16,31 @@
     ],
     "next_cursor": null
   },
+  "dataset_request": {
+    "api_version": 1,
+    "request_id": "request-ingest",
+    "workspace_id": "workspace-demo",
+    "artifact_catalog_revision": "catalog-revision-1",
+    "result_handles": ["candidate-shard"],
+    "expected_manifest_handle": null
+  },
+  "dataset_status_request": {
+    "api_version": 1,
+    "request_id": "request-status",
+    "workspace_id": "workspace-demo",
+    "dataset_id": "dataset-demo"
+  },
+  "dataset": {
+    "api_version": 1,
+    "request_id": "request-status",
+    "workspace_id": "workspace-demo",
+    "dataset_id": "dataset-demo",
+    "revision": "revision-1",
+    "state": "ready",
+    "diagnostics": [{"code": "failed_trials", "artifact_handle": null, "attempt_id": null, "message": "1 failed trial recorded."}],
+    "diagnostics_total": 1,
+    "diagnostics_truncated": false
+  },
   "query": {
     "api_version": 1,
     "request_id": "request-query",

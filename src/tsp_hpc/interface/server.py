@@ -6,6 +6,7 @@ import hmac
 import re
 import secrets
 import threading
+from typing import Annotated
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,6 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 from starlette.exceptions import HTTPException
 
+from tsp_hpc.interface.contracts import SHARDS_MAX
 from tsp_hpc.interface.errors import InterfaceError
 from tsp_hpc.interface.workspace import WorkspaceCatalog
 
@@ -176,6 +178,26 @@ class ArtifactRequest(WorkspaceRequest):
     cursor: StrictStr | None = Field(max_length=512)
 
 
+ArtifactHandle = Annotated[StrictStr, Field(min_length=1, max_length=128)]
+
+
+class DatasetRequest(WorkspaceRequest):
+    artifact_catalog_revision: ArtifactHandle
+    result_handles: list[ArtifactHandle] = Field(min_length=1, max_length=SHARDS_MAX)
+    expected_manifest_handle: ArtifactHandle | None
+
+    @field_validator("result_handles")
+    @classmethod
+    def distinct_handles(cls, value):
+        if len(set(value)) != len(value):
+            raise ValueError("select distinct result shards")
+        return value
+
+
+class DatasetStatusRequest(WorkspaceRequest):
+    dataset_id: ArtifactHandle
+
+
 def create_app(workspace, *, port: int, bootstrap_secret: str):
     """Construct a session without opening its workspace until lifespan startup."""
     if type(port) is not int or not 1 <= port <= 65535:
@@ -185,16 +207,23 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
 
     @asynccontextmanager
     async def lifespan(app):
-        catalog = None
+        from tsp_hpc.interface.ingestion import DatasetStore
+        catalog = datasets = None
         try:
             catalog = WorkspaceCatalog(workspace)
             catalog.refresh()
             app.state.catalog = catalog
+            datasets = DatasetStore(catalog)
+            app.state.datasets = datasets
             yield
         finally:
-            if catalog is not None:
-                catalog.close()
-            pairing.clear()
+            try:
+                if datasets is not None:
+                    datasets.close()
+            finally:
+                if catalog is not None:
+                    catalog.close()
+                pairing.clear()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(LocalBoundary, origin=origin, pairing=pairing)
@@ -240,7 +269,19 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
     def refresh(body: WorkspaceRequest, request: Request):
         catalog = catalog_for(request, body)
         revision = catalog.refresh()
+        request.app.state.datasets.invalidate()
         return {"api_version": 1, "request_id": body.request_id, "workspace_id": catalog.workspace_id,
                 "revision": revision}
+
+    @app.post("/api/datasets", status_code=202)
+    def ingest(body: DatasetRequest, request: Request):
+        catalog_for(request, body)
+        return request.app.state.datasets.submit(body.result_handles, body.expected_manifest_handle,
+                                                 body.artifact_catalog_revision, body.request_id)
+
+    @app.post("/api/datasets/status")
+    def dataset_status(body: DatasetStatusRequest, request: Request):
+        catalog_for(request, body)
+        return request.app.state.datasets.status(body.dataset_id, body.request_id)
 
     return app

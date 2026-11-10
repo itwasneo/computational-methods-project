@@ -1,5 +1,5 @@
-// Read-only API v1 DTOs. Workspace/session/catalog endpoints now implement a subset.
-// Results operations remain design-only; these types are not runtime validation or API wiring.
+// Read-only API v1 DTOs. Workspace/session/catalog/dataset lifecycle implement a subset.
+// Trial/geometry queries remain design-only; these types are not runtime validation or API wiring.
 // Mirrors tsp_hpc.interface.contracts; all fields are required, even when nullable.
 export const API_VERSION = 1;
 export const PAGE_DEFAULT = 100;
@@ -69,6 +69,14 @@ export interface Dataset {
   revision: string | null;
   state: 'loading' | 'ready' | 'failed' | 'stale';
   diagnostics: Diagnostic[];
+  diagnostics_total: number;
+  diagnostics_truncated: boolean;
+}
+export interface DatasetStatusRequest {
+  api_version: 1;
+  request_id: string;
+  workspace_id: string;
+  dataset_id: string;
 }
 export interface Context {
   api_version: 1;

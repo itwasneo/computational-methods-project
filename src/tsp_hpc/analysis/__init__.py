@@ -10,11 +10,12 @@ from tsp_hpc.analysis.core import (
     load_references,
     paired_comparisons,
     read_shards,
+    read_sources,
     reference_gaps,
     summary_table,
 )
 
 __all__ = [
     "Analysis", "MAX_RECORD_BYTES", "METRICS", "PHASES", "TRIAL_COLUMNS", "TRIAL_FIELDS",
-    "load_references", "paired_comparisons", "read_shards", "reference_gaps", "summary_table",
+    "load_references", "paired_comparisons", "read_shards", "read_sources", "reference_gaps", "summary_table",
 ]

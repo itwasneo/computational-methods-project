@@ -319,3 +319,62 @@ def test_report_cli_and_rendering_do_not_replace_inputs_or_output(tmp_path, rows
     limited = write_report([source], output_dir=tmp_path / "limited", max_plot_groups=1)
     assert not limited["figures"] and len(pd.read_csv(tmp_path / "limited" / "summary.csv")) == 4
     assert any("exceeds limit" in note for note in limited["notes"])
+
+
+def test_source_adapter_uses_opaque_identity_not_a_path_and_preserves_validation(rows, example):
+    from io import BytesIO
+    from tsp_hpc.analysis import read_sources
+    from tsp_hpc.analysis.core import ShardValidationError
+
+    class MemorySource:
+        identity = "/not/an/authorized/path.jsonl"
+
+        def __init__(self, raw):
+            self.raw = raw
+            self.opens = 0
+
+        def stamp(self):
+            return 0, 0, len(self.raw), 0, 0
+
+        def open(self):
+            self.opens += 1
+            return BytesIO(self.raw)
+
+    source = MemorySource("".join(json.dumps(row) + "\n" for row in rows).encode())
+    data = read_sources([source], expected_manifest=example[1])
+    assert source.opens == 1 and len(data.trials) == len(rows) - 1
+    assert data.trial(rows[0]["attempt_id"]) == rows[0]
+    assert source.opens == 2
+    assert data.sources[0]["path"] == source.identity
+    source.raw = b"not JSON\n"
+    with pytest.raises(ValueError, match="changed"):
+        data.trial(rows[0]["attempt_id"])
+    with pytest.raises(ShardValidationError) as error:
+        read_sources([source])
+    assert error.value.source_id == source.identity and error.value.line == 1
+
+
+def test_source_adapter_checks_cancellation_and_limits_without_publishing(tmp_path, rows):
+    from tsp_hpc.analysis import read_sources
+    from tsp_hpc.analysis.core import AnalysisLimitError
+    from tsp_hpc.analysis.sources import PathSource
+    source = PathSource(save(tmp_path / "runs.jsonl", rows))
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise InterruptedError("cancelled")
+
+    with pytest.raises(InterruptedError):
+        read_sources([source], checkpoint=cancelled)
+    assert calls == 3
+    assert len(read_sources([source], max_trials=len(rows) - 1).trials) == len(rows) - 1
+    with pytest.raises(AnalysisLimitError, match="trial count"):
+        read_sources([source], max_trials=len(rows) - 2)
+    with pytest.raises(AnalysisLimitError, match="scalar summaries"):
+        read_sources([source], max_summary_bytes=1)
+    for options in ({"max_trials": True}, {"max_summary_bytes": 0}, {"max_record_bytes": -1}):
+        with pytest.raises(ValueError):
+            read_sources([source], **options)

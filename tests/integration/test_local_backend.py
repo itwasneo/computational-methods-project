@@ -40,6 +40,7 @@ def test_real_server_pairing_and_clean_shutdown(tmp_path):
     pytest.importorskip("uvicorn")
     pytest.importorskip("fastapi")
     (tmp_path / "example.json").write_text("{}")
+    (tmp_path / "empty.jsonl").touch()
     with socket.socket() as reserved:
         reserved.bind(("127.0.0.1", 0))
         port = reserved.getsockname()[1]
@@ -74,13 +75,43 @@ def test_real_server_pairing_and_clean_shutdown(tmp_path):
             token = json.load(response)["session_token"]
         request = urllib.request.Request(origin + "/api/workspace", headers={"Authorization": f"Bearer {token}"})
         with direct.open(request, timeout=3) as response:
-            assert json.load(response)["workspace"]["access"] == "read_only"
+            workspace = json.load(response)["workspace"]
+            assert workspace["access"] == "read_only"
+
+        def post(endpoint, body):
+            request = urllib.request.Request(origin + endpoint, data=json.dumps(body).encode(), headers={
+                "Content-Type": "application/json", "Authorization": f"Bearer {token}",
+            })
+            with direct.open(request, timeout=3) as response:
+                return response.status, json.load(response)
+
+        context = {"api_version": 1, "request_id": "ingest-smoke", "workspace_id": workspace["workspace_id"]}
+        _, catalog = post("/api/artifacts/query", {**context, "limit": 100, "cursor": None})
+        handle = next(item["artifact_handle"] for item in catalog["items"] if item["kind"] == "result_shard")
+        status, accepted = post("/api/datasets", {**context, "artifact_catalog_revision": catalog["revision"],
+                                                  "result_handles": [handle], "expected_manifest_handle": None})
+        assert status == 202 and accepted["state"] == "loading"
+        dataset = accepted
+        for _ in range(100):
+            try:
+                _, dataset = post("/api/datasets/status", {**context, "dataset_id": accepted["dataset_id"]})
+            except urllib.error.HTTPError as error:
+                try:
+                    assert error.code == 409 and json.load(error)["code"] == "catalog_busy"
+                finally:
+                    error.close()
+            else:
+                if dataset["state"] != "loading":
+                    break
+            time.sleep(0.05)
+        assert dataset["state"] == "ready" and dataset["diagnostics"][0]["code"] == "incomplete_campaign"
         process.send_signal(signal.SIGINT)
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode == 0, stderr
         for private in (secret, token, str(tmp_path), "Traceback"):
             assert private not in stdout + stderr
-        assert sorted(p.name for p in tmp_path.iterdir()) == ["example.json"]
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["empty.jsonl", "example.json"]
+        assert (tmp_path / "empty.jsonl").read_bytes() == b""
     finally:
         if process.poll() is None:
             process.kill()

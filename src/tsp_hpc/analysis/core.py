@@ -5,6 +5,7 @@ plans are validated then discarded; byte locators support lazy detail access.
 This verifies recorded structure/identities, not objective costs without inputs.
 """
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
@@ -20,6 +21,7 @@ from tsp_hpc.problem.data import validate_tour
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.experiments.manifests import Manifest
 from tsp_hpc.solvers.results import WorkCounters
+from tsp_hpc.analysis.sources import PathSource, ShardSource
 
 MAX_RECORD_BYTES = 64 * 1024 * 1024
 TRIAL_FIELDS = set("schema_version record_type campaign_id attempt_id started_at requested_plan effective_execution execution_id runtime input setup_policy max_matrix_bytes adapter outcome result error timings".split())
@@ -347,9 +349,16 @@ def _summary(record, rows):
     _less_equal(wall + times["setup_time_s"], times["end_to_end_time_s"])
 
 
-def _stamp(path):
-    stat = path.stat()
-    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+class AnalysisLimitError(ValueError):
+    """An explicit ingestion bound was exceeded; never publish a partial index."""
+
+
+class ShardValidationError(ValueError):
+    """Validation failure with safe source/line metadata for interface adapters."""
+
+    def __init__(self, source_id, line, error):
+        super().__init__(f"{source_id}:{line}: {error}")
+        self.source_id, self.line = source_id, line
 
 
 @dataclass
@@ -363,13 +372,13 @@ class Analysis:
 
     def trial(self, attempt_id: str) -> dict:
         """Load details on demand; reject a changed source rather than stale offsets."""
-        path, offset, length, digest, stamp = self._locations[attempt_id]
-        if _stamp(path) != stamp:
+        source, offset, length, digest, stamp = self._locations[attempt_id]
+        if source.stamp() != stamp:
             raise ValueError("source shard changed; reload analysis")
-        with path.open("rb") as stream:
+        with source.open() as stream:
             stream.seek(offset)
             raw = stream.read(length)
-        if hashlib.sha256(raw).hexdigest() != digest or _stamp(path) != stamp:
+        if hashlib.sha256(raw).hexdigest() != digest or source.stamp() != stamp:
             raise ValueError("source record changed; reload analysis")
         return _decode(raw)
 
@@ -382,23 +391,43 @@ def read_shards(paths, *, expected_manifest: Manifest | None = None,
     records, schema/identity mismatches and contradictory summaries are errors.
     Without an expected manifest, entirely absent executions cannot be inferred.
     """
-    if type(max_record_bytes) is not int or max_record_bytes < 1:
-        raise ValueError("max_record_bytes must be a positive integer")
     if isinstance(paths, (str, Path)):
         raise TypeError("paths must be a collection of shard paths")
+    return read_sources([PathSource(Path(path).resolve()) for path in paths],
+                        expected_manifest=expected_manifest, max_record_bytes=max_record_bytes)
+
+
+def read_sources(inputs: Iterable[ShardSource], *, expected_manifest: Manifest | None = None,
+                 max_record_bytes: int = MAX_RECORD_BYTES, max_trials: int | None = None,
+                 max_summary_bytes: int | None = None, checkpoint: Callable[[], None] | None = None) -> Analysis:
+    """Use the same validator over caller-authorized binary sources.
+
+    Optional bounds/cancellation serve interactive ingestion without changing CLI
+    defaults. Summary bytes cap serialized scalar rows, not total process RSS.
+    """
+    if type(max_record_bytes) is not int or max_record_bytes < 1:
+        raise ValueError("max_record_bytes must be a positive integer")
+    for bound in (max_trials, max_summary_bytes):
+        if bound is not None and (type(bound) is not int or bound < 1):
+            raise ValueError("ingestion bounds must be positive integers")
     if expected_manifest is not None and not isinstance(expected_manifest, Manifest):
         raise TypeError("expected_manifest must be a Manifest")
-    paths = [Path(path).resolve() for path in paths]
-    if not paths or len(set(paths)) != len(paths):
+    inputs = list(inputs)
+    if not inputs or len({source.identity for source in inputs}) != len(inputs):
         raise ValueError("provide distinct input shards")
+    check = checkpoint or (lambda: None)
     rows, diagnostics, locations, campaigns, sources = [], [], {}, set(), []
-    for path in paths:
-        stamp = _stamp(path)
+    trial_count = summary_bytes = 0
+    for source in inputs:
+        check()
+        path = source.identity
+        stamp = source.stamp()
         digest = hashlib.sha256()
         local, campaign, footer = [], None, False
-        with path.open("rb") as stream:
+        with source.open() as stream:
             line = 0
             while True:
+                check()
                 offset = stream.tell()
                 remaining = stamp[2] - offset
                 if remaining <= 0:
@@ -410,7 +439,7 @@ def read_shards(paths, *, expected_manifest: Manifest | None = None,
                 digest.update(raw)
                 try:
                     if len(raw) > max_record_bytes:
-                        raise ValueError("record exceeds configured byte limit")
+                        raise AnalysisLimitError("record exceeds configured byte limit")
                     if footer:
                         raise ValueError("content after campaign summary")
                     if not raw.endswith(b"\n"):
@@ -428,11 +457,18 @@ def read_shards(paths, *, expected_manifest: Manifest | None = None,
                     if campaign != current:
                         raise ValueError("multiple campaigns in one shard")
                     if record["record_type"] == "trial":
+                        trial_count += 1
+                        if max_trials is not None and trial_count > max_trials:
+                            raise AnalysisLimitError("trial count exceeds configured limit")
                         row = _trial(record)
+                        if max_summary_bytes is not None:
+                            summary_bytes += len(canonical_json(row).encode("ascii"))
+                            if summary_bytes > max_summary_bytes:
+                                raise AnalysisLimitError("scalar summaries exceed configured byte limit")
                         attempt = row["attempt_id"]
                         if attempt in locations:
                             raise ValueError("duplicate attempt ID")
-                        locations[attempt] = (path, offset, len(raw), hashlib.sha256(raw).hexdigest(), stamp)
+                        locations[attempt] = (source, offset, len(raw), hashlib.sha256(raw).hexdigest(), stamp)
                         row["shard"] = str(path)
                         local.append(row)
                     elif record["record_type"] == "campaign_summary":
@@ -440,9 +476,11 @@ def read_shards(paths, *, expected_manifest: Manifest | None = None,
                         footer = True
                     else:
                         raise ValueError("unknown record type")
+                except AnalysisLimitError as error:
+                    raise AnalysisLimitError(f"{path}:{line}: {error}") from error
                 except (ValueError, TypeError, KeyError, OverflowError) as error:
-                    raise ValueError(f"{path}:{line}: {error}") from error
-        if _stamp(path) != stamp:
+                    raise ShardValidationError(path, line, error) from error
+        if source.stamp() != stamp:
             raise ValueError(f"source changed during analysis: {path}")
         sources.append({"path": str(path), "sha256": digest.hexdigest(), "size_bytes": stamp[2]})
         if not footer:
@@ -450,6 +488,7 @@ def read_shards(paths, *, expected_manifest: Manifest | None = None,
         for row in local:
             row["campaign_complete"] = footer
         rows.extend(local)
+    check()
     frame = pd.DataFrame(rows) if rows else pd.DataFrame(columns=TRIAL_COLUMNS)
     if not frame.empty:
         for metric in ("best_cost", *METRICS):
@@ -472,6 +511,7 @@ def read_shards(paths, *, expected_manifest: Manifest | None = None,
         for code, identities in (("missing_executions", expected - observed), ("unexpected_executions", observed - expected)):
             if identities:
                 diagnostics.append({"code": code, "requested_execution_ids": sorted(identities)})
+    check()
     return Analysis(frame, diagnostics, sources, locations)
 
 

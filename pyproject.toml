@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 interface = [
     "fastapi>=0.115,<1",
+    "pandas>=3.1,<3.2",
     "pydantic>=2.10,<3",
     "uvicorn>=0.34,<1",
 ]

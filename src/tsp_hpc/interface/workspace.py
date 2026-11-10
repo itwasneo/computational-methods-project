@@ -17,11 +17,13 @@ import secrets
 import stat
 import threading
 
+from tsp_hpc.interface.contracts import SHARDS_MAX
 from tsp_hpc.interface.errors import InterfaceError
 
 MAX_ENTRIES = 10_000
 MAX_DEPTH = 16
 MAX_READ_BYTES = 64 * 1024
+MAX_DATASET_BYTES = 64 * 1024 * 1024
 
 
 def _stamp(info):
@@ -37,6 +39,22 @@ class Candidate:
     parts: tuple[str, ...]
     stamp: tuple[int, ...]
     kind: str
+
+
+@dataclass(frozen=True)
+class AuthorizedSource:
+    """Opaque analysis source; no path leaves the workspace authority boundary."""
+
+    catalog: "WorkspaceCatalog"
+    identity: str
+    revision: str
+    size_bytes: int
+
+    def stamp(self):
+        return self.catalog.source_stamp(self.identity, self.revision)
+
+    def open(self):
+        return self.catalog.open_source(self.identity, self.revision)
 
 
 class WorkspaceCatalog:
@@ -74,8 +92,8 @@ class WorkspaceCatalog:
             self._directories.clear()
 
     @contextmanager
-    def _operation(self):
-        if not self._lock.acquire(blocking=False):
+    def _operation(self, *, wait=False):
+        if not self._lock.acquire(blocking=wait):
             raise InterfaceError("catalog_busy", "A catalog operation is already running.", 409, retryable=True)
         try:
             if self._fd < 0:
@@ -204,6 +222,80 @@ class WorkspaceCatalog:
             ]
             next_cursor = self._cursor(offset + limit, limit) if offset + limit < len(files) else None
             return {"revision": self._revision, "items": items, "next_cursor": next_cursor}
+
+    def assert_revision(self, revision, *, wait=False):
+        with self._operation(wait=wait):
+            self._check_current()
+            if revision != self._revision:
+                raise _stale()
+
+    def select_sources(self, handles, manifest_handle, revision):
+        """Capture bounded source handles, not paths or unbounded file contents."""
+        if not handles or len(handles) > SHARDS_MAX or len(set(handles)) != len(handles):
+            raise InterfaceError("invalid_request", f"Select between 1 and {SHARDS_MAX} distinct result shards.")
+        with self._operation():
+            self._check_current()
+            if revision != self._revision:
+                raise _stale()
+            total = 0
+
+            def source(handle, kind, limit):
+                nonlocal total
+                candidate = self._files.get(handle)
+                if candidate is None:
+                    raise InterfaceError("artifact_not_found", "Selected artifact is unavailable.", 404)
+                if candidate.kind != kind:
+                    raise InterfaceError("invalid_artifact", "Selected artifact has an unsupported file kind.", 422)
+                size = candidate.stamp[3]
+                total += size
+                if size > limit or total > MAX_DATASET_BYTES:
+                    raise InterfaceError("dataset_limit_exceeded", "Selected sources exceed ingestion byte limits.", 413)
+                return AuthorizedSource(self, handle, revision, size)
+
+            shards = [source(handle, "result_shard", MAX_DATASET_BYTES) for handle in handles]
+            manifest = source(manifest_handle, "json", MAX_READ_BYTES) if manifest_handle is not None else None
+            return shards, manifest
+
+    def source_stamp(self, handle, revision):
+        with self._operation(wait=True):
+            self._check_current()
+            if revision != self._revision:
+                raise _stale()
+            candidate = self._files.get(handle)
+            if candidate is None:
+                raise _stale()
+            dev, ino, _mode, size, modified, changed = candidate.stamp
+            return dev, ino, size, modified, changed
+
+    @contextmanager
+    def open_source(self, handle, revision):
+        """Open a captured source briefly under the catalog lock; parse off-lock."""
+        with self._operation(wait=True):
+            self._check_current()
+            if revision != self._revision or handle not in self._files:
+                raise _stale()
+            candidate = self._files[handle]
+            if candidate.stamp[3] > MAX_DATASET_BYTES:
+                raise InterfaceError("dataset_limit_exceeded", "Source exceeds ingestion byte limit.", 413)
+            with self._directory(candidate.parts[:-1]) as parent:
+                fd = os.open(candidate.parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=parent)
+            try:
+                info = os.fstat(fd)
+                if _stamp(info) != candidate.stamp or not stat.S_ISREG(info.st_mode):
+                    raise _stale()
+            except BaseException:
+                os.close(fd)
+                raise
+        try:
+            with os.fdopen(fd, "rb") as stream:
+                try:
+                    yield stream
+                finally:
+                    if _stamp(os.fstat(stream.fileno())) != candidate.stamp:
+                        raise _stale()
+                    self.assert_revision(revision, wait=True)
+        except OSError:
+            raise _stale() from None
 
     def read_candidate(self, handle: str, revision: str, *, max_bytes=MAX_READ_BYTES) -> bytes:
         """Internal bounded reader for future adapters, NOT an HTTP file-read endpoint."""
