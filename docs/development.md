@@ -11,7 +11,7 @@ Use Python 3.12 and uv. [`.python-version`](../.python-version) selects the mino
 | Base runtime | NumPy and Numba; no plotting or web dependencies |
 | `dev` (default group) | pytest, HTTP test client and the `analysis` group |
 | Optional `analysis` group | pandas and Matplotlib |
-| Optional `interface` extra | FastAPI, Pydantic and Uvicorn |
+| Optional `interface` extra | FastAPI, Pydantic, Uvicorn and pandas for shared result ingestion |
 | Frontend development | Node 24 and pnpm; versions/dependencies in [frontend/package.json](../frontend/package.json), resolutions in [frontend/pnpm-lock.yaml](../frontend/pnpm-lock.yaml) |
 
 Use `--locked` for Python and `--frozen-lockfile` for pnpm. Do not resolve experiment environments with unrelated ad-hoc installs or introduce npm/Yarn lockfiles. Frontend dependency build scripts are allowlisted only for `esbuild`.
@@ -60,7 +60,7 @@ src/tsp_hpc/
 │   └── nn/              # adapter and separately named native implementations
 ├── experiments/         # manifest planning and sequential execution
 ├── analysis/            # validated tables/comparisons and separate reports layer
-└── interface/           # optional session/catalog API and design DTOs
+└── interface/           # optional session/catalog/ingestion API and read-only DTOs
 frontend/                # fixture-only Svelte/TypeScript preview
 └── src/rendering/       # WebGL2/model code, declarations and focused tests
 ```

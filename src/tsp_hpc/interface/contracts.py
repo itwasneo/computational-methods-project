@@ -1,8 +1,9 @@
 """Read-only API v1 DTO types, not runtime validators.
 
-Workspace/session/catalog endpoints implement a subset; Results DTOs remain design-only.
+Workspace/session/catalog and dataset lifecycle endpoints implement a subset;
+trial queries and geometry DTOs remain design-only.
 
-See docs/contracts.md. Scientific validation remains in the shared Python APIs.
+See docs/interface.md. Scientific validation remains in the shared Python APIs.
 All fields are required, including nullable fields. Wire seeds are decimal strings.
 """
 
@@ -106,6 +107,12 @@ class Dataset(TypedDict):
     revision: str | None
     state: Literal["loading", "ready", "failed", "stale"]
     diagnostics: list[Diagnostic]
+    diagnostics_total: int
+    diagnostics_truncated: bool
+
+
+class DatasetStatusRequest(CatalogRefreshRequest):
+    dataset_id: str
 
 
 class Context(TypedDict):

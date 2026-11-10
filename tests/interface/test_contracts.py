@@ -46,6 +46,7 @@ def wire():
 def test_wire_examples_match_python_design_types(wire):
     for name, kind in {
         "workspace": c.WorkspaceResponse, "catalog": c.ArtifactPage, "query": c.TrialQuery, "page": c.TrialPage,
+        "dataset_request": c.DatasetRequest, "dataset_status_request": c.DatasetStatusRequest, "dataset": c.Dataset,
         "details": c.TrialDetails, "missing_details": c.TrialDetails,
         "geometry": c.Geometry, "stale_error": c.ErrorResponse,
     }.items():
