@@ -105,6 +105,62 @@ def test_real_output_compact_metadata_lazy_authorized_details_and_unchanged_evid
     assert {path.name: path.read_bytes() for path in workspace.iterdir()} == before
 
 
+def test_http_trial_pages_match_real_shared_analysis_and_reject_stale_sources(workspace, campaign, monkeypatch):
+    import secrets
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from tsp_hpc.interface.contracts import TrialPage, TrialRow
+    from tsp_hpc.interface.server import create_app
+
+    expected = read_shards([workspace / "runs.jsonl"], expected_manifest=campaign[1])
+    before = (workspace / "runs.jsonl").read_bytes()
+    secret = secrets.token_urlsafe(32)
+    app = create_app(workspace, port=8000, bootstrap_secret=secret)
+    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+        paired = client.post("/api/session", json={"api_version": 1, "request_id": "pair", "secret": secret}).json()
+        client.headers["Authorization"] = f"Bearer {paired['session_token']}"
+        workspace_id = client.get("/api/workspace").json()["workspace"]["workspace_id"]
+        context = {"api_version": 1, "request_id": "query", "workspace_id": workspace_id}
+        catalog = client.post("/api/artifacts/query", json={**context, "limit": 100, "cursor": None}).json()
+        handles = {item["display_name"]: item["artifact_handle"] for item in catalog["items"]}
+        accepted = client.post("/api/datasets", json={**context, "artifact_catalog_revision": catalog["revision"],
+                              "result_handles": [handles["runs.jsonl"]], "expected_manifest_handle": handles["expected.json"]}).json()
+        app.state.datasets._future.result(timeout=10)
+        ready = client.post("/api/datasets/status", json={**context, "dataset_id": accepted["dataset_id"]}).json()
+        body = {**context, "dataset_id": ready["dataset_id"], "revision": ready["revision"],
+                "filters": [], "sort": None, "limit": 2, "cursor": None}
+        observed = []
+        while True:
+            response = client.post("/api/trials/query", json=body)
+            assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+            page = response.json()
+            assert page.keys() == TrialPage.__required_keys__
+            assert str(workspace) not in response.text
+            observed.extend(page["items"])
+            body["cursor"] = page["next_cursor"]
+            if body["cursor"] is None:
+                break
+        columns = list(TrialRow.__annotations__)
+        pd.testing.assert_frame_equal(pd.DataFrame(observed)[columns],
+                                      expected.trials.sort_values("attempt_id")[columns].reset_index(drop=True),
+                                      check_dtype=False)
+        assert len(observed) == 4 and {row["outcome"] for row in observed} == {"completed", "failed"}
+        assert client.post("/api/trials/query", json={**body, "revision": "obsolete"}).json()["code"] == "stale_revision"
+        assert (workspace / "runs.jsonl").read_bytes() == before
+
+        # Change the source after the pre-query check: no computed page may escape.
+        original = pd.DataFrame.sort_values
+        def changed(frame, *args, **kwargs):
+            result = original(frame, *args, **kwargs)
+            (workspace / "runs.jsonl").write_bytes(before + b" ")
+            return result
+        monkeypatch.setattr(pd.DataFrame, "sort_values", changed)
+        response = client.post("/api/trials/query", json=body)
+        assert response.status_code == 409 and response.json()["code"] == "stale_revision"
+        assert "items" not in response.json()
+        assert client.post("/api/trials/query", json=body).json()["code"] == "stale_revision"
+
+
 def test_loading_is_observable_off_request_path_without_queue_or_partial_index(workspace, monkeypatch):
     entered, release = gated_reader(monkeypatch)
     with store_for(workspace) as (store, handles, revision):

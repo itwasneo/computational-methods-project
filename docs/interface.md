@@ -10,9 +10,9 @@ The interface supports the TSP workflow; it is not a second scientific engine or
 | --- | --- |
 | Svelte 5 + TypeScript + Vite frontend | Fixture-only Results table and read-only viewer; no API wiring |
 | WebGL2 viewer | Shared rendering/picking primitives; no production artifact binding |
-| FastAPI + Pydantic + Uvicorn backend | Session pairing, read-only candidate catalog and bounded background result ingestion |
+| FastAPI + Pydantic + Uvicorn backend | Session pairing, read-only catalog, bounded ingestion and paged scalar trial queries |
 | Apache ECharts | Selected for bounded runtime/quality charts, not installed or integrated |
-| Results/geometry API | Dataset lifecycle implemented; trial/facet/detail/geometry queries remain design contracts |
+| Results/geometry API | Dataset lifecycle and trial queries implemented; facets/details/geometry remain planned |
 
 The intended workflow remains results explorer → instance editor → local run controls. Editing/undo, manual-instance provenance, capabilities/preflight, isolated jobs, cancellation/recovery, comparison charts and CLI replay integration remain future work. Editing must use shared generation/artifact APIs and bounded undo/redo without mutating submitted snapshots. Jobs must use immutable submissions, reject unsupported configurations and report actual lifecycle outcomes. Local execution initially targets the existing fixed-work, unrounded serial NN runner; additional algorithms/history require their actual shared-backend support.
 
@@ -69,6 +69,7 @@ Send `SessionRequest` (`api_version: 1`, `request_id`, `secret`) to `POST /api/s
 | `POST /api/artifacts/refresh` | `CatalogRefreshRequest` / `CatalogRefreshResponse`; rebuild the same root's catalog, rotate revision/handles and invalidate its dataset |
 | `POST /api/datasets` | `DatasetRequest` / `Dataset`; HTTP 202 acknowledges background ingestion in `loading` state |
 | `POST /api/datasets/status` | `DatasetStatusRequest` / `Dataset`; observe `loading`, `ready`, `failed` or `stale` |
+| `POST /api/trials/query` | `TrialQuery` / `TrialPage`; filtered, sorted scalar rows from a ready dataset revision |
 
 Use exactly `http://127.0.0.1:<port>` and disable environment-configured proxies in owner clients. Host/origin/session guards reject foreign or duplicate Host headers, foreign/null origins, cross-site/same-site fetch requests and unauthorized clients. Native clients may omit Origin but still need credentials. All query strings are rejected; there is no permissive CORS, WebSocket or OpenAPI/docs endpoint.
 
@@ -111,9 +112,33 @@ Supply a selected JSON handle instead of null to check expected/missing executio
 - **Diagnostics:** status exposes sanitized codes, optional opaque artifact handles and messages. At most 100 summaries are returned, with explicit `diagnostics_total` and `diagnostics_truncated`; the authoritative full diagnostics remain on the internal analysis. Diagnostic pagination/inspection is not yet exposed. Failures never echo raw exceptions, input contents or private paths.
 - **Invalidation:** revisions bind content SHA-256 digests, expected-manifest bytes, analysis/schema source code, relevant dependency versions, ingestion configuration and authorization/catalog context. This identity is cache invalidation, not verified build provenance. Status polling and internal query/lazy-read boundaries recheck metadata/revision; no filesystem watcher is required. A changed/deleted/replaced source, changed manifest or catalog refresh makes the index stale and prevents late publication. Catalog-wide checks conservatively invalidate for unrelated catalog changes too. Code changes require a backend restart. Interrupted indexes are discarded; no partially built index survives publication or restart.
 
+### Paged trial queries
+
+Send `POST /api/trials/query` after ingestion reaches `ready`:
+
+```json
+{
+  "api_version": 1,
+  "request_id": "trials-1",
+  "workspace_id": "<workspace ID>",
+  "dataset_id": "<dataset ID>",
+  "revision": "<ready dataset revision>",
+  "filters": [],
+  "sort": null,
+  "limit": 100,
+  "cursor": null
+}
+```
+
+All fields are required; supply the conventional initial limit of 100 (maximum 500). Filters use `{"field":"outcome","values":["completed"]}`; sort uses `{"field":"best_cost","direction":"ascending"}` or `descending`. The filtering/sorting rules below are implemented for trial queries. Numeric cost/time filters accept finite numbers; city counts require safe integers of at least two. Booleans and numeric strings are rejected.
+
+The response echoes context and contains `query_key`, `items` and `next_cursor`. Continue with the returned cursor and the same dataset/revision, normalized filters, sort and page size; request IDs may change. Cursors are session-signed. Empty results return `items: []` and `next_cursor: null`. Changed sources/revisions produce `stale_revision`, not a partial page; loading/failed datasets produce `dataset_not_ready`.
+
+Queries only project the shared analysis table, preserving failure/completeness/duplicate/usable flags. They neither recompute scientific statistics nor load tours/plans. Filtering and sorting run in the HTTP worker pool over the ingestion-bounded table, with no query cache or additional work queue. Facets, aggregates, comparisons, details, geometry and frontend API wiring remain separate work; this endpoint does not change the fixture-only browser preview.
+
 ## Read-only Results contract
 
-**Dataset lifecycle is implemented above; trial/facet/detail/geometry endpoints below remain planned.** Python [DTO types](../src/tsp_hpc/interface/contracts.py), mirrored [TypeScript types](../frontend/src/contracts.ts) and the [shared wire fixture](../examples/interface-contracts/read-only-v1.json) describe the boundary. Keep them and this contract consistent. Static types/fixture tests do not replace runtime validation; runtime request validators cover the session/catalog/dataset subset above. Jobs, editor/run snapshots, execution capabilities and group/chart/comparison responses still need contracts.
+**Dataset lifecycle and trial queries are implemented; facet/detail/geometry endpoints below remain planned.** Python [DTO types](../src/tsp_hpc/interface/contracts.py), mirrored [TypeScript types](../frontend/src/contracts.ts) and the [shared wire fixture](../examples/interface-contracts/read-only-v1.json) describe the boundary. Keep them and this contract consistent. Static types/fixture tests do not replace runtime validation; runtime request validators cover the session/catalog/dataset/trial-query subset above. Jobs, editor/run snapshots, execution capabilities and group/chart/comparison responses still need contracts.
 
 ### Operations, limits and state
 

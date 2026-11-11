@@ -208,6 +208,36 @@ def test_dataset_request_validation_is_strict_and_sanitized(session, tmp_path, r
     assert "/private/input" not in response.text
 
 
+def test_trial_query_http_boundaries_and_explicit_fields(session, tmp_path):
+    client, app, workspace, _, _ = session
+    accepted = client.post("/api/datasets", json=dataset_request(session, tmp_path)).json()
+    app.state.datasets._future.result(timeout=10)
+    context = {"api_version": 1, "request_id": "query", "workspace_id": workspace["workspace_id"],
+               "dataset_id": accepted["dataset_id"]}
+    ready = client.post("/api/datasets/status", json=context).json()
+    body = {**context, "revision": ready["revision"], "filters": [], "sort": None, "limit": 100, "cursor": None}
+    response = client.post("/api/trials/query", json=body)
+    assert response.status_code == 200 and response.json()["items"] == []
+    assert response.json()["next_cursor"] is None
+    for field in ("revision", "filters", "sort", "limit", "cursor"):
+        assert client.post("/api/trials/query", json={k: v for k, v in body.items() if k != field}).status_code == 400
+    for changes in ({"filters": [{"field": "best_cost", "values": [True]}]}, {"limit": 501},
+                    {"filters": [{"field": "algorithm", "values": []}] * 2}, {"path": "/private"}):
+        response = client.post("/api/trials/query", json={**body, **changes})
+        assert response.status_code == 400 and response.json()["code"] == "invalid_request"
+        assert "/private" not in response.text
+    for headers in ({"Authorization": "Bearer wrong"}, {"Origin": "null"}):
+        assert client.post("/api/trials/query", json=body, headers=headers).status_code == 403
+    assert client.post("/api/trials/query", json={**body, "workspace_id": "other"}).status_code == 403
+    assert client.post("/api/trials/query", json={**body, "dataset_id": "other"}).status_code == 404
+    app.state.datasets._entry.state = "loading"
+    assert client.post("/api/trials/query", json=body).json()["code"] == "dataset_not_ready"
+    app.state.datasets._entry.state = "failed"
+    assert client.post("/api/trials/query", json=body).json()["code"] == "dataset_not_ready"
+    app.state.datasets.invalidate()
+    assert client.post("/api/trials/query", json=body).json()["code"] == "stale_revision"
+
+
 def test_dataset_routes_require_session_workspace_and_explicit_nullable_fields(session, tmp_path):
     client, _, workspace, _, _ = session
     body = dataset_request(session, tmp_path)
