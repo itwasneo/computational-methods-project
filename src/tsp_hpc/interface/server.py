@@ -14,9 +14,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 from starlette.exceptions import HTTPException
 
-from tsp_hpc.interface.contracts import SHARDS_MAX
+from tsp_hpc.interface.contracts import PAGE_MAX, SHARDS_MAX
 from tsp_hpc.interface.errors import InterfaceError
 from tsp_hpc.interface.workspace import WorkspaceCatalog
+from tsp_hpc.interface.queries import ColumnFilterRequest, SortRequest, TrialQueries
 
 BODY_LIMIT = 16 * 1024
 SECRET_PATTERN = re.compile(r"[A-Za-z0-9_-]{43,128}\Z")
@@ -198,6 +199,21 @@ class DatasetStatusRequest(WorkspaceRequest):
     dataset_id: ArtifactHandle
 
 
+class TrialQueryRequest(DatasetStatusRequest):
+    revision: ArtifactHandle
+    filters: list[ColumnFilterRequest] = Field(max_length=8)
+    sort: SortRequest | None
+    limit: StrictInt = Field(ge=1, le=PAGE_MAX)
+    cursor: StrictStr | None = Field(max_length=512)
+
+    @field_validator("filters")
+    @classmethod
+    def distinct_columns(cls, value):
+        if len({column.field for column in value}) != len(value):
+            raise ValueError("select each filter column once")
+        return value
+
+
 def create_app(workspace, *, port: int, bootstrap_secret: str):
     """Construct a session without opening its workspace until lifespan startup."""
     if type(port) is not int or not 1 <= port <= 65535:
@@ -215,6 +231,7 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
             app.state.catalog = catalog
             datasets = DatasetStore(catalog)
             app.state.datasets = datasets
+            app.state.trial_queries = TrialQueries(datasets)
             yield
         finally:
             try:
@@ -283,5 +300,10 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
     def dataset_status(body: DatasetStatusRequest, request: Request):
         catalog_for(request, body)
         return request.app.state.datasets.status(body.dataset_id, body.request_id)
+
+    @app.post("/api/trials/query")
+    def trials(body: TrialQueryRequest, request: Request):
+        catalog_for(request, body)
+        return request.app.state.trial_queries.page(body.model_dump())
 
     return app

@@ -21,7 +21,7 @@ from tsp_hpc.interface.workspace import MAX_READ_BYTES
 RULE_FILES = (
     "analysis/__init__.py", "analysis/core.py", "analysis/sources.py", "experiments/manifests.py", "problem/data.py",
     "reproducibility/identity.py", "reproducibility/random_streams.py", "solvers/results.py",
-    "interface/contracts.py", "interface/ingestion.py", "interface/workspace.py",
+    "interface/contracts.py", "interface/ingestion.py", "interface/workspace.py", "interface/queries.py",
 )
 
 
@@ -152,8 +152,10 @@ class DatasetStore:
         self.status(dataset_id, "internal")
         with self._lock:
             entry = self._lookup(dataset_id)
-            if entry.state != "ready" or revision != entry.revision:
-                raise InterfaceError("dataset_not_ready", "Dataset revision is not ready; reload before querying.", 409)
+            if entry.state == "stale" or (entry.state == "ready" and revision != entry.revision):
+                raise InterfaceError("stale_revision", "Dataset revision changed; reload before querying.", 409, retryable=True)
+            if entry.state != "ready":
+                raise InterfaceError("dataset_not_ready", "Dataset is not ready; reload before querying.", 409)
             analysis = entry.analysis
         yield analysis
         self.status(dataset_id, "internal")
