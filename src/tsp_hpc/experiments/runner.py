@@ -19,6 +19,7 @@ import numba
 import numpy as np
 
 from tsp_hpc import __version__
+from tsp_hpc.reproducibility.build import runtime_build
 from tsp_hpc.problem.distances import DEFAULT_MAX_MATRIX_BYTES, prepare_distances
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.problem.instances import load_instance
@@ -32,7 +33,8 @@ def _source_state() -> dict:
     """Identify this source checkout, never an unrelated caller's working tree."""
     root = Path(__file__).resolve().parents[3]
     unknown = {"revision": None, "dirty": None}
-    if not (root / ".git").exists():
+    if (Path(__file__).resolve() != root / "src/tsp_hpc/experiments/runner.py"
+            or not (root / ".git").exists()):
         return unknown
     try:
         def git(*args):
@@ -70,11 +72,12 @@ def runtime_provenance() -> dict:
         affinity = sorted(os.sched_getaffinity(0))
     except (AttributeError, OSError):
         affinity = None
+    source, build = runtime_build(Path(__file__).resolve().parents[1], __version__, _source_state())
     return {
         "versions": {"python": platform.python_version(), "tsp_hpc": __version__,
                      "numpy": np.__version__, "numba": numba.__version__,
                      "llvmlite": llvmlite.__version__},
-        "source": _source_state(),
+        "source": source, "build": build,
         "platform": platform.platform(), "machine": platform.machine(),
         "processor": platform.processor(), "cpu_count": os.cpu_count(),
         "memory": _memory_resources(), "runner_workers": 1, "solver_threads": 1,
@@ -126,7 +129,7 @@ def _trial(plan, execution, capability_error, bindings, provenance, campaign_id,
     search = plan.search
     identifier = search["instance"]["instance_id"]
     record = {
-        "schema_version": 1, "record_type": "trial", "campaign_id": campaign_id,
+        "schema_version": 2, "record_type": "trial", "campaign_id": campaign_id,
         "attempt_id": uuid4().hex, "started_at": datetime.now(timezone.utc).isoformat(),
         "requested_plan": plan.to_dict(), "effective_execution": execution,
         "execution_id": None if execution is None else stable_id(
@@ -264,7 +267,7 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
                                   "end_to_end_time_s": write_end - trial_start})
             counts[record["outcome"]] += 1
         summary = {
-            "schema_version": 1, "record_type": "campaign_summary", "campaign_id": campaign_id,
+            "schema_version": 2, "record_type": "campaign_summary", "campaign_id": campaign_id,
             "counts": counts, "planned_trials": len(resolved), "trial_timings": trial_timings,
             "timings": {"setup_time_s": setup_time, "trial_persistence_time_s": persistence_time,
                         "end_to_end_time_s": perf_counter() - campaign_start},

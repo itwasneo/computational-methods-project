@@ -144,8 +144,8 @@ def write_report(paths, *, output_dir, expected_manifest=None, references=None,
     with matplotlib.rc_context({**matplotlib.rcParamsDefault, "text.parse_math": False}):
         figures, notes = _plots(analysis, summary, comparisons, gaps, output, max_plot_groups)
     notes.extend([
-        "Quality-over-time and time-to-target are unavailable: runner-v1 records no history.",
-        "Parallel efficiency is unavailable: runner-v1 executes serial NN only.",
+        "Quality-over-time and time-to-target are unavailable: runner-v1/v2 record no history.",
+        "Parallel efficiency is unavailable: runner-v1/v2 execute serial NN only.",
         "Recorded tours/identities were checked; objective costs were not recomputed without input artifacts.",
         "Runtime context matching is observational, not hardware attestation or statistical significance.",
         "Warm-up/cache state and trial order can dominate end-to-end ratios; these are observed ratios, not controlled speedup conclusions.",

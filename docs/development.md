@@ -48,13 +48,35 @@ pnpm --dir frontend run build
 
 Frontend tests include Results client/state, an ephemeral-port Vite proxy check and rendering/model regressions. Python tests cover native kernels, independent references, reproducibility and API boundaries. No cluster account, GPU, container or browser measurement campaign is needed. Loopback tests do not certify browser behavior; test timings are not benchmark evidence. Share scientific conformance tests across implementations rather than copying suites.
 
+## Verified installed builds
+
+Ordinary `uv build` wheels have no verified source claim. For recorded installed-package campaigns, use the controlled producer from a **clean committed checkout** (Git, Python 3.12 and uv; CI pins uv 0.10.4):
+
+```bash
+python3.12 tools/build_verified_wheel.py --output dist/verified
+uv export --locked --no-dev --group analysis --no-emit-project \
+  --format requirements-txt --output-file dist/verified/dependencies.txt
+uv venv --python 3.12 dist/wheel-env
+uv pip sync --python dist/wheel-env/bin/python --require-hashes dist/verified/dependencies.txt
+uv pip install --python dist/wheel-env/bin/python --no-deps \
+  dist/verified/tsp_hpc-0.1.0-py3-none-any.whl
+```
+
+The producer builds a private Git archive with the existing backend, verifies package bytes against that snapshot, embeds `_build_provenance.json`, and rewrites wheel `RECORD`. It never writes metadata into `src/` or accepts a caller-supplied revision. Dirty/untracked work, unsupported layouts and existing output files are rejected. `--offline` requires the matching uv fast path or cached build backend. Plain wheels/sdists remain supported but unverified; the controlled path currently produces pure-Python wheels only.
+
+Keep the wheel and adjacent `.whl.build.json` receipt together. The receipt contains the final wheel SHA-256 and full inventory; that archive hash is external to avoid self-reference. Retain the source revision and matching lock/export too. The [runtime protocol and trust boundary](usage.md#build-provenance) distinguish payload identity from archive/image identity.
+
+Run `dist/wheel-env/bin/python -I -m tsp_hpc run ...` and `... analyze ...` using the [existing commands](usage.md#run-a-manifest), with fresh output paths. Do not use `uv run` for this installed-package check: it selects the checkout environment. Use a fresh process, trusted caches and no source/PYTHONPATH overlays. The installed environment does not need Git or the source checkout. Do not subsequently run a project sync that replaces the wheel with an editable/plain installation.
+
+The integration test builds a disposable committed snapshot, installs its wheel in a temporary environment with links to the already-locked dependencies, and runs the real CLI through analysis. It checks accepted and rejected comparison provenance, not a performance claim. Container handoff remains [owner-operated](hpc-resources.md#reproducible-container-environment).
+
 ## Package layout
 
 ```text
 src/tsp_hpc/
 ├── __init__.py, __main__.py, cli.py
 ├── problem/             # instances, objective, validation and distances
-├── reproducibility/     # identities and logical RNG streams
+├── reproducibility/     # identities, logical RNG streams and build consistency
 ├── solvers/
 │   ├── results.py       # shared result/counter contracts
 │   └── nn/              # adapter and separately named native implementations

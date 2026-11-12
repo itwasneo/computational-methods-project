@@ -1,4 +1,4 @@
-"""Runner-v1 record validation and scalar projection, independent of table storage.
+"""Runner-v1/v2 record validation and scalar projection, independent of table storage.
 
 Rebuild plans through the shared manifest rules; check recorded structure and
 identities, not objective costs without original instance artifacts.
@@ -15,6 +15,7 @@ import numpy as np
 from tsp_hpc.experiments.manifests import Manifest
 from tsp_hpc.problem.data import validate_tour
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
+from tsp_hpc.reproducibility.build import validate_observation, validate_source
 from tsp_hpc.solvers.results import WorkCounters
 
 TRIAL_FIELDS = set("schema_version record_type campaign_id attempt_id started_at requested_plan effective_execution execution_id runtime input setup_policy max_matrix_bytes adapter outcome result error timings".split())
@@ -99,26 +100,22 @@ def _plan(record):
     return expected
 
 
-def _runtime(runtime):
-    require_fields(runtime, {"versions", "source", "platform", "machine", "processor", "cpu_count",
-                             "memory", "runner_workers", "solver_threads", "cpu_affinity", "environment"})
+def _runtime(runtime, schema_version):
+    fields = {"versions", "source", "platform", "machine", "processor", "cpu_count",
+              "memory", "runner_workers", "solver_threads", "cpu_affinity", "environment"}
+    require_fields(runtime, fields | ({"build"} if schema_version == 2 else set()))
     require_fields(runtime["versions"], {"python", "tsp_hpc", "numpy", "numba", "llvmlite"})
     for value in runtime["versions"].values():
         require_text(value)
-    require_fields(runtime["source"], {"revision", "dirty"})
-    revision, dirty = runtime["source"]["revision"], runtime["source"]["dirty"]
-    if revision is None:
-        if dirty is not None:
-            raise ValueError("unknown revision requires unknown dirty state")
-    elif (type(revision) is not str or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", revision) is None
-          or type(dirty) is not bool):
-        raise ValueError("invalid source provenance")
+    validate_source(runtime["source"])
+    if schema_version == 2:
+        validate_observation(runtime["build"], runtime["source"], runtime["versions"]["tsp_hpc"])
     for key in ("platform", "machine", "processor"):
         if type(runtime[key]) is not str:
             raise ValueError("invalid platform observation")
     for key in ("runner_workers", "solver_threads"):
         if _count(runtime[key]) != 1:
-            raise ValueError("runner-v1 analysis supports serial observations only")
+            raise ValueError("runner analysis supports serial observations only")
     if runtime["cpu_count"] is not None and _count(runtime["cpu_count"]) == 0:
         raise ValueError("CPU count must be positive")
     affinity = runtime["cpu_affinity"]
@@ -167,7 +164,7 @@ def _execution(record, search, requested, search_id):
         if record["execution_id"] != stable_id("execution", {"search_id": search_id, "execution": effective}):
             raise ValueError("effective execution identity mismatch")
         if search["algorithm"] != "nn" or effective["backend"] != "serial" or search["instance"]["distance_kind"] != "euclidean_2d":
-            raise ValueError("unsupported effective runner-v1 capability")
+            raise ValueError("unsupported effective runner capability")
     elif record["execution_id"] is not None:
         raise ValueError("unresolved execution must have null identity")
     return effective
@@ -284,7 +281,7 @@ def trial_row(record):
     if record["setup_policy"] != "fresh-per-trial":
         raise ValueError("unsupported setup policy")
     _count(record["max_matrix_bytes"])
-    context = _runtime(record["runtime"])
+    context = _runtime(record["runtime"], record["schema_version"])
     require_fields(record["input"], {"path"}, {"descriptor", "provenance"})
     if record["input"]["path"] is not None:
         require_text(record["input"]["path"])
@@ -302,6 +299,10 @@ def trial_row(record):
     config = effective or requested
     workload = {key: value for key, value in search.items() if key != "repetition"}
     source = record["runtime"]["source"]
+    build = record["runtime"].get("build")
+    method = build["method"] if build else "legacy-source"
+    build_status = build["status"] if build else "reported"
+    build_identity = (build["identity"] or {}) if build else {}
     group = {"workload": workload, "execution": config, "runtime": context,
              "setup_policy": record["setup_policy"], "max_matrix_bytes": record["max_matrix_bytes"],
              "unverified_source_campaign": None if source["revision"] and source["dirty"] is False else record["campaign_id"]}
@@ -321,7 +322,9 @@ def trial_row(record):
         "profile": config["resources"]["profile"], "workers": config["resources"]["workers"],
         "threads_per_worker": config["resources"]["threads_per_worker"], "max_matrix_bytes": record["max_matrix_bytes"],
         "setup_policy": record["setup_policy"], "source_revision": record["runtime"]["source"]["revision"],
-        "source_dirty": record["runtime"]["source"]["dirty"], "outcome": record["outcome"], "status": status,
+        "source_dirty": record["runtime"]["source"]["dirty"], "source_method": method,
+        "build_status": build_status, "build_id": build_identity.get("build_id"),
+        "outcome": record["outcome"], "status": status,
         "best_cost": cost, "tour_digest": tour_digest,
         "work_json": None if work is None else canonical_json(work),
         "error_phase": None if error is None else error["phase"],

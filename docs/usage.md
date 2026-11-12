@@ -50,7 +50,7 @@ Exit codes are **0** without detected issues, **1** for failed/incomplete/missin
 
 ### Validation and comparison rules
 
-The reader accepts runner-v1 serial NN trials and recorded failures. Shared `Manifest` reconstruction verifies IDs/seeds/streams; record checks cover effective execution, tour structure, NN work, adapter metadata, timings, summary counts and receipt linkage. It does **not** authenticate provenance/reference optimality or independently recompute costs without original instances.
+The reader accepts runner-v1/v2 serial NN trials and recorded failures. Shared `Manifest` reconstruction verifies IDs/seeds/streams; record checks cover effective execution, tour structure, NN work, adapter metadata, timings, summary counts and receipt linkage. It does **not** authenticate provenance/reference optimality or independently recompute costs without original instances.
 
 Malformed complete records, unsupported versions, duplicate attempts/campaigns, conflicting IDs and contradictory summaries are errors, not silently skipped rows. A missing summary or unterminated final line is an incomplete campaign: retain the validated prefix for inspection, but exclude it from numerical aggregates. Repeated execution IDs with distinct attempt IDs are retries/duplicate observations—not new statistical repetitions—and all ambiguous copies are excluded. Select the intended shard(s) explicitly; there is no automatic “latest wins” policy. `--manifest` detects entirely absent or unexpected requested executions; absent runs cannot be inferred from the available shards alone.
 
@@ -72,7 +72,7 @@ The reader retains O(trial count) scalar summaries/locators, discarding validate
 
 ## JSONL records and timing boundaries
 
-Every line has `schema_version: 1`, `record_type` and a fresh `campaign_id`. Treat these as runner-envelope versions, separate from manifest and solver variants.
+New shards use `schema_version: 2`, `record_type` and one fresh `campaign_id` shared by their lines. Treat this as the runner-envelope version, separate from manifest and solver variants; v1 compatibility is described [below](#build-provenance).
 
 - **`trial`:** fresh `attempt_id`, UTC start timestamp, complete `requested_plan` (science, seeds, streams and requested IDs), `effective_execution` and its `execution_id`, input path/descriptor/provenance, runtime observations, adapter metadata, matrix ceiling, setup policy, timings, outcome, result and error. Omitted implementation labels are resolved before effective identity assignment; requested plans stay unchanged. Unsupported capability records have null effective execution/ID rather than claiming execution occurred.
 - **Results:** `outcome="completed"` carries the [shared result fields](contracts.md#solver-results-and-progress) as JSON, with a list tour and independently recomputed cost. Both `ok` and normal `no_solution` count as completed. `outcome="failed"` has a null result and `{phase, type, message, reported_work}` error; `reported_work` preserves returned counters if a result reached the runner, otherwise it is null. It does not invent counters or report a partial solution. A `solve` error may come from search or the adapter's own final validation. The runner independently validates every returned complete tour again before persistence.
@@ -82,9 +82,40 @@ Every line has `schema_version: 1`, `record_type` and a fresh `campaign_id`. Tre
 
 A trial's `pre_persistence_time_s` ends before its JSON serialization/write. Its summary timing entry measures from just before trial execution through that line's `fsync`, including input loading, fresh setup, solving, validation and persistence (but not shared campaign setup). Summary `trial_persistence_time_s` sums serialization, write, flush and `fsync` of trial lines. Summary `end_to_end_time_s` spans **runner API entry through all trial writes**, including planning, provenance collection, loading, setup, solving and validation. It excludes manifest parsing, process startup/imports, and the summary's own serialization/write; a record cannot include its own final write duration. Measure whole-command time externally if that boundary is needed.
 
-Runtime observations are sampled at campaign start and include package/compiler-library versions, platform/CPU/affinity observations, one runner worker/serial solver thread, host physical memory and address-space soft limit where available, and an allowlist of numerical/Slurm environment settings. Host memory is not a container/cgroup or job allocation limit, and profile labels/environment variables do not certify resources. Source revision/dirty state come only from the package's source checkout; unavailable provenance (e.g. an ordinary installed wheel) is null, never inferred from an unrelated working directory. Retain image/build provenance separately for packaged deployments.
+Runtime observations are sampled at campaign start and include package/compiler-library versions, platform/CPU/affinity observations, one runner worker/serial solver thread, host physical memory and address-space soft limit where available, and an allowlist of numerical/Slurm environment settings. Host memory is not a container/cgroup or job allocation limit, and profile labels/environment variables do not certify resources. Source provenance comes from the package's own checkout or a verified installed build, never the caller's working directory. File verification belongs to campaign setup, not individual search timings; see [build provenance](#build-provenance).
 
 The shard has one writer, exclusive creation, and a flush/`fsync` after each line. Serialization finishes before writing, but I/O failure or interruption can still leave a partial last line. Failed writes abort; completed prefixes are retained. A missing summary marks an incomplete campaign. This is not transactional storage, automatic retry or resume support; do not append to or silently reuse an incomplete shard.
+
+## Build provenance
+
+The runner writes **envelope v2** trials and campaign summaries. Updated readers also accept v1 without reinterpreting its source claims; v1 runtime/group identities and unknown/dirty exclusions remain unchanged. One campaign cannot mix envelope versions. Older readers reject v2 explicitly. Manifest, instance, reference, report and HTTP schema versions do not change. Report `analysis_runtime` also gains build evidence; CSV tables gain the provenance columns described below.
+
+V2 adds `runtime.build`: `schema_version: 1`, `method`, `status`, and nullable `identity`. `runtime.source` retains `revision`/`dirty`:
+
+| Evidence | Method / status | Source and comparison treatment |
+| --- | --- | --- |
+| Package's own Git checkout | `git-checkout` / `verified` | Observed revision/dirty state; dirty remains ineligible |
+| Matching installed payload | `package-sha256-v1` / `verified` | Source and compact identity from the build manifest; clean compatible builds can be paired |
+| No metadata or checkout | `unknown` / `unavailable` | Null source/identity; descriptive results only |
+| Malformed, mismatched or conflicting installed evidence | `package-sha256-v1` / `invalid` | Null source/identity; never fall back to a clean claim |
+
+### Identity and checksum boundaries
+
+The [controlled producer](development.md#verified-installed-builds) embeds an inventory of installed-relative filenames → SHA-256, covering package files and original wheel distribution metadata. It excludes its own manifest and mutable wheel `RECORD`; generated installer files and `__pycache__` are not immutable payload. Package files outside that cache exclusion must match exactly, including detection of added/missing files. Symlinked payload, ambiguous distributions, wrong version/ownership and mixed imported package origins invalidate evidence.
+
+The compact identity contains `schema_version`, `method`, `source`, `package_version`, `pyproject_sha256`, `lock_sha256`, `payload_sha256`, and `build_id`. Using sorted-key, ASCII, finite compact JSON (`separators=(",", ":")`):
+
+- `payload_sha256` hashes `b"tsp-package-files-v1\0" + JSON(inventory)`.
+- `build_id` is `"build-v1-"` plus SHA-256 of `b"tsp-build-v1\0" + JSON(identity without build_id)`.
+- The full wheel SHA-256 is retained **outside** the wheel. A final SIF checksum and launcher/image evidence are separate again; neither supplies package authority.
+
+The manifest carries the compact identity plus `files`; trials retain only the compact identity, not repeated inventories. Runtime checks (manifest ≤1 MiB) verify installed files at campaign start. Analysis checks identity digests and consistency with recorded source/version; it cannot inspect the original producer installation from JSONL alone.
+
+### Eligibility and trust
+
+Tables expose `source_method`, `build_status` and `build_id`. V1 records are labelled `legacy-source` / `reported`, not retroactively verified. Runtime grouping includes v2 build evidence, so different build identities, checkout-versus-wheel and legacy-versus-v2 observations do not automatically pair. Existing workload, returned-work/tour/cost, runtime/resource, completeness/duplicate and positive-duration rules still apply. Invalid/unknown provenance remains inspectable and campaign-isolated, not repaired by filtering or reference artifacts.
+
+**This is consistency evidence, not cryptographic authenticity.** Trust the producer, Git snapshot, installer, interpreter, dependencies and caches; avoid concurrent modification, live monkeypatching and source overlays. Source hashes cannot attest already-loaded bytecode/JIT state, hostile operators or altered dependencies/OS/hardware. Matching wheel/package identity is not proof of hardware equivalence or a controlled speedup. Missing or invalid evidence does not stop valid solver execution, but prevents eligible paired ratios.
 
 ## Optional local workspace backend
 
