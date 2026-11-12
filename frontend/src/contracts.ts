@@ -1,5 +1,5 @@
-// Read-only API v1 DTOs. Workspace/session/catalog/dataset lifecycle implement a subset.
-// Trial/geometry queries remain design-only; these types are not runtime validation or API wiring.
+// Read-only API v1 DTOs. Workspace/session/catalog/datasets/trial queries are implemented.
+// Facets/details/geometry remain planned. Runtime response guards live in results/client.ts.
 // Mirrors tsp_hpc.interface.contracts; all fields are required, even when nullable.
 export const API_VERSION = 1;
 export const PAGE_DEFAULT = 100;

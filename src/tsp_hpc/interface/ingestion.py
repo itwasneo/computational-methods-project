@@ -5,7 +5,9 @@ A single worker has no request queue. New accepted selections replace the old
 index; shutdown/cancellation and stale inputs never publish partial analysis.
 """
 
-from concurrent.futures import ThreadPoolExecutor
+from __future__ import annotations
+
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 import hashlib
@@ -14,14 +16,21 @@ import json
 import secrets
 import sys
 import threading
+from typing import TYPE_CHECKING, Literal
 
+from tsp_hpc.interface.contracts import Dataset, Diagnostic
 from tsp_hpc.interface.errors import InterfaceError
-from tsp_hpc.interface.workspace import MAX_READ_BYTES
+from tsp_hpc.interface.workspace import AuthorizedSource, MAX_MANIFEST_BYTES, WorkspaceCatalog
+
+if TYPE_CHECKING:
+    from tsp_hpc.analysis import Analysis
+    from tsp_hpc.experiments.manifests import Manifest
 
 RULE_FILES = (
-    "analysis/__init__.py", "analysis/core.py", "analysis/sources.py", "experiments/manifests.py", "problem/data.py",
+    "analysis/__init__.py", "analysis/core.py", "analysis/sources.py", "analysis/validation.py", "experiments/manifests.py", "problem/data.py",
     "reproducibility/identity.py", "reproducibility/random_streams.py", "solvers/results.py",
     "interface/contracts.py", "interface/ingestion.py", "interface/workspace.py", "interface/queries.py",
+    "interface/requests.py", "interface/cursors.py",
 )
 
 
@@ -58,31 +67,31 @@ class IngestionLimits:
 class DatasetEntry:
     dataset_id: str
     catalog_revision: str
-    sources: list
-    manifest_source: object
-    state: str = "loading"
+    sources: list[AuthorizedSource]
+    manifest_source: AuthorizedSource | None
+    state: Literal["loading", "ready", "failed", "stale"] = "loading"
     revision: str | None = None
-    analysis: object = None
-    diagnostics: list = field(default_factory=list)
+    analysis: Analysis | None = None
+    diagnostics: list[Diagnostic] = field(default_factory=list)
     cancel: threading.Event = field(default_factory=threading.Event)
 
 
 class DatasetStore:
-    def __init__(self, catalog, *, limits=None):
+    def __init__(self, catalog: WorkspaceCatalog, *, limits: IngestionLimits | None = None):
         self.catalog = catalog
         self.limits = limits or IngestionLimits()
         self._rules = rule_identity()
         self._lock = threading.RLock()
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tsp-ingestion")
-        self._future = None
-        self._entry = None
+        self._future: Future[None] | None = None
+        self._entry: DatasetEntry | None = None
         self._closed = False
 
     @staticmethod
-    def _diagnostic(code, message, *, handle=None, attempt=None):
-        return {"code": code, "artifact_handle": handle, "attempt_id": attempt, "message": message}
+    def _diagnostic(code: str, message: str, *, handle: str | None = None) -> Diagnostic:
+        return {"code": code, "artifact_handle": handle, "attempt_id": None, "message": message}
 
-    def _payload(self, entry, request_id):
+    def _payload(self, entry: DatasetEntry, request_id: str) -> Dataset:
         diagnostics = entry.diagnostics[:self.limits.max_diagnostics]
         return {"api_version": 1, "request_id": request_id, "workspace_id": self.catalog.workspace_id,
                 "dataset_id": entry.dataset_id, "revision": entry.revision, "state": entry.state,
@@ -90,7 +99,7 @@ class DatasetStore:
                 "diagnostics_total": len(entry.diagnostics),
                 "diagnostics_truncated": len(entry.diagnostics) > len(diagnostics)}
 
-    def _lookup(self, dataset_id):
+    def _lookup(self, dataset_id: str) -> DatasetEntry:
         if self._closed:
             raise InterfaceError("workspace_unavailable", "Dataset session is closed.", 503)
         if self._entry is None or self._entry.dataset_id != dataset_id:
@@ -105,7 +114,7 @@ class DatasetStore:
         if changed:
             raise InterfaceError("stale_revision", "Analysis implementation changed; restart the backend.", 409, retryable=True)
 
-    def submit(self, handles, manifest_handle, catalog_revision, request_id):
+    def submit(self, handles: list[str], manifest_handle: str | None, catalog_revision: str, request_id: str) -> Dataset:
         with self._lock:
             if self._closed:
                 raise InterfaceError("workspace_unavailable", "Dataset session is closed.", 503)
@@ -119,7 +128,7 @@ class DatasetStore:
             self._future = self._worker.submit(self._ingest, entry)
             return accepted
 
-    def _mark_stale(self, entry, message="Sources or catalog changed; refresh and reload the dataset."):
+    def _mark_stale(self, entry: DatasetEntry, message="Sources or catalog changed; refresh and reload the dataset."):
         entry.cancel.set()
         entry.state, entry.revision, entry.analysis = "stale", None, None
         entry.diagnostics = [self._diagnostic("stale_revision", message)]
@@ -129,7 +138,7 @@ class DatasetStore:
             if self._entry is not None:
                 self._mark_stale(self._entry)
 
-    def status(self, dataset_id, request_id):
+    def status(self, dataset_id: str, request_id: str) -> Dataset:
         with self._lock:
             entry = self._lookup(dataset_id)
         if entry.state in ("loading", "ready"):
@@ -163,7 +172,7 @@ class DatasetStore:
             if self._lookup(dataset_id) is not entry or entry.state != "ready" or revision != entry.revision:
                 raise InterfaceError("stale_revision", "Dataset changed while querying.", 409, retryable=True)
 
-    def _manifest(self, entry):
+    def _manifest(self, entry: DatasetEntry) -> tuple[Manifest | None, dict | None]:
         from tsp_hpc.analysis.core import AnalysisLimitError
         from tsp_hpc.experiments.manifests import Manifest
         from tsp_hpc.reproducibility.identity import canonical_json
@@ -171,8 +180,8 @@ class DatasetStore:
             return None, None
         source = entry.manifest_source
         with source.open() as stream:
-            raw = stream.read(MAX_READ_BYTES + 1)
-        if len(raw) > MAX_READ_BYTES:
+            raw = stream.read(MAX_MANIFEST_BYTES + 1)
+        if len(raw) > MAX_MANIFEST_BYTES:
             raise AnalysisLimitError("manifest exceeds configured byte limit")
         manifest = Manifest.from_json(raw.decode("utf-8"))
         document = manifest.to_dict()
@@ -197,7 +206,7 @@ class DatasetStore:
             raise AnalysisLimitError("expected-manifest expansion exceeds configured limit")
         return manifest, {"handle": source.identity, "sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
 
-    def _public_diagnostics(self, analysis):
+    def _public_diagnostics(self, analysis: Analysis) -> list[Diagnostic]:
         # Keep authoritative diagnostics on Analysis; expose sanitized bounded summaries.
         result = []
         for item in analysis.diagnostics:
@@ -214,7 +223,7 @@ class DatasetStore:
             result.append(self._diagnostic(code, messages.get(code, "Analysis reported a diagnostic."), handle=item.get("path")))
         return result
 
-    def _ingest(self, entry):
+    def _ingest(self, entry: DatasetEntry) -> None:
         # Heavy imports occur only in this worker, not during CLI/catalog startup.
         try:
             from tsp_hpc.analysis import read_sources

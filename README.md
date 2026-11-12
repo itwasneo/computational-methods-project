@@ -16,7 +16,7 @@ This is the project-wide implementation-status summary; specifications describe 
 | Execution | Dense/on-demand distances; serial NN with `visited-scan-v1` and `remaining-array-v1` implementations | GA/SA, multicore and optional accelerator backends |
 | Experiments | Manifests, logical RNG planning, sequential NN runner, versioned JSONL results and validated analysis tables/plots | Campaign scheduling, resume and production protocol |
 | Stopping and progress | Fixed-work NN and phase timing | Time budgets and progress histories |
-| Tooling | Locked environment, tests/builds in CI; run/analyze CLI; fixture-only Results/viewer preview; optional workspace API, bounded result ingestion and paged trial queries | Real-data interface integration, editing and job controls |
+| Tooling | Locked environment, tests/builds in CI; run/analyze CLI; local Results table wired to bounded ingestion/paged queries; separate synthetic viewer | Real-data geometry, installed frontend delivery, editing and job controls |
 | Cluster deployment | ULHPC selected; local image build evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) | Finished-image and allocated-cluster runtime validation |
 
 Solver execution uses **unrounded Euclidean distances** on complete symmetric 2D instances. Rounded data/reference compatibility is retained, but is not an executable solver mode. See the [objective contract](docs/contracts.md#distance-conventions-and-representations) before choosing benchmark reference costs.
@@ -46,7 +46,7 @@ Each reference owns one kind of information. Update that reference rather than c
 | [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA variants, tie rules, operators, budgets, initialization accounting and stopping checkpoints |
 | [Manifests and reproducibility](docs/manifests.md) | Schema, implementation labels, scientific/execution identities and RNG ownership |
 | [Development](docs/development.md) | Environment, package layout, tests, CI and packaging |
-| [Optional local interface](docs/interface.md) | Preview/backend usage, security boundaries and clearly separated planned API contracts |
+| [Optional local interface](docs/interface.md) | Browser setup, API/security boundaries and explicitly planned features |
 | [HPC operations](docs/hpc-resources.md) | Owner-operated allocations, containers, placement, storage and deployment checks |
 
 The [saved input collection](examples/instances/README.md) contains tiny correctness examples, not a benchmark campaign. [Presentations](presentations/README.md) preserve the original proposal and a dated progress snapshot; they are not the current status reference.

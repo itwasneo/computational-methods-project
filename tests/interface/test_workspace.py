@@ -30,7 +30,9 @@ def test_listing_candidates_pagination_and_no_writes(catalog, tmp_path):
     assert second["items"][0]["kind"] == "result_shard"
     assert second["next_cursor"] is None
     assert str(tmp_path) not in str(first)
-    assert catalog.read_candidate(first["items"][0]["artifact_handle"], first["revision"]) == b"{}"
+    with catalog.open_source(first["items"][0]["artifact_handle"], first["revision"]) as stream:
+        assert stream.read() == b"{}"
+    assert stream.closed
     assert before == {p.name: p.read_bytes() for p in tmp_path.iterdir()}
 
 
@@ -79,7 +81,8 @@ def test_changes_invalidate_catalog_until_refresh(catalog, tmp_path, change):
     catalog.refresh()
     assert catalog.page()["revision"] != old["revision"]
     with pytest.raises(InterfaceError):
-        catalog.read_candidate(old["items"][0]["artifact_handle"], old["revision"])
+        with catalog.open_source(old["items"][0]["artifact_handle"], old["revision"]):
+            pytest.fail("old catalog handles must not open")
 
 
 def test_hidden_symlink_special_and_unsupported_files_are_not_candidates(tmp_path):
@@ -102,7 +105,7 @@ def test_hidden_symlink_special_and_unsupported_files_are_not_candidates(tmp_pat
         assert [item["display_name"] for item in catalog.page()["items"]] == ["normal.jsonl"]
         for handle in ["../outside/private.json", str(outside / "private.json"), "unknown"]:
             with pytest.raises(InterfaceError) as error:
-                catalog.read_candidate(handle, catalog.page()["revision"])
+                catalog.select_sources([handle], None, catalog.page()["revision"])
             assert error.value.code == "artifact_not_found"
     finally:
         catalog.close()
@@ -148,34 +151,13 @@ def test_open_time_symlink_replacement_fails_closed(catalog, tmp_path, monkeypat
 
     monkeypatch.setattr(os, "open", replace_before_open)
     with pytest.raises(InterfaceError) as error:
-        catalog.read_candidate(item["artifact_handle"], page["revision"])
+        with catalog.open_source(item["artifact_handle"], page["revision"]):
+            pytest.fail("replacement symlink must not open")
     assert error.value.code == "stale_revision"
     assert str(outside) not in str(error.value)
 
 
-def test_modification_during_read_is_rejected(catalog, tmp_path, monkeypatch):
-    page = catalog.page()
-    original_read = os.read
-    changed = False
-
-    def changing_read(fd, size):
-        nonlocal changed
-        data = original_read(fd, size)
-        if not changed:
-            changed = True
-            (tmp_path / "a.json").write_text("changed")
-        return data
-
-    monkeypatch.setattr(os, "read", changing_read)
-    with pytest.raises(InterfaceError):
-        catalog.read_candidate(page["items"][0]["artifact_handle"], page["revision"])
-
-
-def test_bounded_read_busy_operation_and_close(catalog):
-    page = catalog.page()
-    with pytest.raises(InterfaceError) as error:
-        catalog.read_candidate(page["items"][0]["artifact_handle"], page["revision"], max_bytes=1)
-    assert error.value.code == "artifact_too_large"
+def test_busy_operation_and_close(catalog):
     with catalog._operation():
         with pytest.raises(InterfaceError) as error:
             catalog.page()

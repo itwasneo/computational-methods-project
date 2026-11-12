@@ -1,28 +1,19 @@
 import { fixture } from './rendering/model.mjs';
-import type { Trial } from './fixtures';
 
+/** Display data only; never a binding from a real result to an instance artifact. */
 export type Inspection = {
-  fixtureId: string;
   coordinates: Float64Array;
   route: Uint32Array | null;
 };
 
-// Explicit presentation-fixture bindings, never fallback geometry for real artifacts.
-const bindings: Record<string, { fixtureId: string; cities: number; tour: boolean }> = {
-  'preview-01': { fixtureId: 'geometry-preview-uniform-128', cities: 128, tour: true },
-  'preview-02': { fixtureId: 'geometry-preview-uniform-128', cities: 128, tour: false },
-};
-
-export function inspectFixture(trial: Trial): Inspection | null {
-  const binding = bindings[trial.id];
-  if (!binding) return null;
-  if (trial.cities !== binding.cities) throw new Error('Fixture city count does not match the selected experiment.');
-  const coordinates = fixture(binding.cities, 'uniform', 12345);
-  // Two coincident city IDs exercise picking and the non-canvas selection path.
+export function createPreview(): Inspection {
+  const cities = 128;
+  const coordinates = fixture(cities, 'uniform', 12345);
+  // Coincident city IDs exercise picking without changing canonical coordinate ownership.
   coordinates.set(coordinates.subarray(0, 2), 2);
-  // A deliberately synthetic permutation, not a solver output or claimed optimum.
-  const route = binding.tour ? Uint32Array.from({ length: binding.cities }, (_, id) => (id * 17) % binding.cities) : null;
-  return { fixtureId: binding.fixtureId, coordinates, route };
+  // Synthetic permutation, not a solver result or claimed optimum.
+  const route = Uint32Array.from({ length: cities }, (_, id) => (id * 17) % cities);
+  return { coordinates, route };
 }
 
 export function nextPickedCity(hits: number[], selected: number): number {

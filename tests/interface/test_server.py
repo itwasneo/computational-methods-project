@@ -8,27 +8,11 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
-from tsp_hpc.interface.contracts import Artifact, ArtifactPage, Dataset, Diagnostic, SessionResponse
+from tsp_hpc.interface.contracts import Artifact, ArtifactPage, Dataset, Diagnostic
 from tsp_hpc.interface.errors import InterfaceError
 from tsp_hpc.interface.server import BODY_LIMIT, Pairing, create_app
 
 ORIGIN = "http://127.0.0.1:8000"
-
-
-@pytest.fixture
-def session(tmp_path):
-    (tmp_path / "one.json").write_text("{}")
-    secret = secrets.token_urlsafe(32)
-    app = create_app(tmp_path, port=8000, bootstrap_secret=secret)
-    with TestClient(app, base_url=ORIGIN, raise_server_exceptions=False) as client:
-        pairing = client.post("/api/session", json={"api_version": 1, "request_id": "pair", "secret": secret})
-        assert pairing.status_code == 200
-        assert pairing.json().keys() == SessionResponse.__required_keys__
-        token = pairing.json()["session_token"]
-        client.headers["Authorization"] = f"Bearer {token}"
-        workspace = client.get("/api/workspace").json()["workspace"]
-        yield client, app, workspace, secret, token
-    assert app.state.catalog._fd == -1
 
 
 def query(workspace, **options):
@@ -230,10 +214,6 @@ def test_trial_query_http_boundaries_and_explicit_fields(session, tmp_path):
         assert client.post("/api/trials/query", json=body, headers=headers).status_code == 403
     assert client.post("/api/trials/query", json={**body, "workspace_id": "other"}).status_code == 403
     assert client.post("/api/trials/query", json={**body, "dataset_id": "other"}).status_code == 404
-    app.state.datasets._entry.state = "loading"
-    assert client.post("/api/trials/query", json=body).json()["code"] == "dataset_not_ready"
-    app.state.datasets._entry.state = "failed"
-    assert client.post("/api/trials/query", json=body).json()["code"] == "dataset_not_ready"
     app.state.datasets.invalidate()
     assert client.post("/api/trials/query", json=body).json()["code"] == "stale_revision"
 

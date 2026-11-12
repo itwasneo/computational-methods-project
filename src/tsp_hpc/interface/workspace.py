@@ -1,6 +1,6 @@
 """Bounded, read-only POSIX workspace catalog, anchored to an open root directory.
 
-This catalogs candidate files, not scientific records. No endpoint exposes read_candidate.
+This catalogs candidate files, not scientific records. Streams stay internal.
 The owner and same-user processes are trusted; hostile filesystem owners/mount changes
 are outside this boundary. Symlinks/special files are never followed and observed
 replacement/modification races fail closed. Metadata revisions are not content hashes.
@@ -8,21 +8,19 @@ replacement/modification races fail closed. Metadata revisions are not content h
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-import base64
-import hmac
-import json
 import os
 from pathlib import Path
 import secrets
 import stat
 import threading
 
-from tsp_hpc.interface.contracts import SHARDS_MAX
+from tsp_hpc.interface.contracts import PAGE_DEFAULT, PAGE_MAX, SHARDS_MAX
+from tsp_hpc.interface.cursors import decode_cursor, encode_cursor
 from tsp_hpc.interface.errors import InterfaceError
 
 MAX_ENTRIES = 10_000
 MAX_DEPTH = 16
-MAX_READ_BYTES = 64 * 1024
+MAX_MANIFEST_BYTES = 64 * 1024
 MAX_DATASET_BYTES = 64 * 1024 * 1024
 
 
@@ -48,7 +46,6 @@ class AuthorizedSource:
     catalog: "WorkspaceCatalog"
     identity: str
     revision: str
-    size_bytes: int
 
     def stamp(self):
         return self.catalog.source_stamp(self.identity, self.revision)
@@ -187,30 +184,22 @@ class WorkspaceCatalog:
                     raise _stale()
 
     def _cursor(self, offset, limit):
-        payload = json.dumps([self._revision, offset, limit], separators=(",", ":")).encode()
-        signature = hmac.digest(self._cursor_key, payload, "sha256")
-        return base64.urlsafe_b64encode(payload + signature).decode()
+        return encode_cursor(self._cursor_key, [self._revision, offset, limit])
 
     def _offset(self, cursor, limit):
         if cursor is None:
             return 0
         try:
-            if not isinstance(cursor, str) or len(cursor) > 512:
-                raise ValueError
-            raw = base64.b64decode(cursor, altchars=b"-_", validate=True)
-            payload, signature = raw[:-32], raw[-32:]
-            if not hmac.compare_digest(signature, hmac.digest(self._cursor_key, payload, "sha256")):
-                raise ValueError
-            revision, offset, size = json.loads(payload)
+            revision, offset, size = decode_cursor(self._cursor_key, cursor)
             if revision != self._revision or type(offset) is not int or offset < 0 or size != limit:
                 raise ValueError
             return offset
         except (ValueError, TypeError, UnicodeError):
             raise InterfaceError("cursor_invalid", "Cursor is invalid for this catalog or page size.", 409) from None
 
-    def page(self, *, limit=100, cursor=None):
-        if type(limit) is not int or not 1 <= limit <= 500:
-            raise InterfaceError("invalid_request", "Page size must be an integer from 1 to 500.")
+    def page(self, *, limit=PAGE_DEFAULT, cursor=None):
+        if type(limit) is not int or not 1 <= limit <= PAGE_MAX:
+            raise InterfaceError("invalid_request", f"Page size must be an integer from 1 to {PAGE_MAX}.")
         with self._operation():
             self._check_current()
             offset = self._offset(cursor, limit)
@@ -250,10 +239,10 @@ class WorkspaceCatalog:
                 total += size
                 if size > limit or total > MAX_DATASET_BYTES:
                     raise InterfaceError("dataset_limit_exceeded", "Selected sources exceed ingestion byte limits.", 413)
-                return AuthorizedSource(self, handle, revision, size)
+                return AuthorizedSource(self, handle, revision)
 
             shards = [source(handle, "result_shard", MAX_DATASET_BYTES) for handle in handles]
-            manifest = source(manifest_handle, "json", MAX_READ_BYTES) if manifest_handle is not None else None
+            manifest = source(manifest_handle, "json", MAX_MANIFEST_BYTES) if manifest_handle is not None else None
             return shards, manifest
 
     def source_stamp(self, handle, revision):
@@ -296,35 +285,3 @@ class WorkspaceCatalog:
                     self.assert_revision(revision, wait=True)
         except OSError:
             raise _stale() from None
-
-    def read_candidate(self, handle: str, revision: str, *, max_bytes=MAX_READ_BYTES) -> bytes:
-        """Internal bounded reader for future adapters, NOT an HTTP file-read endpoint."""
-        if type(max_bytes) is not int or not 1 <= max_bytes <= MAX_READ_BYTES:
-            raise ValueError("invalid read bound")
-        with self._operation():
-            self._check_current()
-            if revision != self._revision:
-                raise _stale()
-            candidate = self._files.get(handle)
-            if candidate is None:
-                raise InterfaceError("artifact_not_found", "Artifact handle is not available in this session.", 404)
-            with self._directory(candidate.parts[:-1]) as parent:
-                fd = os.open(candidate.parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=parent)
-                try:
-                    info = os.fstat(fd)
-                    if not stat.S_ISREG(info.st_mode) or _stamp(info) != candidate.stamp:
-                        raise _stale()
-                    if info.st_size > max_bytes:
-                        raise InterfaceError("artifact_too_large", "Candidate exceeds the bounded read limit.", 413)
-                    chunks, size = [], 0
-                    while chunk := os.read(fd, min(8192, max_bytes + 1 - size)):
-                        chunks.append(chunk)
-                        size += len(chunk)
-                        if size > max_bytes:
-                            raise InterfaceError("artifact_too_large", "Candidate exceeds the bounded read limit.", 413)
-                    if _stamp(os.fstat(fd)) != candidate.stamp:
-                        raise _stale()
-                    self._check_current()
-                    return b"".join(chunks)
-                finally:
-                    os.close(fd)

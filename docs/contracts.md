@@ -155,6 +155,6 @@ Measure startup/imports, compilation/cache loading, preprocessing, steady-state 
 
 A runner must resolve/verify shared input artifacts, select compatible adapters, prepare and warm them, execute fresh logical searches, independently validate results, and persist successes, incomplete trials and failures with their phases. Record instance/configuration IDs, seeds, effective settings, implementation ID, source revision, runtime/compiler settings and actual resources. [Identity rules](manifests.md#identity-rules) separate configuration IDs from attempt IDs. Slurm owns allocations; the [operations guide](hpc-resources.md) owns launching, placement and storage policy.
 
-## Read-only local interface contract (design v1)
+## Local interface boundary
 
-The [optional interface guide](interface.md) owns the implemented workspace/session boundary and the [planned Results/geometry contract](interface.md#planned-read-only-results-api). Those adapters must preserve the scientific rules above; they do not define a second solver, validation or comparison engine.
+The [interface guide](interface.md#read-only-results-contract) owns implemented session/catalog/ingestion/query contracts and explicitly planned geometry/jobs. Adapters preserve the scientific rules above; they do not define another solver, validator or comparison engine.

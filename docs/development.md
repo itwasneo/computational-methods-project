@@ -38,7 +38,7 @@ uv run --locked --extra interface pytest -W error
 
 Use `uv sync --locked --no-dev` for the minimal numerical installation, or add `--group analysis` for reports without development tools. `uv sync --locked` restores the default development environment.
 
-After the [frontend installation](interface.md#results-and-viewer-preview), run its checks from the repository root:
+After the [frontend installation](interface.md#browser-local-results), run its checks from the repository root:
 
 ```bash
 pnpm --dir frontend run check
@@ -46,7 +46,7 @@ pnpm --dir frontend run test
 pnpm --dir frontend run build
 ```
 
-The frontend test command includes the rendering/model regressions in `frontend/src/rendering/`. Tests exercise native kernels, independent references, reproducibility and interface boundaries. They require no cluster account, GPU or container; backend integration tests use loopback networking. Test timings are not benchmark evidence, and mock GL checks do not certify browser rendering. Share scientific conformance tests across implementations rather than copying suites. No browser measurement campaign is required or planned.
+Frontend tests include Results client/state, an ephemeral-port Vite proxy check and rendering/model regressions. Python tests cover native kernels, independent references, reproducibility and API boundaries. No cluster account, GPU, container or browser measurement campaign is needed. Loopback tests do not certify browser behavior; test timings are not benchmark evidence. Share scientific conformance tests across implementations rather than copying suites.
 
 ## Package layout
 
@@ -59,10 +59,12 @@ src/tsp_hpc/
 │   ├── results.py       # shared result/counter contracts
 │   └── nn/              # adapter and separately named native implementations
 ├── experiments/         # manifest planning and sequential execution
-├── analysis/            # validated tables/comparisons and separate reports layer
-└── interface/           # optional session/catalog/ingestion API and read-only DTOs
-frontend/                # fixture-only Svelte/TypeScript preview
-└── src/rendering/       # WebGL2/model code, declarations and focused tests
+├── analysis/            # record validation, streaming tables/comparisons, reports
+└── interface/           # request models, HTTP boundary, catalog/ingestion/queries
+frontend/src/
+├── results/             # typed client, controller, input parsing and Results view
+├── rendering/           # WebGL2/model primitives and focused regressions
+└── FixturePreview.svelte # synthetic viewer only; no duplicate Results table
 ```
 
 Tests mirror the Python packages under `tests/`; CLI, local-server and native-cache integration checks live in `tests/integration/`. For example, `uv run --locked pytest tests/solvers/nn -W error` selects NN conformance tests.
