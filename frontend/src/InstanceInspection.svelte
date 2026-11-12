@@ -1,13 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import type { Trial } from './fixtures';
-  import { inspectFixture } from './inspection';
+  import type { Inspection } from './inspection';
   import { createViewer } from './viewer';
   import type { Theme } from './theme';
 
-  let { trial, theme }: { trial: Trial; theme: Theme } = $props();
-  // Parent keys this read-only view to the selected fixture row.
-  const inspection = untrack(() => inspectFixture(trial));
+  let { inspection, theme }: { inspection: Inspection; theme: Theme } = $props();
   let canvas = $state<HTMLCanvasElement>();
   let surface = $state<HTMLDivElement>();
   let fullscreen = $state(false);
@@ -34,7 +31,7 @@
   let selected = $state(0);
   let retry = $state(0);
   let error = $state('');
-  let showTour = $state(inspection?.route !== null && inspection !== null);
+  let showTour = $state(untrack(() => inspection.route !== null));
 
   function selectCity(id: number) {
     selected = id;
@@ -43,7 +40,7 @@
 
   $effect(() => {
     retry;
-    if (!canvas || !inspection) return;
+    if (!canvas) return;
     error = '';
     let instance: ReturnType<typeof createViewer> | null = null;
     try {
@@ -64,7 +61,6 @@
   $effect(() => { viewer?.theme(theme); });
 </script>
 
-{#if inspection}
   <div class="instance-inspection" role="region" aria-label="Instance inspection">
     <div class="canvas-area" bind:this={surface}>
     <div class="viewer-controls" role="group" aria-label="Viewer controls">
@@ -111,6 +107,3 @@
         {/if}
       </div>
   </div>
-{:else}
-  <p class="artifact-unavailable">Instance artifact unavailable.</p>
-{/if}

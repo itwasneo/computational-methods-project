@@ -15,6 +15,9 @@ PAGE_MAX = 500
 VALUES_PER_FILTER_MAX = 500
 SHARDS_MAX = 64
 GEOMETRY_BYTES_MAX = 16 * 1024 * 1024
+SAFE_INTEGER = 2**53 - 1
+NULLABLE_FIELDS = frozenset({"implementation", "best_cost", "search_time_s"})
+NUMERIC_FIELDS = frozenset({"n_cities", "best_cost", "search_time_s"})
 
 Field = Literal[
     "attempt_id", "instance_id", "implementation", "n_cities", "algorithm",

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from tsp_hpc.interface.contracts import TrialRow
 from tsp_hpc.interface.errors import InterfaceError
 from tsp_hpc.interface.queries import TrialQueries
-from tsp_hpc.interface.server import TrialQueryRequest
+from tsp_hpc.interface.requests import TrialQueryRequest
 
 
 class Snapshot:

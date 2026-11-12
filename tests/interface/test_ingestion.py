@@ -105,22 +105,13 @@ def test_real_output_compact_metadata_lazy_authorized_details_and_unchanged_evid
     assert {path.name: path.read_bytes() for path in workspace.iterdir()} == before
 
 
-def test_http_trial_pages_match_real_shared_analysis_and_reject_stale_sources(workspace, campaign, monkeypatch):
-    import secrets
-    pytest.importorskip("fastapi")
-    from fastapi.testclient import TestClient
+def test_http_trial_pages_match_real_shared_analysis_and_reject_stale_sources(workspace, campaign, paired_session, monkeypatch):
     from tsp_hpc.interface.contracts import TrialPage, TrialRow
-    from tsp_hpc.interface.server import create_app
 
     expected = read_shards([workspace / "runs.jsonl"], expected_manifest=campaign[1])
     before = (workspace / "runs.jsonl").read_bytes()
-    secret = secrets.token_urlsafe(32)
-    app = create_app(workspace, port=8000, bootstrap_secret=secret)
-    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
-        paired = client.post("/api/session", json={"api_version": 1, "request_id": "pair", "secret": secret}).json()
-        client.headers["Authorization"] = f"Bearer {paired['session_token']}"
-        workspace_id = client.get("/api/workspace").json()["workspace"]["workspace_id"]
-        context = {"api_version": 1, "request_id": "query", "workspace_id": workspace_id}
+    with paired_session(workspace) as (client, app, info, _, _):
+        context = {"api_version": 1, "request_id": "query", "workspace_id": info["workspace_id"]}
         catalog = client.post("/api/artifacts/query", json={**context, "limit": 100, "cursor": None}).json()
         handles = {item["display_name"]: item["artifact_handle"] for item in catalog["items"]}
         accepted = client.post("/api/datasets", json={**context, "artifact_catalog_revision": catalog["revision"],
@@ -322,6 +313,10 @@ def test_failed_ingestion_is_atomic_sanitized_and_observable(workspace, fault, m
         failed = finish(store, start(store, handles, revision, shards=shards))
         assert failed["state"] == "failed" and failed["revision"] is None
         assert store._entry.analysis is None
+        with pytest.raises(InterfaceError) as error:
+            with store.analysis_snapshot(failed["dataset_id"], "invented"):
+                pytest.fail("failed data must not be queryable")
+        assert error.value.code == "dataset_not_ready"
         assert failed["diagnostics"][0]["code"] == ("internal_error" if fault == "unexpected_exception" else "invalid_artifact")
         assert str(workspace) not in json.dumps(failed) and "PRIVATE" not in json.dumps(failed) + caplog.text
         if fault == "malformed":
@@ -420,8 +415,8 @@ def test_stream_rechecks_authority_on_exit_and_closes_descriptor(workspace, chan
 
 
 def test_manifest_and_combined_source_byte_limits_precede_validation(workspace):
-    from tsp_hpc.interface.workspace import MAX_READ_BYTES
-    (workspace / "expected.json").write_bytes(b" " * (MAX_READ_BYTES + 1))
+    from tsp_hpc.interface.workspace import MAX_MANIFEST_BYTES
+    (workspace / "expected.json").write_bytes(b" " * (MAX_MANIFEST_BYTES + 1))
     for name in ("large-a.jsonl", "large-b.jsonl"):
         with (workspace / name).open("wb") as stream:
             stream.truncate(MAX_DATASET_BYTES // 2 + 1)

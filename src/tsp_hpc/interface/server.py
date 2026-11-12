@@ -6,18 +6,18 @@ import hmac
 import re
 import secrets
 import threading
-from typing import Annotated
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 from starlette.exceptions import HTTPException
 
-from tsp_hpc.interface.contracts import PAGE_MAX, SHARDS_MAX
 from tsp_hpc.interface.errors import InterfaceError
 from tsp_hpc.interface.workspace import WorkspaceCatalog
-from tsp_hpc.interface.queries import ColumnFilterRequest, SortRequest, TrialQueries
+from tsp_hpc.interface.queries import TrialQueries
+from tsp_hpc.interface.requests import (
+    ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest,
+)
 
 BODY_LIMIT = 16 * 1024
 SECRET_PATTERN = re.compile(r"[A-Za-z0-9_-]{43,128}\Z")
@@ -151,67 +151,6 @@ class LocalBoundary:
                 await error_response(InterfaceError("internal_error", "Local service request failed.", 500), scope["state"]["request_id"])(scope, receive, protected_send)
             elif not response_finished:
                 await send({"type": "http.response.body", "body": b"", "more_body": False})
-
-
-class StrictBody(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    api_version: StrictInt
-    request_id: StrictStr = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
-
-    @field_validator("api_version")
-    @classmethod
-    def version_one(cls, value):
-        if value != 1:
-            raise ValueError("unsupported API version")
-        return value
-
-
-class SessionRequest(StrictBody):
-    secret: StrictStr = Field(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
-
-
-class WorkspaceRequest(StrictBody):
-    workspace_id: StrictStr = Field(min_length=1, max_length=128)
-
-
-class ArtifactRequest(WorkspaceRequest):
-    limit: StrictInt = Field(ge=1, le=500)
-    cursor: StrictStr | None = Field(max_length=512)
-
-
-ArtifactHandle = Annotated[StrictStr, Field(min_length=1, max_length=128)]
-
-
-class DatasetRequest(WorkspaceRequest):
-    artifact_catalog_revision: ArtifactHandle
-    result_handles: list[ArtifactHandle] = Field(min_length=1, max_length=SHARDS_MAX)
-    expected_manifest_handle: ArtifactHandle | None
-
-    @field_validator("result_handles")
-    @classmethod
-    def distinct_handles(cls, value):
-        if len(set(value)) != len(value):
-            raise ValueError("select distinct result shards")
-        return value
-
-
-class DatasetStatusRequest(WorkspaceRequest):
-    dataset_id: ArtifactHandle
-
-
-class TrialQueryRequest(DatasetStatusRequest):
-    revision: ArtifactHandle
-    filters: list[ColumnFilterRequest] = Field(max_length=8)
-    sort: SortRequest | None
-    limit: StrictInt = Field(ge=1, le=PAGE_MAX)
-    cursor: StrictStr | None = Field(max_length=512)
-
-    @field_validator("filters")
-    @classmethod
-    def distinct_columns(cls, value):
-        if len({column.field for column in value}) != len(value):
-            raise ValueError("select each filter column once")
-        return value
 
 
 def create_app(workspace, *, port: int, bootstrap_secret: str):

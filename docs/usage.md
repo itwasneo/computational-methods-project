@@ -44,19 +44,19 @@ Supply multiple shard paths to combine campaigns. The output directory must be n
 | `report.json` | Source file hashes, analysis runtime versions/provenance, manifest/reference/plot configuration, diagnostics, requested comparison, available figures and limitations |
 | PNG figures | Runtime summaries and quality distributions; speed ratios and reference gaps only when applicable |
 
-Groups retain the exact workload (including parameters, ordered starts, solver root seed and instance), execution configuration and observed runtime; only repetition is removed from the scientific grouping key. Unknown/dirty source provenance is isolated per campaign instead of pooled across campaigns; paired ratios still require a known clean revision. `G1`, `G2`, … are plot labels mapped to full group IDs in `summary.csv`, not new scientific identities. Different instances/configurations are not pooled into one quality distribution. Plot labels show usable/attempt counts; quality distributions are conditional on usable results. Statistics are descriptive: one observation is not a variance estimate, and repetitions do not prove independence. Means/standard deviations use scaled arithmetic; medians avoid overflowing the average of central values. Singleton sample standard deviations are blank, not zero.
+Groups preserve workload (instance, parameters, ordered starts and solver root seed), execution and observed runtime, excluding only repetition. Unknown/dirty source is isolated per campaign; paired ratios require a clean known revision. `G1`, `G2`, … map to full group IDs in `summary.csv`; they are presentation labels, not identities. Quality plots include only usable observations and never pool different instances/configurations. Statistics are descriptive, not independence/significance evidence. Scaled means/deviations and overflow-safe medians support large finite values; singleton sample deviations are blank, not zero.
 
-The CLI exits **0** for analysis without detected issues, **1** when reports contain failed/incomplete/missing/duplicate observations or blocked comparisons, and **2** for invalid records/options or I/O errors. Figures are omitted with an explicit note if usable groups exceed `--max-plot-groups` (default 40); tables remain complete. Large campaigns should be filtered through the data API or future interface, not silently sampled into unreadable static charts. Review paths/provenance before sharing reports.
+Exit codes are **0** without detected issues, **1** for failed/incomplete/missing/duplicate observations or blocked comparisons, and **2** for invalid records/options or I/O errors. Above `--max-plot-groups` (default 40), figures are omitted with a note; tables remain complete. Narrow large campaigns explicitly rather than silently sampling charts. Review paths/provenance before sharing reports.
 
 ### Validation and comparison rules
 
-The reader accepts current runner-v1 envelopes: successful fixed-work serial NN trials, plus recorded capability/execution failures. It reconstructs requested plans through `Manifest`, checking scientific/execution IDs, seeds and logical streams; validates effective choices, recorded tour structure, NN work, adapter metadata, phase durations, summary counts and timing-receipt linkage. It does **not** independently re-evaluate objective costs without the original input artifacts, authenticate provenance, or establish reference optimality.
+The reader accepts runner-v1 serial NN trials and recorded failures. Shared `Manifest` reconstruction verifies IDs/seeds/streams; record checks cover effective execution, tour structure, NN work, adapter metadata, timings, summary counts and receipt linkage. It does **not** authenticate provenance/reference optimality or independently recompute costs without original instances.
 
 Malformed complete records, unsupported versions, duplicate attempts/campaigns, conflicting IDs and contradictory summaries are errors, not silently skipped rows. A missing summary or unterminated final line is an incomplete campaign: retain the validated prefix for inspection, but exclude it from numerical aggregates. Repeated execution IDs with distinct attempt IDs are retries/duplicate observations—not new statistical repetitions—and all ambiguous copies are excluded. Select the intended shard(s) explicitly; there is no automatic “latest wins” policy. `--manifest` detects entirely absent or unexpected requested executions; absent runs cannot be inferred from the available shards alone.
 
 `--baseline` names an explicit implementation. By default it is matched within the target's distance mode; `--baseline-distance-mode on_demand` can explicitly compare representations too. `--metric` selects `search_time_s` (default) or `end_to_end_time_s` from the post-write receipts. Each ratio is paired by **search ID**, not file order or a ratio of aggregate medians. Require unique usable attempts, equal actual work and returned tours/costs (within objective tolerance), clean known source revision, and matching observed runtime/resources/setup. Incompatible or missing baselines get reasons, never a substitute chosen for being fastest.
 
-These are **observed execution-time ratios**, not proof of a controlled speedup. Warm-up/cache state and trial order can dominate end-to-end comparisons; source/context matching does not certify identical hardware. Phase timings overlap and must not be stacked indiscriminately. Parallel efficiency, quality-over-time and time-to-target remain unavailable until corresponding execution/history evidence exists; final costs are not synthetic progress curves.
+These are **observed ratios**, not controlled speedup evidence: cache state, warm-up and order can dominate, and context matching is not hardware attestation. Timings overlap. Parallel efficiency and time/history plots require actual parallel/history evidence; never fabricate progress from final costs.
 
 ### Explicit reference costs
 
@@ -68,7 +68,7 @@ Absolute gap is `observed_cost - reference_cost`; percentage gap is `100 * absol
 
 `tsp_hpc.analysis` supplies `read_shards(paths, *, expected_manifest=None, max_record_bytes=...)`, `summary_table(analysis)`, `paired_comparisons(analysis, *, baseline_implementation, baseline_distance_mode=None, metric=...)`, and `reference_gaps(analysis, document)`. The first returns an `Analysis` with a compact pandas `.trials` table, structured `.diagnostics` and hashed `.sources`; the other functions return DataFrames. `tsp_hpc.analysis.reports.write_report(...)` is a separate Matplotlib/CSV presentation layer, not part of the numerical calculation API.
 
-Ingestion reads one bounded JSONL record at a time (default limit 64 MiB per encoded line), validates then discards tours/full plans, and retains O(trial count) scalar summaries and byte locators. Peak memory also depends on the largest decoded record; the line limit is not an RSS ceiling. `analysis.trial(attempt_id)` loads full details only on demand, checking source stat information and the record digest before returning them. Changing a source requires reloading analysis. Source SHA-256 hashes and grouping keys provide a basis for future interface caches; no web server, persistent cache or browser renderer is introduced here.
+The reader retains O(trial count) scalar summaries/locators, discarding validated tours/plans. Its default encoded-line limit is 64 MiB, not an RSS ceiling. `analysis.trial(attempt_id)` reads details lazily and rechecks source metadata/record digest; changed sources require reload. `read_sources` uses the same validator over authorized binary sources for the interface, with additional optional bounds/cancellation. Neither reader owns HTTP or caches.
 
 ## JSONL records and timing boundaries
 
@@ -88,13 +88,13 @@ The shard has one writer, exclusive creation, and a flush/`fsync` after each lin
 
 ## Optional local workspace backend
 
-The separate [interface guide](interface.md) covers the fixture preview and `tsp-hpc serve` startup/session flow. The current read-only catalog does not serve the UI, analyze shards or execute solvers.
+The [interface guide](interface.md#browser-local-results) covers browser pairing, authorized shard ingestion and real trial tables. The API remains read-only; installed frontend serving, real-data geometry and solver jobs are not implemented.
 
 For the library examples below, use `uv run --locked python` from the repository root.
 
 ## Canonical data and independent validation
 
-`TSPInstance` takes a caller-supplied logical ID and owns a read-only coordinate copy. Its frozen fields use object-identity equality. The validators in [data.py](../src/tsp_hpc/problem/data.py) check canonical arrays without converting, reordering or mutating them. Normalize external lists, strided/non-native arrays or subclasses explicitly in a loader; do not coerce invalid solver tours into validity. Masked arrays are unsupported. Treat coordinates, flags and shape as immutable: NumPy read-only flags prevent accidental writes, not deliberate bypass.
+`TSPInstance` owns a read-only coordinate copy under a logical ID and uses object-identity equality. [Data validators](../src/tsp_hpc/problem/data.py) check without conversion, reordering or mutation. Loaders must explicitly normalize noncanonical arrays; masked arrays are unsupported. Never coerce invalid tours into validity. Coordinates/flags/shape are immutable by contract, not protection against deliberate NumPy bypass.
 
 ```python
 import numpy as np
@@ -164,13 +164,11 @@ The line/duplicate optima require travel between extrema and back; the square pe
 
 ### Artifact guarantees
 
-The v1 JSON artifact contains exactly `schema_version: 1`, `instance` (ID/checksum/count/convention/effective seed), ordered `coordinates`, and `provenance` (generator protocol, complete effective parameters, seed, bit-generator name and original Python/NumPy/package versions). Content IDs follow the [identity encoding](manifests.md#encoding-contract); filenames and provenance are not coordinate content.
+Artifacts contain exactly `schema_version: 1`, `instance` (ID/checksum/count/convention/effective seed), ordered `coordinates`, and `provenance` (generator protocol, effective parameters, seed, bit generator and original runtime versions). IDs follow the [identity encoding](manifests.md#encoding-contract), not filenames/provenance.
 
-Loading rejects unknown/missing fields, duplicate keys, invalid/non-finite coordinates, unsupported versions, conflicting seeds/counts, stale IDs/checksums and mismatched named fixtures. It verifies actual coordinate bytes; row order and signed zero survive JSON round trips. It never loads pickle or regenerates coordinates.
+Loading verifies coordinate bytes, metadata and named fixtures; it rejects malformed/duplicate fields, unsupported versions, non-finite coordinates and conflicting identities/seeds/counts. Row order and signed zero survive JSON round trips. No pickle or automatic regeneration is used. Checksums are not authenticity; provenance is structurally validated, with no cross-runtime regeneration guarantee. Incompatible generators require a protocol-version decision.
 
-Checksums detect mismatch, not authenticity. Generation provenance is validated structurally, not proven by regeneration; original runtime metadata is preserved. Regenerate only against the recorded protocol/runtime, with no cross-version distribution-equivalence promise. Incompatible generator changes require a protocol-version decision.
-
-This inspectable small-input format materializes JSON/coordinates in O(n) space, not a matrix. Parent directories must exist; saving refuses overwrites and is not crash-atomic. An interrupted file is unusable unless loading/verification succeeds.
+JSON/coordinates occupy O(n) memory. Saving requires an existing parent, refuses overwrites and is not crash-atomic; interrupted files must pass loading/verification before use.
 
 ## Run nearest-neighbour
 
