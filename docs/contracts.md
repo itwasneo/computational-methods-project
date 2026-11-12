@@ -1,8 +1,6 @@
 # Shared instance, tour, solver, and result contracts
 
-**Status:** v1 design for task #1; implementation is pending. The companion [algorithm baselines](algorithm-baselines.md) define the initial variants, concrete work budgets, and stopping checkpoints selected in task #2.
-
-These contracts keep the three required solvers compatible with one objective function and one experiment runner. They describe logical records and boundaries, not a required class hierarchy or a generic solver framework. See the [technology stack](tech-stack.md) for implementation tools and the [resource plan](hpc-resources.md) for execution responsibilities.
+This is the reference for data, objective, result and experiment-methodology rules. [Algorithm specifications](algorithm-baselines.md) define search behavior; [manifests](manifests.md) define identities and streams. See the [README](../README.md#current-capabilities) for implementation status and [usage guide](usage.md) for executable examples. These are logical boundaries, not a required class hierarchy.
 
 ## Supported problem and instance representation
 
@@ -12,8 +10,8 @@ Asymmetric distances, missing edges, arbitrary explicit-weight input matrices, g
 
 | Instance field | Contract |
 | --- | --- |
-| `instance_id` | Non-empty, stable identifier for the logical instance; independent of worker counts, hardware, and distance representation. Identity generation and checksums are specified in task #6. |
-| `coordinates` | C-contiguous NumPy `float64` array of shape `(n, 2)`, with finite values and `n >= 2`. Row indices are the internal city IDs `0` through `n - 1`. |
+| `instance_id` | Non-empty, stable identifier for the logical instance; independent of worker counts, hardware, and distance representation. Content ID and checksum helpers follow the implemented [manifest identity rules](manifests.md#identity-rules). |
+| `coordinates` | Plain, C-contiguous NumPy array of native `float64` dtype and shape `(n, 2)`, with finite values and `n >= 2`. Row indices are the internal city IDs `0` through `n - 1`. |
 | `distance_kind` | Explicitly either `euclidean_2d` or `tsplib_euc_2d`; never inferred separately by individual solvers. |
 
 Derive the city count from `coordinates.shape[0]`; do not maintain a conflicting independent count. Treat instance arrays as read-only throughout a run. Builders may normalize coordinate inputs to this representation once, before timing search; kernels must not repeatedly convert or copy them.
@@ -22,14 +20,16 @@ A loader maps external city labels to contiguous internal IDs in a deterministic
 
 ### Distance conventions and representations
 
+**Execution scope:** unrounded `euclidean_2d`. Compiled distance preparation and solver execution reject `tsplib_euc_2d`; data, artifacts, manifests and the independent reference retain it for compatibility. Never reinterpret a rounded request or compare unrounded costs with integer-rounded benchmark optima.
+
 For cities `i` and `j`, let `r = hypot(x[i] - x[j], y[i] - y[j])`, evaluated in `float64`.
 
 | Convention | Edge cost |
 | --- | --- |
 | `euclidean_2d` | `r`, without rounding; the default for generated instances |
-| `tsplib_euc_2d` | `floor(r + 0.5)`, applied to **each edge**, not to the completed tour; used for the supported TSPLIB `EUC_2D` subset |
+| `tsplib_euc_2d` | `floor(r + 0.5)`, applied to **each edge**, not to the completed tour; TSPLIB `EUC_2D` reference compatibility |
 
-Do not use ties-to-even rounding for `EUC_2D`. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. The TSPLIB loader is a later task; declaring its convention does not imply that arbitrary TSPLIB formats are supported.
+Do not use ties-to-even rounding for `EUC_2D`. Interpret `floor(r + 0.5)` as mathematical half-up rounding of the computed `r`; avoid premature floating-point rounding of the intermediate addition at half-integer or large-integer boundaries. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. Declaring this convention does not imply a TSPLIB importer or support for arbitrary TSPLIB formats.
 
 The runner may prepare either:
 
@@ -38,11 +38,11 @@ The runner may prepare either:
 
 The representation must not redefine the objective. Test agreement of edges and tour costs between both paths. Treat dense-matrix construction as preprocessing, and account for its `8 * n * n` bytes separately from solver working storage. Do not require dense allocation merely to validate an on-demand instance.
 
-Reject non-finite derived distances or tour totals rather than allowing overflow to become an infinite score. For rounded distances, reject numerical ranges that cannot preserve integer edge and total costs exactly in `float64`; do not silently lose the benchmark's integer-cost semantics.
+Reject non-finite derived differences, distances or totals with `NumericalError` (an `ArithmeticError` subclass), not an infinite score. Rounded edges/totals are restricted to `[0, 2**53]`, even if some larger integers are representable. Check the remaining range before addition so a one-unit overflow cannot disappear. Finite coordinates alone do not certify every pair or tour; check derived values when evaluated.
 
 ## Tour representation and shared objective
 
-A tour is a C-contiguous NumPy `int64` array of shape `(n,)`, containing each internal city ID exactly once. **Closure is implicit:** do not repeat the starting city at the end.
+A tour is a plain, C-contiguous NumPy array of native `int64` dtype and shape `(n,)`, containing each internal city ID exactly once. **Closure is implicit:** do not repeat the starting city at the end.
 
 For a tour `p`, its cost is:
 
@@ -54,9 +54,11 @@ For example, with coordinates `[(0, 0), (3, 0), (3, 4)]`, `p = [0, 2, 1]` uses e
 
 Any starting city and either orientation are valid. Rotation or reversal normalization is not required at solver boundaries; a solver must not reorder a supplied tour in place merely to canonicalize it. Algorithmic tie-breaking follows the [baseline decisions](algorithm-baselines.md#common-decisions).
 
-The shared full-tour cost routine is the correctness reference. SA may maintain incremental costs, and GA may cache fitness, but the final returned cost must be recomputed from the returned tour. The runner independently validates the permutation and recomputes its cost before accepting a result.
+The independent ordinary-Python reference uses coordinate-based `math.hypot` and sequential float64 accumulation in stored-tour order, returning Python floats. It depends on no matrix, JIT kernel, fitness cache or move delta. Tour validation takes O(n) time/temporary space; costing takes O(n). SA may maintain incremental costs and GA may cache fitness, but a returned cost must be recomputed from its tour and independently checked before acceptance.
 
-For unrounded costs, validation uses explicit tolerances (`rtol=1e-10`, `atol=1e-12` initially); these are **not** tie-breaking or acceptance thresholds inside the algorithms. Rounded costs must agree exactly within the supported numeric range. Do not enable relaxed floating-point transformations in the correctness baseline; any later numerical changes must be validated and recorded.
+Reports must be real, finite and non-negative, excluding booleans. Unrounded validation requires `abs(reported - reference) <= 1e-12 + 1e-10 * abs(reference)`; these are **not** tie-breaking or acceptance thresholds. Rounded reports must agree exactly, including integer reports near the float64 boundary. Validation returns the recomputed value, not the approximate report.
+
+Native compiled `hypot` may differ from Python's implementation in the last bits; bitwise reference agreement is not required. Dense and on-demand paths must preserve the objective. Keep `fastmath` disabled in correctness baselines; later numerical changes require validation and explicit identification.
 
 ## Logical solver interface
 
@@ -66,7 +68,7 @@ Each algorithm exposes the same logical boundary through a Python wrapper:
 solve(instance, *, seed, budget, parameters, record_history=False) -> SolverResult
 ```
 
-This is an interface specification, not implemented Python code. Wrappers validate records and pass primitive scalars and arrays into Numba kernels; kernels need not accept Python dictionaries or rich objects.
+Wrappers validate records and pass primitive scalars and arrays into compiled kernels; kernels need not accept dictionaries or rich objects. Implementation and hardware selection belong to the adapter, not scientific parameters.
 
 | Input | Contract |
 | --- | --- |
@@ -74,11 +76,11 @@ This is an interface specification, not implemented Python code. Wrappers valida
 | `seed` | Explicit Python integer in `[0, 2**64)`; booleans are not seeds. Accepted even by a deterministic algorithm so the common call and provenance stay consistent. |
 | `budget` | Explicit algorithm-specific work limits, a finite positive search-time limit in seconds, or both; at least one stopping limit is required. Initial implementations support fixed work; time-based requests require the later time-budget extension. |
 | `parameters` | Validated scientific configuration: initialization and algorithm-specific choices. Resolve defaults and record the effective values before execution; reject unknown fields rather than silently ignoring them. |
-| `record_history` | Disabled by default. Enables optional best-so-far observations when supported; sampling policy is defined in task #19. |
+| `record_history` | Disabled by default. Enables best-so-far observations only when the implementation supports a defined sampling policy. |
 
 An optional initial tour, if supported by the chosen algorithm, is supplied through its parameters and follows the same tour contract. The solver owns its working copy and does not mutate caller-provided arrays. Returned best tours must not alias mutable solver state or caller-owned buffers.
 
-Use fresh random state for each invocation. Instance-generation seeds and solver seeds are distinct. Derive subsearch streams from stable logical IDs, never thread numbers, worker counts, scheduling order, process-global RNG state, or Python's randomized `hash()`. The concrete stream scheme is defined in task #6; this interface does not promise bitwise equivalence across different runtimes or numerical backends.
+Use fresh random state for each invocation. Instance-generation seeds and solver seeds are distinct. Derive subsearch streams from stable logical IDs, never thread numbers, worker counts, scheduling order, process-global RNG state, or Python's randomized `hash()`. The [versioned stream scheme](manifests.md#random-stream-planning) is implemented; this interface does not promise bitwise equivalence across different runtimes or numerical backends.
 
 The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) define concrete budget fields, legal zero-work cases, initialization accounting, and safe stopping points. Fixed-work scaling must preserve those budgets and logical searches when resources change. Time limits are checked only at safe points and may overshoot; actual elapsed time must be reported. Unsupported time-budget or history requests must fail explicitly until those capabilities exist.
 
@@ -93,6 +95,8 @@ The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) def
 | `termination_reason` | `work_limit`, `time_limit`, or `algorithm_stop`. The last requires an explicit variant-specific rule, such as the baseline SA's empty neighborhood for fewer than four cities; it is not an implicit convergence claim. |
 | `history` | `None` when recording is disabled; otherwise an ordered sequence of progress points. An enabled history is empty if no complete solution was observed. |
 
+`tsp_hpc.solvers.results.SolverResult` owns a read-only tour snapshot and uses immutable `WorkCounters` (`.to_dict()` returns a detached dictionary). The constructor validates structure, not the objective against an instance. Phase fields `search_time_s` and `validation_time_s` follow the [API timing boundaries](usage.md#timing-and-results); they are not an end-to-end provenance envelope.
+
 Use these common counters, with zero for algorithms to which they do not apply:
 
 | Counter | Meaning |
@@ -104,9 +108,9 @@ Use these common counters, with zero for algorithms to which they do not apply:
 
 Incremental move-delta evaluations are not full-tour evaluations. Additional diagnostic counters are permitted if their meanings are documented. For a logical batch of searches, aggregate counters across those searches, not execution threads. Counters are not a claim that a GA generation and an SA proposal have equal computational cost.
 
-A progress point contains `elapsed_s`, a snapshot of `work`, and `best_cost` for a complete tour. Timestamps are monotonic search-relative wall-clock observations, counters do not decrease, and best-so-far costs do not increase beyond validation tolerance. Recording must not consume randomness or alter proposal, selection, or acceptance rules. Its overhead can change how much work fits within a time limit and must be measured and reported. Sampling intervals, terminal samples, and time-to-target analysis are specified in task #19.
+A progress point contains `elapsed_s`, a snapshot of `work`, and `best_cost` for a complete tour. Timestamps are monotonic search-relative wall-clock observations, counters do not decrease, and best-so-far costs do not increase beyond validation tolerance. Recording must not consume randomness or alter proposal, selection, or acceptance rules. Its overhead can change how much work fits within a time limit and must be measured and reported. Sampling intervals and terminal-sample policy must be defined before enabling history or reporting time-to-target.
 
-Malformed inputs and execution failures must not masquerade as `ok` or `no_solution`. The runner records failures separately, including their phase and error information. It wraps successful solver results with experiment IDs, effective configuration, seeds, timings, provenance, and execution metadata in the versioned result format from task #18. Numerical solvers do not write result files themselves.
+Malformed inputs and execution failures must not masquerade as `ok` or `no_solution`. The runner records failures separately, including their phase and error information. It wraps successful solver results with experiment IDs, effective configuration, seeds, timings, provenance, and execution metadata in a versioned run envelope. Numerical solvers do not write result files themselves.
 
 ## Validation and failure behavior
 
@@ -126,18 +130,31 @@ Keep scientific inputs separate from the execution plan:
 
 | Solver/search responsibility | Runner/adapter responsibility |
 | --- | --- |
-| Tours, objective, initialization, operators, budgets, and logical random streams | Selecting serial/multicore or an optional MPI/GPU implementation |
+| Tours, objective, initialization, operators, budgets, and logical random streams | Selecting implementation versions and serial/multicore or optional MPI/GPU execution |
 | Best-solution tracking and work counters | Selecting and preparing dense/on-demand distances without changing the objective |
 | Safe stopping and optional search progress | Worker/thread counts, affinity, NUMA policy, devices, ranks, and Slurm allocations |
 | Returning owned in-memory results | JIT warm-up, preprocessing/search/end-to-end timing, independent validation, provenance, and persistence |
 
 The runner selects a compatible solver adapter and prepares its numerical inputs; the adapter passes the chosen arrays and scalars to a specialized kernel. Hardware options and scheduler settings do not become scientific algorithm parameters, and hot kernels do not read environment variables or submit jobs. This separation does not require one dynamic distance callback or a class hierarchy inside Numba.
 
-## Implementation hand-off
+## Experimental comparisons
 
-- **Task #2:** the [companion baseline specification](algorithm-baselines.md) records variants, tie-breaking, budgets, initialization accounting, and stop precedence/checkpoints against this boundary.
-- **Tasks #5 and #8:** implement canonical data, validation, shared tour cost, and equivalent distance paths. Cover closing edges, two-city inputs, duplicate coordinates, rounding ties, invalid tours, and numeric boundaries with tests.
-- **Tasks #6 and #18:** implement logical identities, random-stream planning, manifests, and persisted result envelopes.
-- **Task #19:** implement time limits and progress recording without hiding missing solutions or instrumentation costs.
+Separate these questions rather than using one speedup number for all of them:
 
-Task #3 can scaffold the package independently; it does not need to implement these data structures or any solver.
+| Question | Controlled comparison |
+| --- | --- |
+| Implementation speed or parallel scaling | Preserve data, variant, ordered logical searches, seeds and total work; change implementation/resources |
+| Quality under limited time | Use a fixed wall-clock budget and report resources and completed work |
+| Time to a useful solution | Predefine the quality target; retain trials that never reach it rather than silently excluding them |
+
+More chains, a larger GA population or different island counts change search effort, not merely execution. Equal generation/proposal counts across algorithms are not equal compute budgets. Give stochastic algorithms comparable tuning opportunities on a tuning split, then evaluate on held-out inputs. Name algorithmic changes separately from implementation optimizations.
+
+Report tour cost, gap to an objective-compatible certified optimum or explicitly labelled best-known reference, trial-to-trial variation, memory and wall time. For equivalent workloads report `S_p = T_1 / T_p` and `E_p = S_p / p`. Distinguish batched experiment throughput from acceleration of one fixed search. Parallel floating-point changes can alter trajectories; document precision and validate rather than assuming bitwise replay across runtimes.
+
+Measure startup/imports, compilation/cache loading, preprocessing, steady-state search and end-to-end cost separately. State whether preparation is charged per instance, per trial or amortized; do not hide or double-count reuse. Include initialization and instrumentation in search; include final validation and persistence in end-to-end time. Account for communication, synchronization and device transfers when applicable; GPU timings need appropriate synchronization and an optimized, resource-labelled CPU comparison.
+
+A runner must resolve/verify shared input artifacts, select compatible adapters, prepare and warm them, execute fresh logical searches, independently validate results, and persist successes, incomplete trials and failures with their phases. Record instance/configuration IDs, seeds, effective settings, implementation ID, source revision, runtime/compiler settings and actual resources. [Identity rules](manifests.md#identity-rules) separate configuration IDs from attempt IDs. Slurm owns allocations; the [operations guide](hpc-resources.md) owns launching, placement and storage policy.
+
+## Local interface boundary
+
+The [interface guide](interface.md#read-only-results-contract) owns implemented session/catalog/ingestion/query contracts and explicitly planned geometry/jobs. Adapters preserve the scientific rules above; they do not define another solver, validator or comparison engine.

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Computational Methods project progress: TSP heuristic specifications, implemented Python scaffold, local Apptainer build, and planned evaluation.">
+  <title>TSP Heuristics and HPC — Project Progress</title>
+  <style>
+    :root {
+      --ink: #182638;
+      --text: #344256;
+      --muted: #536277;
+      --accent: #245488;
+      --line: #d7e0e9;
+      --wash: #f2f5f8;
+      --scale: 1;
+      font-family: Arial, "Liberation Sans", sans-serif;
+      color: var(--ink);
+      background: #e5e9ee;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .slide {
+      width: 1280px;
+      height: 720px;
+      padding: 48px 68px 28px;
+      margin: 24px auto;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .eyebrow {
+      margin: 0 0 13px;
+      color: var(--accent);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 64px; line-height: 1.12; letter-spacing: -.025em; }
+    h2 { font-size: 43px; line-height: 1.16; letter-spacing: -.02em; }
+    h3 { font-size: 28px; line-height: 1.2; }
+    p, li { font-size: 26px; line-height: 1.4; color: var(--text); }
+    strong { color: var(--ink); }
+    code { font-family: "Liberation Mono", Consolas, monospace; font-size: .92em; }
+    .body {
+      flex: 1;
+      min-height: 0;
+      padding: 28px 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 26px;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+      font-size: 16px;
+      line-height: 1.2;
+      color: var(--muted);
+    }
+    footer span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .lead { font-size: 30px; line-height: 1.4; max-width: 1080px; }
+    .note { font-size: 23px; line-height: 1.4; color: var(--muted); }
+    .callout { padding: 17px 22px; border-left: 4px solid var(--accent); background: var(--wash); }
+    .cover .body { gap: 30px; }
+    .cover .lead { max-width: 1030px; }
+    .cover .summary { margin-top: 14px; font-size: 26px; }
+    .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+    .columns > div + div { border-left: 1px solid var(--line); padding-left: 40px; }
+    .columns h3 { margin-bottom: 20px; }
+    ul { margin: 0; padding-left: 25px; }
+    li + li { margin-top: 18px; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { font-size: 17px; letter-spacing: .045em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0 20px 12px 0; }
+    td { border-top: 1px solid var(--line); padding: 17px 20px 17px 0; vertical-align: top; font-size: 25px; line-height: 1.32; color: var(--text); }
+    th:last-child, td:last-child { padding-right: 0; }
+    td:first-child { color: var(--ink); font-weight: 700; }
+    .status-table td { padding-top: 14px; padding-bottom: 14px; font-size: 24px; }
+    .status-table th:first-child { width: 27%; }
+    .status-table th:nth-child(2) { width: 21%; }
+    .status { color: var(--accent); font-weight: 700; }
+    .methods th:first-child { width: 26%; }
+    .methods th:nth-child(2) { width: 53%; }
+    .methods td { padding-top: 23px; padding-bottom: 23px; }
+    .rules { display: grid; grid-template-columns: 230px 1fr; gap: 22px 30px; }
+    .rules dt { font-size: 26px; font-weight: 700; color: var(--ink); }
+    .rules dd { margin: 0; font-size: 26px; line-height: 1.35; color: var(--text); }
+    .interface { background: var(--wash); padding: 18px 24px; font-size: 23px; line-height: 1.45; }
+    .stack td:first-child { width: 31%; }
+    .evidence { grid-template-columns: .9fr 1.1fr; }
+    .metric { color: var(--accent); font-size: 76px; line-height: 1; font-weight: 700; }
+    .metric-label { font-size: 27px; color: var(--ink); margin: 8px 0 24px; }
+    .counts { display: grid; grid-template-columns: 1fr auto; gap: 12px 20px; font-size: 24px; line-height: 1.3; color: var(--text); }
+    .counts span:nth-child(even) { font-weight: 700; color: var(--ink); }
+    .flow { display: grid; grid-template-columns: 1fr 28px 1fr 28px 1fr 28px 1fr; align-items: stretch; gap: 10px; }
+    .flow-step { border-top: 3px solid var(--line); padding-top: 20px; }
+    .flow-step.complete { border-color: var(--accent); }
+    .flow-step h3 { font-size: 27px; margin-bottom: 16px; }
+    .flow-step p { font-size: 23px; line-height: 1.35; }
+    .flow-state { display: block; margin-top: 22px; color: var(--accent); font-size: 19px; font-weight: 700; }
+    .arrow { color: var(--muted); font-size: 28px; padding-top: 20px; text-align: center; }
+    .comparison th:first-child { width: 25%; }
+    .comparison th:nth-child(2) { width: 48%; }
+    .comparison td { font-size: 24px; padding-top: 20px; padding-bottom: 20px; }
+    .parallel td:first-child { width: 24%; }
+    .milestones { list-style: none; padding: 0; margin: 0; counter-reset: milestones; }
+    .milestones li { counter-increment: milestones; display: grid; grid-template-columns: 45px 150px 1fr; gap: 18px; border-top: 1px solid var(--line); padding: 20px 0; margin: 0; font-size: 26px; }
+    .milestones li::before { content: "0" counter(milestones); color: var(--accent); font-weight: 700; }
+    .controls { display: none; }
+    html.js body { overflow: hidden; }
+    html.js .deck { position: fixed; inset: 0 0 48px; }
+    html.js .slide {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      margin: 0;
+      transform: translate(-50%, -50%) scale(var(--scale));
+      display: none;
+    }
+    html.js .slide.active { display: flex; }
+    html.js .controls { position: fixed; inset: auto 0 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 18px; background: #e5e9ee; color: var(--muted); font-size: 14px; }
+    button { font: inherit; padding: 5px 12px; border: 1px solid #b4c1cf; border-radius: 3px; background: white; color: var(--ink); cursor: pointer; }
+    button:disabled { opacity: .45; cursor: default; }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .hint { font-size: 13px; }
+    #counter { min-width: 44px; text-align: center; }
+    @media (max-width: 700px) { .hint { display: none; } .controls { gap: 8px !important; } }
+    @media print {
+      @page { size: 1280px 720px; margin: 0; }
+      html, html.js body { background: white; overflow: visible; }
+      html.js .deck { position: static; }
+      .slide, html.js .slide {
+        display: flex !important;
+        position: relative;
+        left: auto;
+        top: auto;
+        margin: 0;
+        width: 1280px;
+        height: 720px;
+        transform: none !important;
+        break-after: page;
+        break-inside: avoid;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+      .slide:last-child { break-after: auto; }
+      .controls, html.js .controls, noscript { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="Project progress presentation">
+    <!-- Snapshot: master f4a76eb; container PR #53 at 682bcf8; owner build at f6e1fcd.
+         Specifications describe future solver behavior, not implemented solver features.
+         See presentations/README.md for evidence and presentation instructions. -->
+
+    <section class="slide cover active" id="slide-1" aria-labelledby="title-1">
+      <header><p class="eyebrow">Computational Methods · Project progress</p></header>
+      <div class="body">
+        <h1 id="title-1">Traveling Salesman Problem<br>Heuristics and HPC</h1>
+        <p class="lead">How do implementation choices and parallel execution affect solution quality under limited computational budgets?</p>
+        <p class="summary"><strong>Current milestone:</strong> shared design and a tested local software environment.</p>
+      </div>
+      <footer><span>Nearest-neighbour · Genetic algorithm · Simulated annealing</span><span>1 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-2" aria-labelledby="title-2">
+      <header><p class="eyebrow">Progress at a glance</p><h2 id="title-2">What is complete—and what is not</h2></header>
+      <div class="body">
+        <table class="status-table">
+          <thead><tr><th scope="col">Area</th><th scope="col">Status</th><th scope="col">Evidence / boundary</th></tr></thead>
+          <tbody>
+            <tr><td>Scientific design</td><td class="status">Agreed</td><td>Shared contracts, variants and stopping rules</td></tr>
+            <tr><td>Python scaffold</td><td class="status">Merged</td><td>Installable package, CLI and locked dependencies</td></tr>
+            <tr><td>CPU image</td><td class="status">Built locally</td><td>Build checks passed; PR #53 is still unmerged</td></tr>
+            <tr><td>SA prototype</td><td>Separate open PR</td><td>Not integrated with the agreed baseline</td></tr>
+            <tr><td>Comparative results</td><td>Pending</td><td>Integrated solvers and experiment runner still needed</td></tr>
+          </tbody>
+        </table>
+        <p class="note">No validated algorithm ranking or HPC speedup results yet.</p>
+      </div>
+      <footer><span>Snapshot includes the unmerged container work; prototype PR #50 remains separate</span><span>2 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-3" aria-labelledby="title-3">
+      <header><p class="eyebrow">Algorithm design · Specified</p><h2 id="title-3">Three heuristics, one objective</h2></header>
+      <div class="body">
+        <p>For a complete, symmetric 2D TSP: visit every city once, return to the start, and minimize total tour length.</p>
+        <table class="methods">
+          <thead><tr><th scope="col">Method</th><th scope="col">Selected baseline</th><th scope="col">Work budget</th></tr></thead>
+          <tbody>
+            <tr><td>Nearest-neighbour</td><td>Nearest unvisited city; deterministic ties</td><td>Fixed start list</td></tr>
+            <tr><td>Genetic algorithm</td><td>Tournament selection, ordered crossover, swap mutation, elitism</td><td>Population + generations</td></tr>
+            <tr><td>Simulated annealing</td><td>Segment reversal, Metropolis acceptance, geometric cooling</td><td>Proposals per chain</td></tr>
+          </tbody>
+        </table>
+        <p class="note">For symmetric TSP, SA’s four-edge cost change is O(1); applying an accepted reversal can still be O(n).</p>
+      </div>
+      <footer><span>Work units differ: equal GA generations and SA proposals do not imply equal computation</span><span>3 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-4" aria-labelledby="title-4">
+      <header><p class="eyebrow">Shared contracts · Design agreed</p><h2 id="title-4">Make comparisons scientifically consistent</h2></header>
+      <div class="body">
+        <dl class="rules">
+          <dt>Same objective</dt><dd>One distance convention per instance; always include the closing edge.</dd>
+          <dt>Same data rules</dt><dd><code>float64</code> coordinates; <code>int64</code> city permutations with implicit closure.</dd>
+          <dt>Explicit search</dt><dd>Recorded seeds, parameters and actual work; initialization is counted.</dd>
+          <dt>Independent checks</dt><dd>Validate the final permutation and recompute its complete cost.</dd>
+        </dl>
+        <div class="interface"><code>solve(instance, *, seed, budget, parameters,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;record_history=False) → SolverResult</code></div>
+      </div>
+      <footer><span>Interface specification—not an implemented solver API yet</span><span>4 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-5" aria-labelledby="title-5">
+      <header><p class="eyebrow">Implementation · Merged foundation</p><h2 id="title-5">A small, testable numerical software stack</h2></header>
+      <div class="body">
+        <table class="stack">
+          <thead><tr><th scope="col">Component</th><th scope="col">Implemented today</th></tr></thead>
+          <tbody>
+            <tr><td>Python package</td><td>Installable <code>tsp_hpc</code>; CLI help and version commands</td></tr>
+            <tr><td>NumPy + Numba</td><td>Typed-array smoke test with native compilation and execution</td></tr>
+            <tr><td>uv + lockfile</td><td>Locked dependencies; separate optional analysis environment</td></tr>
+            <tr><td>pytest</td><td>Package, command-line and numerical-stack checks</td></tr>
+          </tbody>
+        </table>
+        <p class="callout"><strong>Next:</strong> our own lightweight runner for seeds, timing, validation and results. CI automation is also pending.</p>
+      </div>
+      <footer><span>The scaffold is executable; solver and benchmark commands are not yet available</span><span>5 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-6" aria-labelledby="title-6">
+      <header><p class="eyebrow">Local validation · Unmerged PR #53</p><h2 id="title-6">The CPU image built successfully</h2></header>
+      <div class="body">
+        <div class="columns evidence">
+          <div>
+            <div class="metric">10 / 10</div>
+            <p class="metric-label">packaged tests passed</p>
+            <div class="counts">
+              <span>Package and CLI</span><span>6</span>
+              <span>Definition regressions</span><span>3</span>
+              <span>NumPy / Numba kernel</span><span>1</span>
+            </div>
+          </div>
+          <div>
+            <h3>Additional build-time checks</h3>
+            <ul>
+              <li>Serial and parallel Numba kernels compile and execute.</li>
+              <li>Native cache writes and JSON report write/read-back succeed.</li>
+              <li>SIF image and SHA-256 sidecar are created.</li>
+            </ul>
+          </div>
+        </div>
+        <p class="callout"><strong>Correctness, not performance:</strong> one Numba worker; no multicore scaling or cluster compatibility claim.</p>
+        <p class="note">Owner-provided build log · source <code>f6e1fcd</code> · Linux x86_64 · Python 3.12.16</p>
+      </div>
+      <footer><span>Build-time validation is not yet a test of the finished SIF under cluster runtime mounts</span><span>6 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-7" aria-labelledby="title-7">
+      <header><p class="eyebrow">Reproducibility and deployment</p><h2 id="title-7">From a source snapshot to cluster execution</h2></header>
+      <div class="body">
+        <div class="flow" role="group" aria-label="Deployment sequence: recorded source, successful local image build, documented transfer, and pending cluster runtime checks.">
+          <div class="flow-step complete"><h3>Source snapshot</h3><p>Git revision<br>Dependency lock<br>Pinned base image</p><span class="flow-state">Recorded</span></div>
+          <span class="arrow" aria-hidden="true">→</span>
+          <div class="flow-step complete"><h3>Local build</h3><p>Immutable SIF<br>Build provenance<br>Artifact checksum</p><span class="flow-state">Build checks passed</span></div>
+          <span class="arrow" aria-hidden="true">→</span>
+          <div class="flow-step"><h3>Transfer</h3><p><code>rsync</code> over SSH<br>Image + sidecar<br>Verify SHA-256</p><span class="flow-state">Procedure documented</span></div>
+          <span class="arrow" aria-hidden="true">→</span>
+          <div class="flow-step"><h3>Runtime check</h3><p>Slurm allocation<br>Explicit mounts<br>JIT + CPU affinity</p><span class="flow-state">Aion / Iris: pending</span></div>
+        </div>
+        <p class="callout">Keep inputs, outputs and writable caches outside the image. Record both the source revision and the exact SIF checksum.</p>
+        <p class="note">Aion/Iris access and storage are owner-confirmed; runtime compatibility is not yet verified.</p>
+      </div>
+      <footer><span>Cluster transfers and execution are owner-operated; no deployment success is assumed</span><span>7 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-8" aria-labelledby="title-8">
+      <header><p class="eyebrow">Experimental method · Planned</p><h2 id="title-8">Separate speed, quality and time-to-target</h2></header>
+      <div class="body">
+        <table class="comparison">
+          <thead><tr><th scope="col">Question</th><th scope="col">Controlled comparison</th><th scope="col">Report</th></tr></thead>
+          <tbody>
+            <tr><td>Implementation speed</td><td>Same variant, work, seeds and searches;<br>same CPU architecture</td><td>Runtime<br>Speedup Sₚ = T₁ / Tₚ</td></tr>
+            <tr><td>Solution quality</td><td>Fixed wall-clock budget;<br>stated resources and repeated trials</td><td>Tour length<br>Variation across runs</td></tr>
+            <tr><td>Time-to-target</td><td>Predefined quality threshold;<br>retain runs that miss it</td><td>Time to target<br>Success rate</td></tr>
+          </tbody>
+        </table>
+        <p class="note">Use shared instances and exact small-case references. Separate preprocessing and JIT warm-up from search; also report end-to-end time.</p>
+      </div>
+      <footer><span>Evaluation protocol is designed; benchmark settings and empirical results are still pending</span><span>8 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-9" aria-labelledby="title-9">
+      <header><p class="eyebrow">HPC investigation · CPU first</p><h2 id="title-9">Parallelism follows each algorithm</h2></header>
+      <div class="body">
+        <table class="parallel">
+          <thead><tr><th scope="col">Method</th><th scope="col">Initial source of concurrency</th></tr></thead>
+          <tbody>
+            <tr><td>Nearest-neighbour</td><td>Construct tours from a fixed set of starting cities</td></tr>
+            <tr><td>Genetic algorithm</td><td>Evaluate individuals or construct offspring independently</td></tr>
+            <tr><td>Simulated annealing</td><td>Run a fixed collection of independent chains</td></tr>
+          </tbody>
+        </table>
+        <p class="callout">Changing worker count must not increase total searches or search budgets.</p>
+        <p class="note"><strong>Also profile:</strong> dense distances (8n² bytes) versus on-demand computation.<br>MPI, GPU and deeper memory optimizations remain evidence-driven options.</p>
+      </div>
+      <footer><span>Begin with correct serial code and one-node CPU measurements—not every backend at once</span><span>9 / 10</span></footer>
+    </section>
+
+    <section class="slide" id="slide-10" aria-labelledby="title-10">
+      <header><p class="eyebrow">Next milestones</p><h2 id="title-10">Next: one complete, reproducible experiment</h2></header>
+      <div class="body">
+        <ol class="milestones">
+          <li><strong>Build</strong><span>CI and shared instance, tour and cost utilities.</span></li>
+          <li><strong>Integrate</strong><span>Serial NN, GA and SA with our seeded experiment runner.</span></li>
+          <li><strong>Validate</strong><span>Finished SIF, runtime mounts and Aion/Iris compatibility.</span></li>
+          <li><strong>Measure</strong><span>Reference quality, serial profiles, then controlled multicore scaling.</span></li>
+        </ol>
+        <p class="callout"><strong>Takeaway:</strong> the design and local execution foundation are in place; the next deliverable is validated solver output.</p>
+      </div>
+      <footer><span>Computational Methods · Project progress</span><span>10 / 10</span></footer>
+    </section>
+  </main>
+
+  <nav class="controls" aria-label="Presentation controls">
+    <button id="previous" type="button" aria-label="Previous slide">← Previous</button>
+    <span id="counter" role="status" aria-live="polite">1 / 10</span>
+    <button id="next" type="button" aria-label="Next slide">Next →</button>
+    <button id="fullscreen" type="button">Full screen</button>
+    <button id="print" type="button">Print / PDF</button>
+    <span class="hint">← → navigate · F full screen</span>
+  </nav>
+  <noscript><p>JavaScript is disabled: all slides are shown in order. Printing still produces one slide per page.</p></noscript>
+  <script>
+    (() => {
+      const slides = [...document.querySelectorAll('.slide')];
+      const previous = document.getElementById('previous');
+      const next = document.getElementById('next');
+      const counter = document.getElementById('counter');
+      let index = 0;
+      document.documentElement.classList.add('js');
+
+      function resize() {
+        const scale = Math.min(window.innerWidth / 1280, Math.max(1, window.innerHeight - 48) / 720);
+        document.documentElement.style.setProperty('--scale', scale);
+      }
+      function show(requested) {
+        index = Math.max(0, Math.min(slides.length - 1, requested));
+        slides.forEach((slide, position) => {
+          const active = position === index;
+          slide.classList.toggle('active', active);
+          slide.setAttribute('aria-hidden', String(!active));
+        });
+        previous.disabled = index === 0;
+        next.disabled = index === slides.length - 1;
+        counter.textContent = `${index + 1} / ${slides.length}`;
+        history.replaceState(null, '', `#slide-${index + 1}`);
+        document.title = `TSP Project Progress — ${index + 1}/${slides.length}`;
+      }
+      function fromHash() {
+        const match = location.hash.match(/^#slide-(\d+)$/);
+        show(match ? Number(match[1]) - 1 : 0);
+      }
+      async function fullscreen() {
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+          else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+        } catch (_) { /* Browser policy may require its native full-screen command. */ }
+      }
+      previous.addEventListener('click', () => show(index - 1));
+      next.addEventListener('click', () => show(index + 1));
+      document.getElementById('fullscreen').addEventListener('click', fullscreen);
+      document.getElementById('print').addEventListener('click', () => window.print());
+      document.addEventListener('keydown', event => {
+        if (event.ctrlKey || event.metaKey || event.altKey || event.target.isContentEditable) return;
+        if (event.key === ' ' && event.target.closest('button, a')) return;
+        const actions = {
+          ArrowRight: () => show(index + 1), PageDown: () => show(index + 1),
+          ArrowLeft: () => show(index - 1), PageUp: () => show(index - 1),
+          ' ': () => show(index + (event.shiftKey ? -1 : 1)),
+          Home: () => show(0), End: () => show(slides.length - 1),
+          f: fullscreen, F: fullscreen,
+        };
+        if (actions[event.key]) { event.preventDefault(); actions[event.key](); }
+      });
+      window.addEventListener('resize', resize);
+      window.addEventListener('hashchange', fromHash);
+      // Keep the PDF title stable and make every printed slide accessible.
+      window.addEventListener('beforeprint', () => {
+        document.title = 'TSP Heuristics and HPC — Project Progress';
+        slides.forEach(slide => slide.removeAttribute('aria-hidden'));
+      });
+      window.addEventListener('afterprint', () => show(index));
+      resize();
+      fromHash();
+    })();
+  </script>
+</body>
+</html>
