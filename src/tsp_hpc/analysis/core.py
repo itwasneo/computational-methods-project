@@ -26,7 +26,7 @@ TRIAL_COLUMNS = ("attempt_id campaign_id requested_execution_id execution_id sea
                  "runtime_context_id instance_id coordinate_checksum distance_kind n_cities algorithm variant "
                  "repetition parameters_json solver_seed budget_name budget_count trial_seed implementation "
                  "distance_mode backend profile workers threads_per_worker max_matrix_bytes setup_policy "
-                 "source_revision source_dirty outcome status best_cost tour_digest work_json error_phase error_type").split() + list(METRICS) + ["shard", "campaign_complete", "duplicate_execution", "usable"]
+                 "source_revision source_dirty source_method build_status build_id outcome status best_cost tour_digest work_json error_phase error_type").split() + list(METRICS) + ["shard", "campaign_complete", "duplicate_execution", "usable"]
 
 
 class AnalysisLimitError(ValueError):
@@ -103,7 +103,7 @@ def read_sources(inputs: Iterable[ShardSource], *, expected_manifest: Manifest |
         path = source.identity
         stamp = source.stamp()
         digest = hashlib.sha256()
-        local, campaign, footer = [], None, False
+        local, campaign, footer, envelope_version = [], None, False, None
         with source.open() as stream:
             line = 0
             while True:
@@ -126,8 +126,11 @@ def read_sources(inputs: Iterable[ShardSource], *, expected_manifest: Manifest |
                         diagnostics.append({"code": "unterminated_tail", "path": str(path), "line": line})
                         break
                     record = decode_record(raw)
-                    if type(record) is not dict or type(record.get("schema_version")) is not int or record["schema_version"] != 1:
+                    if type(record) is not dict or type(record.get("schema_version")) is not int or record["schema_version"] not in (1, 2):
                         raise ValueError("unsupported runner envelope schema")
+                    if envelope_version is not None and record["schema_version"] != envelope_version:
+                        raise ValueError("mixed runner envelope schemas in one campaign")
+                    envelope_version = record["schema_version"]
                     current = require_uuid(record["campaign_id"])
                     if campaign is None:
                         campaign = current
@@ -201,7 +204,7 @@ def summary_table(analysis: Analysis) -> pd.DataFrame:
     labels = ["instance_id", "n_cities", "algorithm", "variant", "implementation", "distance_mode",
               "backend", "profile", "workers", "threads_per_worker", "setup_policy", "max_matrix_bytes",
               "parameters_json", "solver_seed", "budget_name", "budget_count", "source_revision", "source_dirty",
-              "runtime_context_id", "workload_id"]
+              "source_method", "build_status", "build_id", "runtime_context_id", "workload_id"]
     metrics = ["best_cost", *METRICS]
     if frame.empty:
         columns = ["group_id", *labels, "attempt_count", "failed_count", "no_solution_count",

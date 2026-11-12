@@ -56,6 +56,10 @@ Use an Apptainer SIF to package Python, numerical dependencies and the applicati
 4. Keep shared inputs, persistent outputs and writable temporary/cache directories outside the immutable image through deliberate mounts. Validate permissions and persistence, not just imports.
 5. Inside an allocation, load `tools/Apptainer` and launch through Slurm. Control inherited settings and Python user-package visibility; the default home mount can override container configuration, so use `--no-mount home` where appropriate and expose needed data paths explicitly.
 
+For package provenance, build and retain the [verified wheel and receipt](development.md#verified-installed-builds) from the committed revision before assembling the image. The image must install that wheel into its locked dependency environment, not rebuild a plain wheel or overlay source afterward. Retain its build ID/wheel checksum in image build information; compute the final SIF checksum outside the finished image. A revision text file, image label or launcher environment variable alone cannot establish the executing package's source identity.
+
+**Draft PR #53 still needs this handoff integrated and owner validation.** Its separate `/opt/tsp/build-info.json` is not currently a verified package binding; this wheel work does not certify that image or operate the cluster. The owner must check v2 trial build status/identity inside the finished image before campaign use.
+
 Validate packaged tests, actual JIT execution/cache writes and result persistence before a campaign. Compiled artifacts must suit the target CPU; a development-machine-specific binary is not automatically portable. Match process/thread limits to the allocation and prevent nested oversubscription. Containerization does not replace [placement controls](#cpu-placement-and-numa). GPU and MPI images require their separate compatibility checks below.
 
 ## CPU placement and NUMA

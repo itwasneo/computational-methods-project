@@ -35,6 +35,17 @@ def records(path):
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
+def test_build_evidence_cannot_override_or_fall_back_to_checkout(tmp_path):
+    from tsp_hpc.reproducibility.build import METADATA_FILE, runtime_build
+    checkout = {"revision": "a" * 40, "dirty": False}
+    source, build = runtime_build(tmp_path, "0.1.0", checkout)
+    assert source == checkout and build["method"] == "git-checkout"
+    (tmp_path / METADATA_FILE).write_text("{}")
+    source, build = runtime_build(tmp_path, "0.1.0", checkout)
+    assert source == {"revision": None, "dirty": None}
+    assert build["status"] == "invalid"
+
+
 def test_source_provenance_tracks_package_checkout_not_callers_directory(tmp_path, monkeypatch):
     checkout = tmp_path / "checkout"
     source = checkout / "src/tsp_hpc/experiments/runner.py"
@@ -59,6 +70,9 @@ def test_source_provenance_tracks_package_checkout_not_callers_directory(tmp_pat
     monkeypatch.chdir(checkout)
     installed = tmp_path / "installed/lib/python3.12/site-packages/tsp_hpc/experiments/runner.py"
     monkeypatch.setattr(runner, "__file__", str(installed))
+    assert runner._source_state() == {"revision": None, "dirty": None}
+    # Even a nearby Git root with a tracked source marker cannot bless site-packages.
+    monkeypatch.setattr(runner, "__file__", str(checkout / "site-packages/tsp_hpc/experiments/runner.py"))
     assert runner._source_state() == {"revision": None, "dirty": None}
 
 

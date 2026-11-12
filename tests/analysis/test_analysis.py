@@ -14,6 +14,7 @@ from tsp_hpc.analysis import (read_shards, summary_table, paired_comparisons,
                               reference_gaps, load_references)
 from tsp_hpc.analysis.reports import write_report
 from tsp_hpc.reproducibility.identity import stable_id
+from tsp_hpc.reproducibility.build import METHOD, build_id, observation
 from tsp_hpc.problem.instances import fixture, save_instance
 from tsp_hpc.experiments.manifests import Manifest
 from tsp_hpc.experiments.runner import run_manifest
@@ -106,7 +107,7 @@ def test_omitted_implementation_uses_recorded_resolution_not_current_default(tmp
                                   "effective_type", "provenance", "tour", "work", "cost", "summary_count", "receipt", "summary_duration", "adapter"])
 def test_corrupt_complete_records_are_not_accepted(tmp_path, rows, fault):
     trial, summary = rows[0], rows[-1]
-    if fault == "version": trial["schema_version"] = 2
+    if fault == "version": trial["schema_version"] = 3
     elif fault == "version_bool": trial["schema_version"] = True
     elif fault == "requested_id": trial["requested_plan"]["search_id"] = "search-v1-" + "0" * 64
     elif fault == "effective_id": trial["execution_id"] = "execution-v1-" + "0" * 64
@@ -181,6 +182,7 @@ def test_unknown_source_is_not_pooled_across_campaigns(tmp_path, rows):
         for trial in trials:
             trial["campaign_id"] = campaign_id
             trial["runtime"]["source"] = {"revision": None, "dirty": None}
+            trial["runtime"]["build"] = observation()
         footer.update(campaign_id=campaign_id, planned_trials=4, counts={"completed": 4, "failed": 0},
                       trial_timings=footer["trial_timings"][index*4:index*4+4])
         footer["timings"]["trial_persistence_time_s"] = 0.4
@@ -200,7 +202,9 @@ def test_incompatible_pairs_have_reasons_not_speedups(tmp_path, rows, fault, rea
         if trial["effective_execution"]["implementation"] != "remaining-array-v1":
             continue
         if fault == "dirty": trial["runtime"]["source"]["dirty"] = True
-        elif fault == "unknown": trial["runtime"]["source"] = {"revision": None, "dirty": None}
+        elif fault == "unknown":
+            trial["runtime"]["source"] = {"revision": None, "dirty": None}
+            trial["runtime"]["build"] = observation()
         elif fault == "runtime": trial["runtime"]["versions"]["numpy"] = "different"
         elif fault == "tour": trial["result"]["best_tour"].reverse()
         elif fault == "zero": trial["timings"]["search_time_s"] = 0
@@ -378,3 +382,75 @@ def test_source_adapter_checks_cancellation_and_limits_without_publishing(tmp_pa
     for options in ({"max_trials": True}, {"max_summary_bytes": 0}, {"max_record_bytes": -1}):
         with pytest.raises(ValueError):
             read_sources([source], **options)
+
+
+def recorded_build(trial, payload="b" * 64):
+    # Synthetic provenance for compatibility assertions, not an attested artifact.
+    runtime = trial["runtime"]
+    header = {"schema_version": 1, "method": METHOD, "source": deepcopy(runtime["source"]),
+              "package_version": runtime["versions"]["tsp_hpc"], "pyproject_sha256": "c" * 64,
+              "lock_sha256": "d" * 64, "payload_sha256": payload}
+    runtime["build"] = observation(METHOD, "verified", {**header, "build_id": build_id(header)})
+
+
+@pytest.mark.parametrize("difference", [None, "payload", "dirty", "method", "invalid"])
+def test_build_comparison_eligibility(tmp_path, rows, difference):
+    for trial in rows[:-1]:
+        candidate = trial["effective_execution"]["implementation"] == "remaining-array-v1"
+        if candidate and difference == "dirty":
+            trial["runtime"]["source"]["dirty"] = True
+        recorded_build(trial, "e" * 64 if candidate and difference == "payload" else "b" * 64)
+        if candidate and difference == "method":
+            trial["runtime"]["build"] = observation("git-checkout", "verified")
+        if candidate and difference == "invalid":
+            trial["runtime"]["source"] = {"revision": None, "dirty": None}
+            trial["runtime"]["build"] = observation(METHOD, "invalid")
+    data = read_shards([save(tmp_path / "builds.jsonl", rows)])
+    pairs = paired_comparisons(data, baseline_implementation="visited-scan-v1")
+    if difference is None:
+        assert pairs["reason"].isna().all() and pairs["speedup"].tolist() == [2.] * 4
+        assert data.trials["build_id"].nunique() == 1
+        assert set(summary_table(data)["build_status"]) == {"verified"}
+    else:
+        reason = "unknown_or_dirty_source" if difference in ("dirty", "invalid") else "incompatible_execution_context"
+        assert set(pairs["reason"]) == {reason} and pairs["speedup"].isna().all()
+
+
+@pytest.mark.parametrize("fault", ["missing", "version", "digest", "source", "package", "status", "mixed-footer"])
+def test_inconsistent_build_envelopes_are_rejected(tmp_path, rows, fault):
+    for trial in rows[:-1]:
+        recorded_build(trial)
+    runtime = rows[0]["runtime"]
+    if fault == "missing": del runtime["build"]
+    elif fault == "version": runtime["build"]["schema_version"] = True
+    elif fault == "digest": runtime["build"]["identity"]["build_id"] = "build-v1-" + "0" * 64
+    elif fault == "source": runtime["source"]["revision"] = "f" * 40
+    elif fault == "package": runtime["versions"]["tsp_hpc"] = "different"
+    elif fault == "status": runtime["build"] = observation(METHOD, "invalid")
+    elif fault == "mixed-footer": rows[-1]["schema_version"] = 1
+    with pytest.raises(ValueError):
+        read_shards([save(tmp_path / "invalid-build.jsonl", rows)])
+
+
+def test_v1_shards_preserve_legacy_identities_and_unknown_source_exclusions(tmp_path, rows):
+    for record in rows:
+        record["schema_version"] = 1
+        if record["record_type"] == "trial":
+            del record["runtime"]["build"]
+    data = read_shards([save(tmp_path / "legacy.jsonl", rows)])
+    runtime = rows[0]["runtime"]
+    context = {**runtime, "environment": {k: v for k, v in runtime["environment"].items() if k != "SLURM_JOB_ID"}}
+    assert data.trials.iloc[0]["runtime_context_id"] == stable_id("analysis-runtime", context)
+    trial = rows[0]
+    legacy_group = {"workload": {k: v for k, v in trial["requested_plan"]["search"].items() if k != "repetition"},
+                    "execution": trial["effective_execution"], "runtime": stable_id("analysis-runtime", context),
+                    "setup_policy": trial["setup_policy"], "max_matrix_bytes": trial["max_matrix_bytes"],
+                    "unverified_source_campaign": None}
+    assert data.trials.iloc[0]["group_id"] == stable_id("analysis-group", legacy_group)
+    assert set(data.trials["source_method"]) == {"legacy-source"}
+    assert paired_comparisons(data, baseline_implementation="visited-scan-v1")["speedup"].tolist() == [2.] * 4
+    for trial in rows[:-1]:
+        trial["runtime"]["source"] = {"revision": None, "dirty": None}
+    unknown = read_shards([save(tmp_path / "legacy-unknown.jsonl", rows)])
+    pairs = paired_comparisons(unknown, baseline_implementation="visited-scan-v1")
+    assert set(pairs["reason"]) == {"unknown_or_dirty_source"}
