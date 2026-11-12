@@ -10,6 +10,7 @@ import base64
 import csv
 from email.parser import BytesParser
 import hashlib
+import importlib.util
 import io
 import json
 from pathlib import Path
@@ -21,10 +22,12 @@ import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-from tsp_hpc.reproducibility.build import (  # noqa: E402
-    MAX_METADATA_BYTES, METADATA_FILE, METHOD, build_id, file_digest, package_inventory, payload_digest,
-)
+# Load the shared stdlib-only format module without executing tsp_hpc.__init__,
+# which needs installed distribution metadata that a clean builder does not have.
+_spec = importlib.util.spec_from_file_location("_tsp_build_provenance", ROOT / "src/tsp_hpc/reproducibility/build.py")
+provenance = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = provenance
+_spec.loader.exec_module(provenance)
 
 
 def git(*args):
@@ -46,7 +49,7 @@ def build(output, *, offline=False):
                 raise ValueError("source snapshots must contain only regular files/directories")
             archive.extractall(stage, filter="data")
         project = tomllib.loads((stage / "pyproject.toml").read_text())
-        if project["project"]["name"] != "tsp-hpc" or (stage / "src/tsp_hpc" / METADATA_FILE).exists():
+        if project["project"]["name"] != "tsp-hpc" or (stage / "src/tsp_hpc" / provenance.METADATA_FILE).exists():
             raise ValueError("unexpected package or pre-existing build metadata")
         version = project["project"]["version"]
         wheels = Path(temporary) / "wheels"
@@ -68,22 +71,22 @@ def build(output, *, offline=False):
         if any(len(Path(p).parts) < 2 or Path(p).parts[0] not in ("tsp_hpc", dist_info)
                or ".." in Path(p).parts or "\\" in p for p in contents):
             raise ValueError("only a pure package/dist-info wheel is supported")
-        if {p: hashlib.sha256(raw).hexdigest() for p, raw in contents.items() if p.startswith("tsp_hpc/")} != package_inventory(stage / "src/tsp_hpc"):
+        if {p: hashlib.sha256(raw).hexdigest() for p, raw in contents.items() if p.startswith("tsp_hpc/")} != provenance.package_inventory(stage / "src/tsp_hpc"):
             raise ValueError("wheel package differs from committed source snapshot")
         record_path = dist_info + "/RECORD"
         del contents[record_path]
         files = {p: hashlib.sha256(raw).hexdigest() for p, raw in contents.items()}
         header = {
-            "schema_version": 1, "method": METHOD, "source": {"revision": revision, "dirty": False},
-            "package_version": version, "pyproject_sha256": file_digest(stage / "pyproject.toml"),
-            "lock_sha256": file_digest(stage / "uv.lock"), "payload_sha256": payload_digest(files),
+            "schema_version": 1, "method": provenance.METHOD, "source": {"revision": revision, "dirty": False},
+            "package_version": version, "pyproject_sha256": provenance.file_digest(stage / "pyproject.toml"),
+            "lock_sha256": provenance.file_digest(stage / "uv.lock"), "payload_sha256": provenance.payload_digest(files),
         }
-        identity = {**header, "build_id": build_id(header)}
+        identity = {**header, "build_id": provenance.build_id(header)}
         document = {**identity, "files": files}
         manifest = (json.dumps(document, sort_keys=True, indent=2) + "\n").encode()
-        if len(manifest) > MAX_METADATA_BYTES:
+        if len(manifest) > provenance.MAX_METADATA_BYTES:
             raise ValueError("build metadata exceeds the runtime verification limit")
-        contents["tsp_hpc/" + METADATA_FILE] = manifest
+        contents["tsp_hpc/" + provenance.METADATA_FILE] = manifest
         record = io.StringIO(newline="")
         writer = csv.writer(record)
         for name, raw in sorted(contents.items()):
@@ -105,7 +108,7 @@ def build(output, *, offline=False):
         if target.exists() or receipt.exists():
             raise FileExistsError("wheel/receipt already exists; choose a new output directory")
         evidence = {"schema_version": 1, "wheel_filename": wheel.name,
-                    "wheel_sha256": file_digest(stamped), "build": document}
+                    "wheel_sha256": provenance.file_digest(stamped), "build": document}
         with target.open("xb") as stream:
             stream.write(stamped.read_bytes())
         with receipt.open("x") as stream:

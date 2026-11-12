@@ -11,6 +11,7 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import subprocess
 import sys
@@ -25,8 +26,8 @@ from tsp_hpc.reproducibility.build import METADATA_FILE, build_id, file_digest, 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def command(*args, cwd=None, check=True):
-    result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=90)
+def command(*args, cwd=None, check=True, env=None):
+    result = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=90)
     if check:
         assert result.returncode == 0, result.stdout + result.stderr
     return result
@@ -37,6 +38,39 @@ def commit(root):
     command("git", "-C", str(root), "-c", "user.name=Build Test", "-c", "user.email=test@example.invalid",
             "commit", "--quiet", "--no-gpg-sign", "-m", "test snapshot")
     return command("git", "-C", str(root), "rev-parse", "HEAD").stdout.strip()
+
+
+def test_source_provenance_tracks_package_checkout_not_callers_directory(tmp_path, monkeypatch):
+    from tsp_hpc.experiments import runner
+    checkout = tmp_path / "checkout"
+    source = checkout / "src/tsp_hpc/experiments/runner.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# provenance fixture\n")
+    command("git", "init", "--quiet", str(checkout))
+    revision = commit(checkout)
+    monkeypatch.setattr(runner, "__file__", str(source))
+    assert runner._source_state() == {"revision": revision, "dirty": False}
+    source.write_text("# changed provenance fixture\n")
+    assert runner._source_state() == {"revision": revision, "dirty": True}
+    monkeypatch.chdir(checkout)
+    for installed in (tmp_path / "installed/lib/python3.12/site-packages/tsp_hpc/experiments/runner.py",
+                      checkout / "site-packages/tsp_hpc/experiments/runner.py"):
+        monkeypatch.setattr(runner, "__file__", str(installed))
+        assert runner._source_state() == {"revision": None, "dirty": None}
+
+
+def test_build_helper_bootstraps_without_installed_project():
+    program = """
+from importlib.metadata import distributions
+import runpy, sys
+assert not list(distributions(name='tsp-hpc'))
+before = sys.path[:]
+runpy.run_path(sys.argv[1])
+assert sys.path == before
+assert not any(name == 'tsp_hpc' or name.startswith('tsp_hpc.') for name in sys.modules)
+assert 'numpy' not in sys.modules
+"""
+    command(sys.executable, "-I", "-S", "-c", program, str(ROOT / "tools/build_verified_wheel.py"))
 
 
 @pytest.fixture(scope="module")
@@ -50,7 +84,9 @@ def built(tmp_path_factory):
         shutil.copytree(ROOT / name, checkout / name, ignore=shutil.ignore_patterns("__pycache__"))
     command("git", "init", "--quiet", str(checkout))
     revision = commit(checkout)
-    result = command(sys.executable, str(checkout / "tools/build_verified_wheel.py"),
+    # Disable site initialization as well as user/environment paths: the producer
+    # must work before this project (or its dependencies) has been installed.
+    result = command(sys.executable, "-I", "-S", str(checkout / "tools/build_verified_wheel.py"),
                      "--offline", "--output", str(work / "wheels"), cwd=work)
     wheel = Path(result.stdout.strip().splitlines()[-1])
     receipt = json.loads(wheel.with_name(wheel.name + ".build.json").read_text())
@@ -203,3 +239,83 @@ def test_installed_cli_run_and_analysis_with_and_without_evidence(built, install
             # Native bytecode/JIT cache files do not invalidate the immutable payload.
             assert probe(python, built[0])["build"]["status"] == "verified"
             (site / "tsp_hpc" / METADATA_FILE).unlink()
+
+
+def test_owner_verifier_logic_in_isolated_wheel_environment(built, installed, tmp_path):
+    # Exercise the actual verifier and selected tests locally, NOT an image build/run.
+    python, _ = installed
+    root = tmp_path / "image-layout"
+    root.mkdir()
+    (root / ".venv").symlink_to(python.parent.parent, target_is_directory=True)
+    (root / "wheels").mkdir()
+    wheel = built[1]
+    for path in (wheel, wheel.with_name(wheel.name + ".build.json")):
+        shutil.copy2(path, root / "wheels" / path.name)
+    for name in ("pyproject.toml", "uv.lock", "README.md"):
+        shutil.copy2(built[0] / name, root / name)
+    shutil.copy2(ROOT / "containers/cpu.def", root / "container.def")
+    shutil.copy2(ROOT / "containers/check_runtime.py", root / "check_runtime.py")
+    (root / "source-revision").write_text(built[2]["build"]["source"]["revision"])
+    selection = runpy.run_path(str(ROOT / "containers/check_runtime.py"))["PACKAGED_TESTS"]
+    for name in (*selection, "examples/instances", "examples/manifests", "examples/references"):
+        source, target = ROOT / name, root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, target, ignore=shutil.ignore_patterns("__pycache__"))
+        else:
+            shutil.copy2(source, target)
+    environment = dict(os.environ)
+    for key in ("NUMBA_NUM_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        environment[key] = "1"
+    for key in ("TMPDIR", "XDG_CACHE_HOME", "MPLCONFIGDIR", "NUMBA_CACHE_DIR"):
+        directory = tmp_path / key
+        directory.mkdir()
+        environment[key] = str(directory)
+    program = """
+import json, os, runpy, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+checker = runpy.run_path(str(root / 'check_runtime.py'))
+info = checker['build_information'](root)
+checker['write_json'](root / 'build-info.json', info)
+report = checker['verify'](root, root / 'check')
+assert report['status'] == 'passed' and report['workflow']['eligible_pairs'] == 2
+assert report['tests']['tests'] > 0 and report['tests']['skipped'] == 0
+assert json.loads((root / 'check/report.json').read_text()) == report
+# Supplying external inputs without a read-only mount must fail before execution.
+try:
+    checker['verify'](root, root / 'unmounted-check', root / 'examples')
+except ValueError as error:
+    assert 'read-only' in str(error)
+else:
+    raise AssertionError('writable external inputs accepted')
+assert not (root / 'unmounted-check').exists()
+os.environ['OMP_NUM_THREADS'] = '2'
+try:
+    checker['verify'](root, root / 'wrong-threads')
+except RuntimeError:
+    pass
+else:
+    raise AssertionError('non-serial environment accepted')
+os.environ['OMP_NUM_THREADS'] = '1'
+assert not (root / 'wrong-threads').exists()
+try:
+    checker['verify'](root, root / 'check')
+except FileExistsError:
+    pass
+else:
+    raise AssertionError('existing output must not be overwritten')
+# A modified image definition cannot be hidden by previously valid build info.
+(root / 'container.def').write_text((root / 'container.def').read_text() + '\\n# changed definition\\n')
+try:
+    checker['verify'](root, root / 'invalid-check')
+except ValueError:
+    pass
+else:
+    raise AssertionError('changed build inputs accepted')
+assert not (root / 'invalid-check/report.json').exists()
+"""
+    command(str(python), "-I", "-B", "-c", program, str(root), cwd=tmp_path, env=environment)
+    assert (root / "check/tests.xml").exists()
+    assert (root / "check/trials.jsonl").exists()
+    assert (root / "check/analysis/report.json").exists()

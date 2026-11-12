@@ -46,36 +46,6 @@ def test_build_evidence_cannot_override_or_fall_back_to_checkout(tmp_path):
     assert build["status"] == "invalid"
 
 
-def test_source_provenance_tracks_package_checkout_not_callers_directory(tmp_path, monkeypatch):
-    checkout = tmp_path / "checkout"
-    source = checkout / "src/tsp_hpc/experiments/runner.py"
-    source.parent.mkdir(parents=True)
-    source.write_text("# provenance fixture\n")
-
-    def git(*args):
-        return subprocess.check_output(
-            ["git", "-C", str(checkout), *args], text=True, stderr=subprocess.DEVNULL,
-        ).strip()
-
-    git("init", "--quiet")
-    git("add", "src")
-    git("-c", "user.name=Provenance Test", "-c", "user.email=test@example.invalid",
-        "commit", "--quiet", "--no-gpg-sign", "-m", "fixture")
-    revision = git("rev-parse", "HEAD")
-    monkeypatch.setattr(runner, "__file__", str(source))
-    assert runner._source_state() == {"revision": revision, "dirty": False}
-    source.write_text("# changed provenance fixture\n")
-    assert runner._source_state() == {"revision": revision, "dirty": True}
-
-    monkeypatch.chdir(checkout)
-    installed = tmp_path / "installed/lib/python3.12/site-packages/tsp_hpc/experiments/runner.py"
-    monkeypatch.setattr(runner, "__file__", str(installed))
-    assert runner._source_state() == {"revision": None, "dirty": None}
-    # Even a nearby Git root with a tracked source marker cannot bless site-packages.
-    monkeypatch.setattr(runner, "__file__", str(checkout / "site-packages/tsp_hpc/experiments/runner.py"))
-    assert runner._source_state() == {"revision": None, "dirty": None}
-
-
 @pytest.mark.parametrize("implementation", runner.nn.implementation_names())
 @pytest.mark.parametrize("mode", ["dense", "on_demand"])
 def test_generate_run_validate_save(tmp_path, implementation, mode):

@@ -45,6 +45,7 @@ def example(tmp_path_factory):
     # Synthetic durations/provenance for exact arithmetic assertions, not a benchmark.
     for trial, receipt in zip(original[:-1], original[-1]["trial_timings"]):
         trial["runtime"]["source"] = {"revision": "a" * 40, "dirty": False}
+        trial["runtime"]["build"] = observation("git-checkout", "verified")
         cost = 2.0 if trial["effective_execution"]["implementation"] == "visited-scan-v1" else 1.0
         trial["timings"] = {key: 0.0 for key in trial["timings"]}
         trial["timings"].update(search_time_s=cost, solve_wall_time_s=cost, pre_persistence_time_s=cost+1)

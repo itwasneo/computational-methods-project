@@ -68,7 +68,7 @@ Keep the wheel and adjacent `.whl.build.json` receipt together. The receipt cont
 
 Run `dist/wheel-env/bin/python -I -m tsp_hpc run ...` and `... analyze ...` using the [existing commands](usage.md#run-a-manifest), with fresh output paths. Do not use `uv run` for this installed-package check: it selects the checkout environment. Use a fresh process, trusted caches and no source/PYTHONPATH overlays. The installed environment does not need Git or the source checkout. Do not subsequently run a project sync that replaces the wheel with an editable/plain installation.
 
-The integration test builds a disposable committed snapshot, installs its wheel in a temporary environment with links to the already-locked dependencies, and runs the real CLI through analysis. It checks accepted and rejected comparison provenance, not a performance claim. Container handoff remains [owner-operated](hpc-resources.md#reproducible-container-environment).
+The integration test builds a disposable committed snapshot, installs its wheel in a temporary environment with links to the already-locked dependencies, and runs the real CLI through analysis. It checks accepted and rejected comparison provenance, not a performance claim. The container definition consumes this wheel/receipt without rebuilding the project; [image builds and runtime validation](hpc-resources.md#reproducible-container-environment) remain owner-operated. Host tests also exercise the image verifier against an isolated wheel installation, not an actual SIF.
 
 ## Package layout
 

@@ -48,19 +48,80 @@ Array elements share their requested scheduler resources. Group experiments by r
 
 ## Reproducible container environment
 
-Use an Apptainer SIF to package Python, numerical dependencies and the application rather than depending on a particular host Python/Numba module release. The cluster host needs the Apptainer runtime, not uv or a duplicate project environment.
+Use an Apptainer SIF containing the installed application, locked numerical/analysis dependencies and scientific tests. The cluster needs Apptainer, not a host Python/Numba environment. **The updated definition still requires owner build and finished-image validation.** The successful historical build recorded in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) predates this workflow and does not validate current code. Account/allocation checks in #22 and the launcher in #23 remain separate.
 
-1. Keep the image definition, dependency lock and application revision in Git. Pin the base image and dependencies rather than floating tags; revalidate dependency changes locally.
-2. The owner builds off-cluster with the required privileges, validates the image, then transfers it to the workspace. Do not assume an in-cluster build facility.
-3. Use a fixed image for recorded campaigns; retain its checksum and source revision. Keep measured runs on the packaged revision without source or local-venv overlays.
-4. Keep shared inputs, persistent outputs and writable temporary/cache directories outside the immutable image through deliberate mounts. Validate permissions and persistence, not just imports.
-5. Inside an allocation, load `tools/Apptainer` and launch through Slurm. Control inherited settings and Python user-package visibility; the default home mount can override container configuration, so use `--no-mount home` where appropriate and expose needed data paths explicitly.
+[containers/cpu.def](../containers/cpu.def) retains the Linux/amd64 Python 3.12.16 slim-bookworm digest and [hash-pinned uv 0.10.4 bootstrap](../containers/bootstrap-requirements.txt). It installs locked `dev` dependencies (including analysis/pytest, not the interface extra), then the [verified wheel](development.md#verified-installed-builds), never an editable or rebuilt project. No Git checkout, application source tree, host environment or native cache is copied into the image. GPU/MPI runtimes are not included.
 
-For package provenance, build and retain the [verified wheel and receipt](development.md#verified-installed-builds) from the committed revision before assembling the image. The image must install that wheel into its locked dependency environment, not rebuild a plain wheel or overlay source afterward. Retain its build ID/wheel checksum in image build information; compute the final SIF checksum outside the finished image. A revision text file, image label or launcher environment variable alone cannot establish the executing package's source identity.
+Before installation, wheel bytes/embedded metadata must match the retained receipt, staged revision, pyproject and lock hashes. After installation, shared package verification must match that build identity. `/opt/tsp/build-info.json` retains the identity, wheel checksum, definition/lock hashes, base digest, tool versions and installed package list. A revision text file or image label alone confers no authority. The final SIF checksum stays **outside** the image; byte-identical SIF rebuilds are not promised. See the [trust boundary](usage.md#eligibility-and-trust).
 
-**Draft PR #53 still needs this handoff integrated and owner validation.** Its separate `/opt/tsp/build-info.json` is not currently a verified package binding; this wheel work does not certify that image or operate the cluster. The owner must check v2 trial build status/identity inside the finished image before campaign use.
+### Owner: build off-cluster
 
-Validate packaged tests, actual JIT execution/cache writes and result persistence before a campaign. Compiled artifacts must suit the target CPU; a development-machine-specific binary is not automatically portable. Match process/thread limits to the allocation and prevent nested oversubscription. Containerization does not replace [placement controls](#cpu-placement-and-numa). GPU and MPI images require their separate compatibility checks below.
+Use a trusted Linux x86_64 machine with Python 3.12, uv and Apptainer, network access for pinned dependencies/base, and the required local build privileges. Review the definition before `sudo`. Run only after all intended changes are committed and the checkout is clean; do not modify it during staging. This creates a new revision/time-labelled artifact directory and does not overwrite earlier builds:
+
+```bash
+(
+    set -euo pipefail
+    cd "$(git rev-parse --show-toplevel)"
+    test "$(uname -m)" = x86_64
+    test -z "$(git status --porcelain)"
+    revision=$(git rev-parse --verify HEAD)
+    mkdir -p artifacts/containers
+    directory="$PWD/artifacts/containers/$revision-$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir "$directory"
+    python3.12 tools/build_verified_wheel.py --output "$directory/wheels"
+    context=$(mktemp -d)
+    trap 'rm -rf -- "$context"' EXIT
+    git archive "$revision" | tar -xf - -C "$context"
+    mkdir -p "$context/.image-build"
+    cp -R "$directory/wheels" "$context/.image-build/wheels"
+    printf '%s\n' "$revision" > "$context/.image-build/source-revision"
+    (
+        cd "$context"
+        sudo apptainer build "$directory/tsp-cpu.sif" containers/cpu.def
+    ) 2>&1 | tee "$directory/build.log"
+    (cd "$directory"; sha256sum tsp-cpu.sif > tsp-cpu.sif.sha256)
+    printf 'Retain artifact directory: %s\n' "$directory"
+)
+```
+
+Do not bypass `%test` with `--notest`. It uses disposable `/tmp` caches and outputs, even when the image filesystem is read-only. Failures propagate and temporary state is removed on exit; retain the build log, wheel/receipt and SIF/checksum outside the temporary context. A failed build is not validated—use a fresh artifact directory for another attempt. Do not commit generated artifacts or unreviewed logs.
+
+### Owner: verify the finished SIF locally
+
+A successful build is not a finished-image mount/persistence check. Set `artifact_dir` to the **printed directory above**, not a later Git HEAD. Run from the same committed checkout so the tiny input examples match:
+
+```bash
+(
+    set -euo pipefail
+    artifact_dir="/absolute/path/to/the/retained/artifact-directory"
+    (cd "$artifact_dir"; sha256sum -c tsp-cpu.sif.sha256)
+    inputs="$PWD/examples"
+    outputs="$artifact_dir/local-validation-$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir "$outputs"
+    cache=$(mktemp -d /tmp/tsp-cache.XXXXXX)
+    trap 'rm -rf -- "$cache"' EXIT
+    mkdir -p "$cache/tmp" "$cache/numba" "$cache/xdg" "$cache/matplotlib"
+    apptainer exec --cleanenv --containall --no-mount home,cwd --pwd /opt/tsp \
+        --env NUMBA_NUM_THREADS=1,OMP_NUM_THREADS=1,OPENBLAS_NUM_THREADS=1,MKL_NUM_THREADS=1 \
+        --bind "$inputs:/inputs:ro" --bind "$outputs:/outputs:rw" --bind "$cache:/cache:rw" \
+        "$artifact_dir/tsp-cpu.sif" /opt/tsp/.venv/bin/python -I -B /opt/tsp/check_runtime.py \
+        --inputs /inputs --output /outputs/check
+    test -f "$outputs/check/report.json"
+    printf 'Retain host-side evidence: %s/check\n' "$outputs"
+)
+```
+
+The [verifier](../containers/check_runtime.py) requires the installed isolated interpreter, one-thread limits and a nonempty effective CPU affinity. External inputs must actually be read-only. It requires the explicit scientific domain suites plus CLI/native-cache regressions to pass with no skipped checks and records their counts; Git/wheel-building, HTTP and browser tests remain host-side, not silently represented as image coverage. It then runs the installed NN CLI on the square manifest: four v2 trials, independently checked tours/cost 4, matching verified build identities, two eligible pairs, and CLI analysis/reference reports. Production kernels must create native cache files in a fresh writable cache. These tiny-run timings/ratios are **correctness evidence, not benchmark results**; no parallel solver capability is claimed.
+
+Retain `check/report.json`, `tests.xml`, `trials.jsonl`, `analysis/` and the build log with the wheel/receipt and external SIF checksum. The pass report is written last and read back; existing output directories are refused. Partial output after a failed check is not success evidence. The verifier rechecks installed/build inputs after testing, records CPU models/affinity and thread count, and never schedules or connects elsewhere.
+
+### Owner: transfer and allocated execution
+
+Transfer the identified SIF/checksum together using your approved SSH configuration; verify against the **original** checksum at the destination before execution. Never overwrite an image referenced by results or regenerate a checksum from a damaged copy. Keep an independent artifact backup and confirm storage visibility/permissions from the intended compute nodes. No repository script performs the transfer.
+
+After local verification, repeat the finished-image check within an authorized allocation on each target platform you intend to claim as validated. Load the available `tools/Apptainer` module inside the allocation, record its actual version, and launch through Slurm with matching thread/resource limits. If recording the job ID, pass `SLURM_JOB_ID` explicitly through the clean container environment. Account/partition selection and a reusable launcher are separate owner-reviewed work, not supplied here.
+
+Use deliberate `/inputs:ro`, `/outputs:rw` and job-specific `/cache:rw` binds. Never overlay `/opt/tsp`, bind a host venv into the image, install packages at runtime, or reintroduce Python/library search paths. Native caches are CPU/image-specific and not portable build artifacts. A local result does not certify Aion/Iris; one cluster does not certify the other. Containerization does not replace [placement controls](#cpu-placement-and-numa), and GPU/MPI need their separate checks below.
 
 ## CPU placement and NUMA
 
