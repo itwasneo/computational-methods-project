@@ -59,6 +59,20 @@ def test_source_provenance_tracks_package_checkout_not_callers_directory(tmp_pat
         assert runner._source_state() == {"revision": None, "dirty": None}
 
 
+def test_build_helper_bootstraps_without_installed_project():
+    program = """
+from importlib.metadata import distributions
+import runpy, sys
+assert not list(distributions(name='tsp-hpc'))
+before = sys.path[:]
+runpy.run_path(sys.argv[1])
+assert sys.path == before
+assert not any(name == 'tsp_hpc' or name.startswith('tsp_hpc.') for name in sys.modules)
+assert 'numpy' not in sys.modules
+"""
+    command(sys.executable, "-I", "-S", "-c", program, str(ROOT / "tools/build_verified_wheel.py"))
+
+
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     work = tmp_path_factory.mktemp("verified-wheel")
@@ -70,7 +84,9 @@ def built(tmp_path_factory):
         shutil.copytree(ROOT / name, checkout / name, ignore=shutil.ignore_patterns("__pycache__"))
     command("git", "init", "--quiet", str(checkout))
     revision = commit(checkout)
-    result = command(sys.executable, str(checkout / "tools/build_verified_wheel.py"),
+    # Disable site initialization as well as user/environment paths: the producer
+    # must work before this project (or its dependencies) has been installed.
+    result = command(sys.executable, "-I", "-S", str(checkout / "tools/build_verified_wheel.py"),
                      "--offline", "--output", str(work / "wheels"), cwd=work)
     wheel = Path(result.stdout.strip().splitlines()[-1])
     receipt = json.loads(wheel.with_name(wheel.name + ".build.json").read_text())
