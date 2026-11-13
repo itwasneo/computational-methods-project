@@ -1,5 +1,12 @@
 {
   "description": "Contract-only wire examples, not runner records or benchmark evidence. IDs and handles are illustrative.",
+  "session": {
+    "api_version": 1,
+    "request_id": "request-pair",
+    "token_type": "Bearer",
+    "session_token": "synthetic-token-not-a-credential",
+    "session_id": "session-demo"
+  },
   "workspace": {
     "api_version": 1,
     "request_id": "request-workspace",

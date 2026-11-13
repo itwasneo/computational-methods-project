@@ -70,13 +70,13 @@
   <p class="notice">Read-only results from your selected workspace. No solver execution or real-data geometry yet.</p>
   {#if !view.paired}
     <form class="connection-panel" onsubmit={connect}>
-      <p>Start the local backend on port 8000, then enter the same random secret supplied at its startup prompt.</p>
+      <p>Start the local backend on port 8000, then enter the random secret supplied at its startup or owner re-pairing prompt.</p>
       <label>Session pairing secret
         <input type="password" bind:value={secret} required minlength="43" maxlength="128" pattern={PAIRING_PATTERN}
           autocomplete="off" spellcheck="false" disabled={!!view.busy} />
       </label>
       <button disabled={!!view.busy}>Pair with local backend</button>
-      <p class="notice">Credentials are kept only in memory. Reloading or disconnecting requires restarting the backend before pairing again.</p>
+      <p class="notice">Credentials are kept only in memory. After reloading or disconnecting, ask the owner to enable fresh pairing with the terminal's <code>pair</code> command. The backend stays running.</p>
     </form>
   {:else}
     <section class="connection-panel" aria-label="Workspace sources">
@@ -113,7 +113,7 @@
   {#if view.error}
     <div role="alert" class="error-panel">
       <p>{view.error}</p>
-      {#if view.errorCode === 'unauthorized'}<p>Restart the backend before pairing again.</p>{/if}
+      {#if view.errorCode === 'unauthorized'}<p>Ask the owner to enable fresh pairing in the backend terminal, then enter the new secret.</p>{/if}
       {#if view.paired && view.dataset?.state === 'ready'}
         <button disabled={!!view.busy} onclick={() => controller.query()}>Retry first page</button>
       {/if}
