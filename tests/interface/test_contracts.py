@@ -58,6 +58,17 @@ def test_wire_examples_match_python_design_types(wire):
     assert c.GEOMETRY_BYTES_MAX == 16 * 1024 * 1024
 
 
+def test_local_run_examples_use_the_same_descriptive_type_boundary():
+    runs = json.loads(FIXTURE.with_name("local-runs-v1.json").read_text())
+    for name, entry in runs["examples"].items():
+        kind = getattr(c, entry["type"])
+        assert is_typeddict(kind), name
+        assert matches(entry["value"], kind), name
+    assert c.RUN_LIST_MAX == 1000
+    assert int(runs["examples"]["generate"]["value"]["generation"]["seed"]) == 2**64 - 1
+    assert int(runs["examples"]["generate_clustered"]["value"]["generation"]["seed"]) == 2**53 + 1
+
+
 def test_float64_wire_preserves_bytes_identity_duplicates_and_zero_cost(wire):
     geometry = wire["geometry"]
     raw = base64.b64decode(geometry["coordinates"]["data"], validate=True)

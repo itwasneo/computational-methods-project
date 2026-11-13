@@ -1,7 +1,7 @@
-"""Read-only API v1 DTO types, not runtime validators.
+"""API v1 wire types, not runtime validators or authorization.
 
 Workspace/session/catalog, dataset lifecycle and trial queries implement a subset;
-facet/detail/geometry DTOs remain design-only.
+facet/detail/geometry and local-run DTOs remain design-only.
 
 See docs/interface.md. Scientific validation remains in the shared Python APIs.
 All fields are required, including nullable fields. Wire seeds are decimal strings.
@@ -14,6 +14,7 @@ PAGE_DEFAULT = 100
 PAGE_MAX = 500
 VALUES_PER_FILTER_MAX = 500
 SHARDS_MAX = 64
+RUN_LIST_MAX = 1000  # Wire ceiling, not an execution/resource allowance.
 GEOMETRY_BYTES_MAX = 16 * 1024 * 1024
 SAFE_INTEGER = 2**53 - 1
 NULLABLE_FIELDS = frozenset({"implementation", "best_cost", "search_time_s"})
@@ -244,3 +245,171 @@ class ErrorResponse(TypedDict):
     ]
     message: str
     retryable: bool
+
+
+# Local-run contracts. Requests use handles, never paths or process IDs.
+Implementation = Literal["visited-scan-v1", "remaining-array-v1"]
+DistanceMode = Literal["dense", "on_demand"]
+
+
+class RunContext(CatalogRefreshRequest):
+    # Owner-authorized re-pairing revokes the old session, not durable jobs.
+    session_id: str
+
+
+class InstanceIdentity(TypedDict):
+    instance_id: str
+    coordinate_checksum: str
+    n_cities: int
+    distance_kind: Literal["euclidean_2d"]
+    instance_seed: str | None
+
+
+class UniformGeneration(TypedDict):
+    generator: Literal["uniform-v1"]
+    n_cities: int
+    seed: str
+    side_length: float
+
+
+class ClusteredGeneration(TypedDict):
+    generator: Literal["clustered-v1"]
+    n_cities: int
+    seed: str
+    side_length: float
+    n_clusters: int
+    standard_deviation: float
+
+
+class InstanceLoadRequest(RunContext):
+    artifact_handle: str
+    artifact_revision: str
+
+
+class InstanceGenerateRequest(RunContext):
+    generation: UniformGeneration | ClusteredGeneration
+
+
+class InstanceSnapshot(RunContext):
+    # Binds immutable artifact content and provenance, not just coordinates.
+    instance_snapshot_id: str
+    instance: InstanceIdentity
+
+
+class RunLimits(TypedDict):
+    max_cities: int
+    max_start_cities: int
+    max_repetitions: int
+    max_trials: int
+    max_queued_campaigns: int
+    max_matrix_bytes: int
+
+
+class OutputRoot(TypedDict):
+    root_id: str
+    display_name: str
+
+
+class RunCapabilities(RunContext):
+    capabilities_revision: str
+    local_runs_enabled: bool
+    implementations: list[Implementation]
+    distance_modes: list[DistanceMode]
+    limits: RunLimits
+    output_root: OutputRoot | None
+
+
+class CampaignConfiguration(TypedDict):
+    implementations: list[Implementation]
+    distance_modes: list[DistanceMode]
+    start_cities: list[int]
+    repetitions: list[int]
+    solver_seed: str
+    max_matrix_bytes: int
+
+
+class PreflightRequest(RunContext):
+    instance_snapshot_id: str
+    capabilities_revision: str
+    configuration: CampaignConfiguration
+
+
+class CampaignPreflight(PreflightRequest):
+    # Binds the reviewed snapshot, configuration, capabilities and output root.
+    preflight_id: str
+    output_root: OutputRoot
+    trial_count: int
+    estimated_matrix_bytes: int  # Not a total-memory bound.
+
+
+class JobSubmitRequest(RunContext):
+    # Service must persist key+plan: same key/plan returns the same job; changed
+    # plan conflicts. request_id only correlates requests. Types do not deduplicate.
+    preflight_id: str
+    submission_key: str
+
+
+class JobStatusRequest(RunContext):
+    job_id: str
+
+
+class JobControlRequest(JobStatusRequest):
+    expected_revision: str
+    action: Literal["cancel_queued", "stop_after_trial", "stop_now"]
+
+
+class QueueContinueRequest(RunContext):
+    expected_queue_revision: str
+
+
+class QueueStatus(RunContext):
+    queue_revision: str
+    dispatch: Literal["enabled", "held"]
+    active_job_id: str | None
+    pending_job_ids: list[str]
+
+
+class JobStatus(RunContext):
+    job_id: str
+    revision: str
+    submission_key: str
+    preflight_id: str
+    instance_snapshot_id: str
+    campaign_id: str | None
+    state: Literal["queued", "held", "preparing", "running", "stop_requested", "stopping",
+                   "completed", "failed", "cancelled", "interrupted"]
+    queue_position: int | None
+    stop_mode: Literal["after_trial", "now"] | None
+    planned_trials: int
+    recorded_trials: int
+    failed_trials: int
+    result_handle: str | None
+    elapsed_time_s: float | None
+
+
+class JobResultRequest(JobStatusRequest):
+    expected_revision: str
+    attempt_id: str
+
+
+class JobResultBinding(RunContext):
+    # Join into existing DetailsRequest/GeometryRequest, not UI-only results.
+    job_id: str
+    job_revision: str
+    campaign_id: str
+    attempt_id: str
+    instance_snapshot_id: str
+    instance: InstanceIdentity
+    result_handle: str
+    dataset_id: str
+    dataset_revision: str
+
+
+class RunError(TypedDict):
+    api_version: Literal[1]
+    request_id: str
+    code: Literal["invalid_request", "execution_disabled", "snapshot_stale", "preflight_stale",
+                  "queue_full", "submission_conflict", "job_stale", "job_not_found",
+                  "session_revoked", "owner_pairing_required", "internal_error"]
+    message: str
+    recovery: Literal["edit", "refresh", "owner_pairing", "none"]

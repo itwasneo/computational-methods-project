@@ -1,0 +1,117 @@
+{
+  "note": "Synthetic wire examples, not executed jobs or verified result evidence. Opaque IDs convey no authority.",
+  "examples": {
+    "load": {"type": "InstanceLoadRequest", "value": {
+      "api_version": 1, "request_id": "load", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "artifact_handle": "artifact-fixture", "artifact_revision": "catalog-fixture"
+    }},
+    "generate": {"type": "InstanceGenerateRequest", "value": {
+      "api_version": 1, "request_id": "generate", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "generation": {"generator": "uniform-v1", "n_cities": 4, "seed": "18446744073709551615", "side_length": 1.0}
+    }},
+    "generate_clustered": {"type": "InstanceGenerateRequest", "value": {
+      "api_version": 1, "request_id": "clustered", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "generation": {"generator": "clustered-v1", "n_cities": 4, "seed": "9007199254740993", "side_length": 1.0, "n_clusters": 2, "standard_deviation": 0.0}
+    }},
+    "snapshot": {"type": "InstanceSnapshot", "value": {
+      "api_version": 1, "request_id": "snapshot", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "instance_snapshot_id": "input-fixture",
+      "instance": {"instance_id": "square-fixture", "coordinate_checksum": "5bd594629b558cec3174cb988c57d2c4dc5e8ef38a0d352d32ee9e535ddc5275", "n_cities": 4, "distance_kind": "euclidean_2d", "instance_seed": null}
+    }},
+    "capabilities": {"type": "RunCapabilities", "value": {
+      "api_version": 1, "request_id": "capabilities", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "capabilities_revision": "capabilities-fixture", "local_runs_enabled": true,
+      "implementations": ["visited-scan-v1", "remaining-array-v1"], "distance_modes": ["dense", "on_demand"],
+      "limits": {"max_cities": 10000, "max_start_cities": 1000, "max_repetitions": 1000, "max_trials": 1000, "max_queued_campaigns": 4, "max_matrix_bytes": 268435456},
+      "output_root": {"root_id": "outputs-fixture", "display_name": "Authorized local run outputs"}
+    }},
+    "preflight_request": {"type": "PreflightRequest", "value": {
+      "api_version": 1, "request_id": "preflight", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "instance_snapshot_id": "input-fixture", "capabilities_revision": "capabilities-fixture",
+      "configuration": {"implementations": ["visited-scan-v1", "remaining-array-v1"], "distance_modes": ["dense", "on_demand"], "start_cities": [2, 0], "repetitions": [0, 3], "solver_seed": "18446744073709551615", "max_matrix_bytes": 268435456}
+    }},
+    "preflight": {"type": "CampaignPreflight", "value": {
+      "api_version": 1, "request_id": "preflight", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "instance_snapshot_id": "input-fixture", "capabilities_revision": "capabilities-fixture",
+      "configuration": {"implementations": ["visited-scan-v1", "remaining-array-v1"], "distance_modes": ["dense", "on_demand"], "start_cities": [2, 0], "repetitions": [0, 3], "solver_seed": "18446744073709551615", "max_matrix_bytes": 268435456},
+      "preflight_id": "preflight-fixture", "output_root": {"root_id": "outputs-fixture", "display_name": "Authorized local run outputs"},
+      "trial_count": 8, "estimated_matrix_bytes": 128
+    }},
+    "submit": {"type": "JobSubmitRequest", "value": {
+      "api_version": 1, "request_id": "submit-1", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "preflight_id": "preflight-fixture", "submission_key": "submission-fixture"
+    }},
+    "status_request": {"type": "JobStatusRequest", "value": {
+      "api_version": 1, "request_id": "status", "workspace_id": "workspace-fixture", "session_id": "session-fixture", "job_id": "job-fixture"
+    }},
+    "stop": {"type": "JobControlRequest", "value": {
+      "api_version": 1, "request_id": "stop", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "job_id": "job-fixture", "expected_revision": "job-revision-fixture", "action": "stop_after_trial"
+    }},
+    "continue_queue": {"type": "QueueContinueRequest", "value": {
+      "api_version": 1, "request_id": "continue", "workspace_id": "workspace-fixture", "session_id": "session-fixture", "expected_queue_revision": "queue-revision-fixture"
+    }},
+    "queue": {"type": "QueueStatus", "value": {
+      "api_version": 1, "request_id": "queue", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "queue_revision": "queue-revision-fixture", "dispatch": "held", "active_job_id": null, "pending_job_ids": ["job-fixture"]
+    }},
+    "job": {"type": "JobStatus", "value": {
+      "api_version": 1, "request_id": "status", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "job_id": "job-fixture", "revision": "job-revision-fixture", "submission_key": "submission-fixture", "preflight_id": "preflight-fixture", "instance_snapshot_id": "input-fixture",
+      "campaign_id": null, "state": "held", "queue_position": 1, "stop_mode": null,
+      "planned_trials": 8, "recorded_trials": 0, "failed_trials": 0, "result_handle": null, "elapsed_time_s": null
+    }},
+    "result_request": {"type": "JobResultRequest", "value": {
+      "api_version": 1, "request_id": "result", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "job_id": "job-fixture", "expected_revision": "job-revision-fixture", "attempt_id": "attempt-fixture"
+    }},
+    "result": {"type": "JobResultBinding", "value": {
+      "api_version": 1, "request_id": "result", "workspace_id": "workspace-fixture", "session_id": "session-fixture",
+      "job_id": "job-fixture", "job_revision": "job-revision-fixture", "campaign_id": "campaign-fixture", "attempt_id": "attempt-fixture", "instance_snapshot_id": "input-fixture",
+      "instance": {"instance_id": "square-fixture", "coordinate_checksum": "5bd594629b558cec3174cb988c57d2c4dc5e8ef38a0d352d32ee9e535ddc5275", "n_cities": 4, "distance_kind": "euclidean_2d", "instance_seed": null},
+      "result_handle": "result-fixture", "dataset_id": "dataset-fixture", "dataset_revision": "dataset-revision-fixture"
+    }},
+    "stale": {"type": "RunError", "value": {
+      "api_version": 1, "request_id": "preflight", "code": "preflight_stale", "message": "Review a new preflight before submission.", "recovery": "refresh"
+    }},
+    "revoked": {"type": "RunError", "value": {
+      "api_version": 1, "request_id": "status", "code": "session_revoked", "message": "Ask the owner to authorize pairing again. Jobs are unchanged.", "recovery": "owner_pairing"
+    }}
+  },
+  "invalid": [
+    {"base": "snapshot", "path": ["api_version"], "value": true},
+    {"base": "snapshot", "path": ["request_id"], "value": "snapshot\n"},
+    {"base": "snapshot", "path": ["instance", "instance_seed"], "value": "18446744073709551616"},
+    {"base": "snapshot", "path": ["instance", "instance_seed"], "value": 42},
+    {"base": "snapshot", "path": ["instance", "instance_seed"], "value": "01"},
+    {"base": "snapshot", "path": ["instance", "instance_seed"], "value": "1\n"},
+    {"base": "snapshot", "path": ["instance", "instance_seed"], "value": "1\r"},
+    {"base": "snapshot", "path": ["instance", "instance_seed"], "value": "1\u2028"},
+    {"base": "snapshot", "path": ["instance", "n_cities"], "value": true},
+    {"base": "snapshot", "path": ["instance", "distance_kind"], "value": "tsplib_euc_2d"},
+    {"base": "snapshot", "path": ["instance", "coordinate_checksum"], "value": "bad-checksum"},
+    {"base": "capabilities", "path": ["local_runs_enabled"], "value": false},
+    {"base": "capabilities", "path": ["implementations"], "value": ["external-solver"]},
+    {"base": "capabilities", "path": ["limits", "max_queued_campaigns"], "value": 1001},
+    {"base": "preflight", "path": ["configuration", "solver_seed"], "value": "+42"},
+    {"base": "preflight", "path": ["configuration", "implementations"], "value": ["visited-scan-v1", "visited-scan-v1"]},
+    {"base": "preflight", "path": ["configuration", "distance_modes"], "value": ["rounded"]},
+    {"base": "preflight", "path": ["configuration", "start_cities"], "value": [0, 0]},
+    {"base": "preflight", "path": ["configuration", "repetitions"], "value": [0, 3.5]},
+    {"base": "preflight", "path": ["trial_count"], "value": 4},
+    {"base": "preflight", "path": ["output_root", "path"], "value": "/arbitrary/destination"},
+    {"base": "queue", "path": ["pending_job_ids"], "value": ["job-fixture", "job-fixture"]},
+    {"base": "queue", "path": ["active_job_id"], "value": "job-fixture"},
+    {"base": "job", "path": ["state"], "value": "paused_solver"},
+    {"base": "job", "path": ["state"], "value": "completed"},
+    {"base": "job", "path": ["queue_position"], "value": null},
+    {"base": "job", "path": ["recorded_trials"], "value": 1},
+    {"base": "job", "path": ["failed_trials"], "value": 1},
+    {"base": "job", "path": ["elapsed_time_s"], "value": 0},
+    {"base": "job", "path": ["result_handle"], "value": "result-fixture"},
+    {"base": "result", "path": ["dataset_revision"], "value": null},
+    {"base": "result", "path": ["instance", "instance_seed"], "value": "-1"},
+    {"base": "revoked", "path": ["recovery"], "value": "refresh"},
+    {"base": "stale", "path": ["recovery"], "value": "owner_pairing"}
+  ]
+}

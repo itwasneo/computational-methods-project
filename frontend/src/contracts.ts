@@ -1,11 +1,12 @@
-// Read-only API v1 DTOs. Workspace/session/catalog/datasets/trial queries are implemented.
-// Facets/details/geometry remain planned. Runtime response guards live in results/client.ts.
+// API v1 wire types. Workspace/session/catalog/datasets/trial queries are implemented.
+// Facets/details/geometry/local runs remain planned. Response guards live in results/client.ts.
 // Mirrors tsp_hpc.interface.contracts; all fields are required, even when nullable.
 export const API_VERSION = 1;
 export const PAGE_DEFAULT = 100;
 export const PAGE_MAX = 500;
 export const VALUES_PER_FILTER_MAX = 500;
 export const SHARDS_MAX = 64;
+export const RUN_LIST_MAX = 1000; // Wire ceiling, not an execution/resource allowance.
 export const GEOMETRY_BYTES_MAX = 16 * 1024 * 1024;
 
 export type Field = 'attempt_id' | 'instance_id' | 'implementation' | 'n_cities' |
@@ -152,4 +153,71 @@ export interface ErrorResponse {
     'catalog_limit_exceeded' | 'artifact_too_large' | 'request_too_large';
   message: string;
   retryable: boolean;
+}
+
+// Local-run contracts: handles are references, not paths or authority.
+export type Implementation = 'visited-scan-v1' | 'remaining-array-v1';
+export type DistanceMode = 'dense' | 'on_demand';
+export interface RunContext extends CatalogRefreshRequest {
+  session_id: string; // Changes on owner-authorized re-pairing; jobs do not.
+}
+export interface InstanceIdentity extends InstanceDescriptor { distance_kind: 'euclidean_2d'; }
+export interface UniformGeneration { generator: 'uniform-v1'; n_cities: number; seed: string; side_length: number; }
+export interface ClusteredGeneration {
+  generator: 'clustered-v1'; n_cities: number; seed: string; side_length: number;
+  n_clusters: number; standard_deviation: number;
+}
+export interface InstanceLoadRequest extends RunContext { artifact_handle: string; artifact_revision: string; }
+export interface InstanceGenerateRequest extends RunContext { generation: UniformGeneration | ClusteredGeneration; }
+export interface InstanceSnapshot extends RunContext { instance_snapshot_id: string; instance: InstanceIdentity; }
+export interface RunLimits {
+  max_cities: number; max_start_cities: number; max_repetitions: number;
+  max_trials: number; max_queued_campaigns: number; max_matrix_bytes: number;
+}
+export interface OutputRoot { root_id: string; display_name: string; }
+export interface RunCapabilities extends RunContext {
+  capabilities_revision: string; local_runs_enabled: boolean;
+  implementations: Implementation[]; distance_modes: DistanceMode[];
+  limits: RunLimits; output_root: OutputRoot | null;
+}
+export interface CampaignConfiguration {
+  implementations: Implementation[]; distance_modes: DistanceMode[];
+  start_cities: number[]; repetitions: number[]; solver_seed: string; max_matrix_bytes: number;
+}
+export interface PreflightRequest extends RunContext {
+  instance_snapshot_id: string; capabilities_revision: string; configuration: CampaignConfiguration;
+}
+export interface CampaignPreflight extends PreflightRequest {
+  preflight_id: string; output_root: OutputRoot; trial_count: number; estimated_matrix_bytes: number;
+}
+// Service must persist key+plan: same key/plan returns the same job; changed plan
+// conflicts. request_id only correlates requests. Types do not deduplicate.
+export interface JobSubmitRequest extends RunContext { preflight_id: string; submission_key: string; }
+export interface JobStatusRequest extends RunContext { job_id: string; }
+export interface JobControlRequest extends JobStatusRequest {
+  expected_revision: string; action: 'cancel_queued' | 'stop_after_trial' | 'stop_now';
+}
+export interface QueueContinueRequest extends RunContext { expected_queue_revision: string; }
+export interface QueueStatus extends RunContext {
+  queue_revision: string; dispatch: 'enabled' | 'held'; active_job_id: string | null; pending_job_ids: string[];
+}
+export type JobState = 'queued' | 'held' | 'preparing' | 'running' | 'stop_requested' | 'stopping' |
+  'completed' | 'failed' | 'cancelled' | 'interrupted';
+export interface JobStatus extends RunContext {
+  job_id: string; revision: string; submission_key: string; preflight_id: string; instance_snapshot_id: string;
+  campaign_id: string | null; state: JobState; queue_position: number | null; stop_mode: 'after_trial' | 'now' | null;
+  planned_trials: number; recorded_trials: number; failed_trials: number;
+  result_handle: string | null; elapsed_time_s: number | null;
+}
+export interface JobResultRequest extends JobStatusRequest { expected_revision: string; attempt_id: string; }
+export interface JobResultBinding extends RunContext {
+  job_id: string; job_revision: string; campaign_id: string; attempt_id: string;
+  instance_snapshot_id: string; instance: InstanceIdentity; result_handle: string;
+  dataset_id: string; dataset_revision: string;
+}
+export interface RunError {
+  api_version: 1; request_id: string;
+  code: 'invalid_request' | 'execution_disabled' | 'snapshot_stale' | 'preflight_stale' | 'queue_full' |
+    'submission_conflict' | 'job_stale' | 'job_not_found' | 'session_revoked' | 'owner_pairing_required' | 'internal_error';
+  message: string; recovery: 'edit' | 'refresh' | 'owner_pairing' | 'none';
 }
