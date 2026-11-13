@@ -7,7 +7,7 @@ The interface is a read-only companion to [run → analyze](usage.md), not a sec
 | Part | Implemented | Not implemented |
 | --- | --- | --- |
 | Svelte 5 / TypeScript / Vite | Pairing, workspace selection, ingestion status, paged real trial rows, server-side filters/sorting | Facet lists, charts, editor and job controls |
-| FastAPI / Pydantic / Uvicorn | Session, authorized catalog, bounded ingestion and scalar trial queries | Instance/tour authentication, details/geometry endpoints, solver jobs |
+| FastAPI / Pydantic / Uvicorn | Session and owner-terminal re-pairing, authorized catalog, bounded ingestion and scalar trial queries | Instance/tour authentication, details/geometry endpoints, solver jobs |
 | WebGL2 | Separate synthetic viewer preview | Real-result artifact binding |
 | Delivery | Guarded same-origin development proxy | Bundled frontend serving from the installed CLI |
 
@@ -33,7 +33,7 @@ pnpm --dir frontend run dev
 
 Open **http://127.0.0.1:5173**, enter the same secret, select `nn.jsonl` and click **Load**. Leave the expected manifest unset unless an actual manifest JSON is present; instance/reference JSON is not a manifest. The owner's square example produces four real trial rows. This reads the existing shard without changing it.
 
-- The secret input clears on submission; the session token stays in memory, never browser storage. Reload/disconnect requires restarting the backend before pairing again. Switching views retains the session.
+- The secret input clears on submission; the session token stays in memory, never browser storage. After reload/disconnect, type `pair` and Enter **in the running backend terminal**, supply a fresh secret at the hidden prompt, then pair in the browser. No backend restart is needed. Switching views retains the session.
 - Trial pages contain up to 100 attempts. Previous/Next, sorting and exact-value filters operate on the entire dataset **on the server**. Enter one value per line; blank filters are unrestricted. Nullable columns offer **Include missing values**. There are no misleading current-page facet lists.
 - Attempt expansion shows completeness, duplicate and usable flags. `usable` does not certify comparison eligibility or producer provenance. Real geometry is explicitly unavailable; synthetic geometry is never substituted.
 - Loading, empty, failed and stale states are explicit. Selection/refresh changes discard old pages; request/context checks reject late replies. Ready datasets are rechecked every five seconds and on queries, not through an instantaneous filesystem watcher.
@@ -54,7 +54,13 @@ Installed users can install `tsp-hpc[interface]`. `tsp-hpc serve` binds only `12
 
 ### Session and HTTP boundary
 
-Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token; five failed attempts exhaust pairing. Restart for a new client. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.
+Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.
+
+Interactive launches accept the owner's `pair` command in that terminal. Command/secret input is hidden and bounded. A valid fresh secret revokes the previous token, changes the session identity and permits one new exchange, including after exhausted attempts. Empty/invalid/unchanged secrets leave access unchanged. Catalog handles, dataset revisions and ongoing ingestion survive; the browser still reconnects explicitly. There is no HTTP reset or additional control socket.
+
+Rotation and bounded API handlers serialize at admission; handlers recheck credentials after body parsing. An already-admitted operation finishes before rotation, and its response may still arrive afterward. Revocation is not retroactive cancellation. Background ingestion runs outside this admission lock.
+
+Ctrl-D disables terminal controls without stopping the backend; Ctrl-C stops the backend, even during a partial secret. Terminal settings are restored and pending input discarded. `--session-secret-stdin` does not enable terminal controls. Without those controls, further re-arming requires a restart.
 
 Backend requests must use exactly `http://127.0.0.1:<port>`; native clients should disable environment-configured proxies. Strict Host/Origin/Fetch Metadata guards reject foreign/null origins, cross-site/same-site requests and duplicate authority headers. Native clients may omit Origin but still need credentials. Query strings, WebSockets, permissive CORS and public API-doc endpoints are unavailable.
 
@@ -67,14 +73,14 @@ Request bodies are limited to **16 KiB**, including chunked bodies; Uvicorn conc
 The owner selects a trusted POSIX root at startup. Its open directory descriptor anchors no-follow descendant reads; changing roots requires restart.
 
 - Only regular `.json`/`.jsonl` candidates are listed; hidden entries, symlinks, special files and unsupported suffixes are excluded. Candidate names are escaped display labels, not paths or authority. Embedded artifact paths confer no access.
-- Handles are opaque and session-bound. No uploads, writes, arbitrary paths, downloads or raw-file endpoints exist. Ingestion reopens known handles with no-follow/nonblocking flags and verifies identity before/after reads.
+- Handles are opaque and backend/workspace-bound, not credentials; re-pairing does not replace them. No uploads, writes, arbitrary paths, downloads or raw-file endpoints exist. Ingestion reopens known handles with no-follow/nonblocking flags and verifies identity before/after reads.
 - Catalog scans allow **10,000 entries / 16 directory levels**; exceeding either publishes no partial catalog. Device/inode/mode/size/mtime/ctime and directory changes invalidate metadata. Refresh rotates revision, handles and signed cursors even without file changes.
 
 Catalog revisions are not content validation. Choosing a root authorizes its regular files, including owner-created hard links. Hostile same-user writers, filesystem owners/mounts, arbitrary directory-renaming races and metadata forgery between syscalls are outside the threat model; keep untrusted writers out of the root.
 
 ### Background ingestion and in-memory index
 
-One session holds **one in-memory dataset and one worker, with no ingestion queue, database, persistent cache or shard copies**. A new accepted selection evicts the old dataset. Concurrent submission returns `ingestion_busy`, including while cancelled work unwinds.
+One backend holds **one in-memory dataset and one worker, with no ingestion queue, database, persistent cache or shard copies**. A new accepted selection evicts the old dataset. Concurrent submission returns `ingestion_busy`, including while cancelled work unwinds.
 
 | Bound | Limit |
 | --- | --- |
@@ -89,7 +95,7 @@ Input bounds fail before queuing; ingestion bounds produce `failed`/`dataset_lim
 
 Shared `read_sources`/`read_shards` validation owns the [malformed, incomplete, failed, duplicate and missing-execution policy](usage.md#validation-and-comparison-rules). Tables retain scalar metadata and lazy source locators, not every tour/plan. An expected manifest is necessary to identify wholly missing executions. `ready` means structural acceptance, potentially with exclusions—not independently authenticated objective costs or producer provenance.
 
-Publication is atomic. Revisions bind content SHA-256, manifest bytes, analysis/schema code, relevant dependency versions, limits and session/catalog context; this is cache invalidation, not verified build provenance. Status/query/lazy-read boundaries recheck sources. Observed changes, refresh and shutdown prevent obsolete publication; unrelated catalog changes conservatively invalidate too. Code changes require restart. Public diagnostics never echo raw exceptions, contents or private paths; full analysis diagnostics remain internal.
+Publication is atomic. Revisions bind content SHA-256, manifest bytes, analysis/schema code, relevant dependency versions, limits and backend workspace/catalog context; this is cache invalidation, not verified build provenance. Status/query/lazy-read boundaries recheck sources. Observed changes, refresh and shutdown prevent obsolete publication; unrelated catalog changes conservatively invalidate too. Code changes require restart. Public diagnostics never echo raw exceptions, contents or private paths; full analysis diagnostics remain internal.
 
 ## Read-only Results contract
 
@@ -99,7 +105,7 @@ All fields are required, including nullable ones. Use `api_version: 1` and `requ
 
 | Implemented route | Request / response | Specific input |
 | --- | --- | --- |
-| `POST /api/session` | `SessionRequest` / `SessionResponse` | Startup secret; no Bearer token yet |
+| `POST /api/session` | `SessionRequest` / `SessionResponse` | Startup or owner-replaced secret; no Bearer token yet |
 | `GET /api/workspace` | `WorkspaceResponse` | Optional `X-Request-ID` header |
 | `POST /api/artifacts/query` | `ArtifactQuery` / `ArtifactPage` | `limit`, nullable `cursor` |
 | `POST /api/artifacts/refresh` | `CatalogRefreshRequest` / `CatalogRefreshResponse` | Rebuild same root, invalidate dataset |

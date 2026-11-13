@@ -1,6 +1,6 @@
 """Optional local API foundation: session pairing and read-only candidate catalogs."""
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import hmac
 import re
@@ -25,34 +25,62 @@ REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,80}\Z")
 
 
 class Pairing:
-    """Owner-supplied, session-only bootstrap credential; no public token endpoint."""
+    """One browser grant, replaceable only by the trusted owner's terminal.
+
+    Rotation and bounded API operations serialize at admission. An operation
+    already admitted finishes first; slow bodies/queued handlers cannot use a
+    revoked grant. Rotation never touches catalog, dataset or worker state.
+    """
 
     def __init__(self, secret: str):
+        self._lock = threading.Lock()
+        self._closed = False
+        self._digest = b""
+        self.rearm(secret)
+
+    def rearm(self, secret: str):
+        """Owner-only in-process action, deliberately not an HTTP operation."""
         if not SECRET_PATTERN.fullmatch(secret):
             raise ValueError("Use a fresh random URL-safe secret of 43 to 128 characters.")
-        self._digest = hashlib.sha256(secret.encode()).digest()
-        self._token = secrets.token_urlsafe(32)
-        self._lock = threading.Lock()
-        self._attempts = 0
-        self._paired = False
+        digest = hashlib.sha256(secret.encode()).digest()
+        with self._lock:
+            if self._closed or hmac.compare_digest(digest, self._digest):
+                raise ValueError("Pairing is closed or the secret was not replaced.")
+            token, session_id = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
+            self._digest, self._token, self._session_id = digest, token, session_id
+            self._attempts = 0
+            self._authorization = None
 
     def exchange(self, secret: str):
         with self._lock:
-            self._attempts += 1
-            if self._paired or self._attempts > 5 or not hmac.compare_digest(hashlib.sha256(secret.encode()).digest(), self._digest):
-                raise InterfaceError("unauthorized", "Session pairing denied; restart to pair a new client.", 403)
-            self._paired = True
-            return self._token
+            self._attempts = min(self._attempts + 1, 6)
+            if self._authorization is not None or self._attempts > 5 or not hmac.compare_digest(hashlib.sha256(secret.encode()).digest(), self._digest):
+                raise InterfaceError("unauthorized", "Session pairing denied; ask the owner to enable fresh pairing in the backend terminal.", 403)
+            self._authorization = f"Bearer {self._token}".encode()
+            return self._token, self._session_id
 
     def authorized(self, header: bytes):
-        return self._paired and hmac.compare_digest(header, f"Bearer {self._token}".encode())
+        # A nonblocking preliminary check for the ASGI event loop. The immutable
+        # grant is checked again under the lock in the synchronous handler.
+        grant = self._authorization
+        return grant is not None and hmac.compare_digest(header, grant)
+
+    @contextmanager
+    def operation(self, header: bytes):
+        # Recheck at actual handler admission, not just before reading its body.
+        # Never hold this lock across HTTP reads/sends or background work.
+        with self._lock:
+            if not self.authorized(header):
+                raise InterfaceError("unauthorized", "Session authorization required.", 403)
+            yield
 
     def clear(self):
         with self._lock:
-            self._paired = False
+            self._closed = True
+            self._authorization = None
             self._attempts = 6
             self._digest = b""
-            self._token = ""
+            self._token = self._session_id = ""
 
 
 def error_response(error: InterfaceError, request_id: str):
@@ -182,6 +210,7 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
                 pairing.clear()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.pairing = pairing  # Launcher authority, never exposed through a route.
     app.add_middleware(LocalBoundary, origin=origin, pairing=pairing)
 
     @app.exception_handler(InterfaceError)
@@ -207,42 +236,52 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
     @app.post("/api/session")
     def session(body: SessionRequest, request: Request):
         request.state.request_id = body.request_id
-        token = pairing.exchange(body.secret)
-        return {"api_version": 1, "request_id": body.request_id, "token_type": "Bearer", "session_token": token}
+        token, session_id = pairing.exchange(body.secret)
+        return {"api_version": 1, "request_id": body.request_id, "token_type": "Bearer",
+                "session_token": token, "session_id": session_id}
+
+    def authorized_operation(request: Request):
+        return pairing.operation(request.headers.get("authorization", "").encode("latin-1"))
 
     @app.get("/api/workspace")
     def workspace_info(request: Request):
-        return {"api_version": 1, "request_id": request.state.request_id,
-                "workspace": request.app.state.catalog.workspace()}
+        with authorized_operation(request):
+            return {"api_version": 1, "request_id": request.state.request_id,
+                    "workspace": request.app.state.catalog.workspace()}
 
     @app.post("/api/artifacts/query")
     def artifacts(body: ArtifactRequest, request: Request):
-        catalog = catalog_for(request, body)
-        return {"api_version": 1, "request_id": body.request_id, "workspace_id": catalog.workspace_id,
-                **catalog.page(limit=body.limit, cursor=body.cursor)}
+        with authorized_operation(request):
+            catalog = catalog_for(request, body)
+            return {"api_version": 1, "request_id": body.request_id, "workspace_id": catalog.workspace_id,
+                    **catalog.page(limit=body.limit, cursor=body.cursor)}
 
     @app.post("/api/artifacts/refresh")
     def refresh(body: WorkspaceRequest, request: Request):
-        catalog = catalog_for(request, body)
-        revision = catalog.refresh()
-        request.app.state.datasets.invalidate()
-        return {"api_version": 1, "request_id": body.request_id, "workspace_id": catalog.workspace_id,
-                "revision": revision}
+        with authorized_operation(request):
+            catalog = catalog_for(request, body)
+            revision = catalog.refresh()
+            request.app.state.datasets.invalidate()
+            return {"api_version": 1, "request_id": body.request_id, "workspace_id": catalog.workspace_id,
+                    "revision": revision}
 
     @app.post("/api/datasets", status_code=202)
     def ingest(body: DatasetRequest, request: Request):
-        catalog_for(request, body)
-        return request.app.state.datasets.submit(body.result_handles, body.expected_manifest_handle,
-                                                 body.artifact_catalog_revision, body.request_id)
+        with authorized_operation(request):
+            catalog_for(request, body)
+            return request.app.state.datasets.submit(body.result_handles, body.expected_manifest_handle,
+                                                     body.artifact_catalog_revision, body.request_id)
 
     @app.post("/api/datasets/status")
     def dataset_status(body: DatasetStatusRequest, request: Request):
-        catalog_for(request, body)
-        return request.app.state.datasets.status(body.dataset_id, body.request_id)
+        with authorized_operation(request):
+            catalog_for(request, body)
+            return request.app.state.datasets.status(body.dataset_id, body.request_id)
 
     @app.post("/api/trials/query")
     def trials(body: TrialQueryRequest, request: Request):
-        catalog_for(request, body)
-        return request.app.state.trial_queries.page(body.model_dump())
+        with authorized_operation(request):
+            catalog_for(request, body)
+            return request.app.state.trial_queries.page(body.model_dump())
 
     return app

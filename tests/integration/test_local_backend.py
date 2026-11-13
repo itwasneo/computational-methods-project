@@ -118,6 +118,197 @@ def test_real_server_pairing_and_clean_shutdown(tmp_path):
             process.communicate(timeout=5)
 
 
+@pytest.mark.parametrize("ending", ["partial_secret", "terminal_eof"])
+def test_real_terminal_repairing_preserves_backend_and_restores_terminal(tmp_path, ending):
+    pytest.importorskip("uvicorn")
+    pytest.importorskip("fastapi")
+    import os
+    import pty
+    import select
+    import termios
+
+    (tmp_path / "empty.jsonl").touch()
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        port = reserved.getsockname()[1]
+    master, terminal = pty.openpty()
+    original = termios.tcgetattr(terminal)
+    first, second = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    transcript, pending = bytearray(), bytearray()
+    process = subprocess.Popen(
+        [sys.executable, "-m", "tsp_hpc", "serve", "--workspace", str(tmp_path), "--port", str(port)],
+        stdin=terminal, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
+    )
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def until(marker):
+        marker = marker.encode()
+        deadline = time.monotonic() + 10
+        while marker not in pending:
+            assert process.poll() is None, "interactive backend exited unexpectedly"
+            assert time.monotonic() < deadline, "interactive backend prompt timed out"
+            if select.select([process.stdout], [], [], 0.1)[0]:
+                chunk = os.read(process.stdout.fileno(), 4096)
+                assert chunk, "interactive backend output closed"
+                transcript.extend(chunk)
+                pending.extend(chunk)
+        del pending[:pending.index(marker) + len(marker)]
+
+    def request(path, token="", body=None):
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        data = None
+        if body is not None:
+            data = json.dumps({"api_version": 1, "request_id": "terminal-test", **body}).encode()
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data, headers=headers)
+        try:
+            response = direct.open(req, timeout=3)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    try:
+        until("Session pairing secret")
+        os.write(master, (first + "\n").encode())
+        until("Owner command")
+        for _ in range(100):
+            try:
+                assert request("/api/workspace")[0] == 403
+                break
+            except (OSError, TimeoutError):
+                time.sleep(0.05)
+        else:
+            pytest.fail("interactive backend did not start")
+        code, initial = request("/api/session", body={"secret": first})
+        assert code == 200
+        token = initial["session_token"]
+        workspace = request("/api/workspace", token)[1]["workspace"]
+        context = {"workspace_id": workspace["workspace_id"]}
+        code, catalog = request("/api/artifacts/query", token, {**context, "limit": 100, "cursor": None})
+        assert code == 200
+        code, dataset = request("/api/datasets", token, {**context,
+            "result_handles": [catalog["items"][0]["artifact_handle"]], "expected_manifest_handle": None,
+            "artifact_catalog_revision": catalog["revision"]})
+        assert code == 202
+        poll = {**context, "dataset_id": dataset["dataset_id"]}
+        for _ in range(100):
+            code, dataset = request("/api/datasets/status", token, poll)
+            if code == 200 and dataset["state"] == "ready":
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("dataset did not become ready")
+        os.write(master, b"pair\n")
+        until("empty line cancels): ")
+        assert request("/api/workspace", token)[0] == 200  # Prompt does not block or revoke early.
+        os.write(master, (second + "\n").encode())
+        until("Previous browser access revoked.")
+        assert request("/api/workspace", token)[0] == 403
+        assert request("/api/session", body={"secret": first})[0] == 403
+        code, replacement = request("/api/session", body={"secret": second})
+        assert code == 200 and replacement["session_id"] != initial["session_id"]
+        new_token = replacement["session_token"]
+        assert new_token != token
+        assert request("/api/workspace", new_token)[1]["workspace"] == workspace
+        assert request("/api/datasets/status", new_token, poll)[1] == dataset
+        assert request("/api/session/reset", new_token, {})[0] == 404
+        if ending == "terminal_eof":
+            os.write(master, b"\x04")
+            until("Owner terminal controls disabled")
+            assert termios.tcgetattr(terminal) == original
+            assert request("/api/workspace", new_token)[0] == 200
+        else:
+            os.write(master, b"pair\n")
+            until("empty line cancels): ")
+            os.write(master, b"partial-secret-never-submitted")
+        process.send_signal(signal.SIGINT)
+        remaining, _ = process.communicate(timeout=10)
+        transcript.extend(remaining)
+        assert process.returncode == 0
+        assert termios.tcgetattr(terminal) == original
+        # A partial hidden secret must not be delivered to the next terminal reader.
+        os.write(master, b"\n")
+        assert select.select([terminal], [], [], 3)[0]
+        assert os.read(terminal, 1024) == b"\n"
+        os.set_blocking(master, False)
+        try:
+            while True:
+                echo = os.read(master, 4096)
+                if not echo:
+                    break
+                transcript.extend(echo)  # Include any terminal echo, not just server output.
+        except BlockingIOError:
+            pass
+        output = transcript.decode(errors="replace")
+        for private in (first, second, token, new_token, str(tmp_path), "partial-secret-never-submitted", "Traceback"):
+            assert private not in output
+        assert (tmp_path / "empty.jsonl").read_bytes() == b""
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["empty.jsonl"]
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)
+        os.close(master)
+        os.close(terminal)
+
+
+def test_owner_terminal_bounds_discard_whole_overlong_lines():
+    pytest.importorskip("uvicorn")
+    pytest.importorskip("fastapi")
+    import os
+    import threading
+    from tsp_hpc.interface.launcher import _terminal_line
+
+    reader, writer = os.pipe()
+    try:
+        os.write(writer, b"x" * 2000 + b"\npair\n" + b"s" * 128 + b"\n")
+        os.close(writer)
+        writer = -1
+        stop = threading.Event()
+        assert _terminal_line(reader, stop, 128) == ""  # Not the first 128 characters.
+        assert _terminal_line(reader, stop, 4) == "pair"
+        assert _terminal_line(reader, stop, 128) == "s" * 128
+        assert _terminal_line(reader, stop, 128) is None
+    finally:
+        os.close(reader)
+        if writer >= 0:
+            os.close(writer)
+
+
+def test_owner_terminal_failure_is_sanitized_and_restores_echo(monkeypatch, capsys):
+    pytest.importorskip("uvicorn")
+    pytest.importorskip("fastapi")
+    import os
+    import pty
+    import termios
+    import threading
+    from tsp_hpc.interface import launcher
+    from tsp_hpc.interface.server import Pairing
+
+    master, terminal = pty.openpty()
+    original = termios.tcgetattr(terminal)
+    secret = secrets.token_urlsafe(32)
+    pairing = Pairing(secret)
+    token, _ = pairing.exchange(secret)
+
+    def failed_read(*_args):
+        raise OSError(f"private terminal failure {secret} {token}")
+
+    monkeypatch.setattr(launcher, "_terminal_line", failed_read)
+    try:
+        launcher._owner_controls(pairing, terminal, threading.Event())
+        assert termios.tcgetattr(terminal) == original
+        assert pairing.authorized(f"Bearer {token}".encode())
+        output = capsys.readouterr().err
+        assert "Owner terminal controls unavailable" in output
+        for private in (secret, token, "private terminal failure", "Traceback"):
+            assert private not in output
+    finally:
+        os.close(master)
+        os.close(terminal)
+
+
 def test_cancelled_hidden_prompt_is_sanitized_and_releases_port(tmp_path, monkeypatch):
     pytest.importorskip("uvicorn")
     pytest.importorskip("fastapi")

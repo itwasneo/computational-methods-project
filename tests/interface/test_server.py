@@ -134,6 +134,155 @@ def test_websocket_channels_are_rejected(session):
     assert error.value.code == 1008
 
 
+def test_owner_rearming_replaces_grant_and_recovers_exhausted_pairing(monkeypatch):
+    first, second, third = (secrets.token_urlsafe(32) for _ in range(3))
+    pair = Pairing(first)
+    token, identity = pair.exchange(first)
+    header = f"Bearer {token}".encode()
+    for invalid in ("", "short", "x" * 129, first):
+        with pytest.raises(ValueError):
+            pair.rearm(invalid)
+        assert pair.authorized(header)
+    pair.rearm(second)
+    assert not pair.authorized(header)
+    for _ in range(5):
+        with pytest.raises(InterfaceError):
+            pair.exchange(first)
+    with pytest.raises(InterfaceError):
+        pair.exchange(second)
+    pair.rearm(third)
+    replacement, new_identity = pair.exchange(third)
+    assert replacement != token and new_identity != identity
+    assert pair.authorized(f"Bearer {replacement}".encode())
+    assert not pair.authorized(f"Bearer {new_identity}".encode())  # Identity is not authority.
+    with pytest.raises(InterfaceError):
+        pair.exchange(third)
+
+    def broken_random(_size):
+        raise RuntimeError("random source unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("tsp_hpc.interface.server.secrets.token_urlsafe", broken_random)
+        with pytest.raises(RuntimeError):
+            pair.rearm(second)
+    assert pair.authorized(f"Bearer {replacement}".encode())
+    pair.clear()
+    assert not pair.authorized(f"Bearer {replacement}".encode())
+    with pytest.raises(ValueError):
+        pair.rearm(first)
+    with pytest.raises(InterfaceError):
+        pair.exchange(third)
+
+
+def test_owner_rotation_waits_for_admitted_operation_but_denies_later_old_grants():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    first, second = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    pair = Pairing(first)
+    token, _ = pair.exchange(first)
+    header = f"Bearer {token}".encode()
+    entered = threading.Event()
+
+    def rotate():
+        entered.set()
+        pair.rearm(second)
+
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        with pair.operation(header):
+            rotation = worker.submit(rotate)
+            assert entered.wait(5)
+            assert not rotation.done()
+        rotation.result(timeout=5)
+    with pytest.raises(InterfaceError):
+        with pair.operation(header):
+            pytest.fail("revoked operation was admitted")
+
+
+def test_repairing_preserves_catalog_and_running_ingestion(session, tmp_path, monkeypatch):
+    import threading
+
+    client, app, workspace, old_secret, old_token = session
+    body = dataset_request(session, tmp_path)
+    catalog = client.post("/api/artifacts/query", json=query(workspace)).json()
+    identity = app.state.pairing._session_id
+    started, release = threading.Event(), threading.Event()
+    original = app.state.datasets._ingest
+
+    def gated(entry):
+        started.set()
+        assert release.wait(10)
+        original(entry)
+
+    monkeypatch.setattr(app.state.datasets, "_ingest", gated)
+    try:
+        accepted = client.post("/api/datasets", json=body).json()
+        assert started.wait(5)
+        future = app.state.datasets._future
+        fresh = secrets.token_urlsafe(32)
+        app.state.pairing.rearm(fresh)
+        assert client.get("/api/workspace").status_code == 403
+        assert client.post("/api/session", json={"api_version": 1, "request_id": "old", "secret": old_secret}).status_code == 403
+        fresh_body = {"api_version": 1, "request_id": "new", "secret": fresh}
+        assert client.post("/api/session", json=fresh_body, headers={"Origin": "null"}).status_code == 403
+        paired = client.post("/api/session", json=fresh_body)
+        assert paired.status_code == 200
+        assert paired.json()["session_token"] != old_token
+        assert paired.json()["session_id"] != identity
+        client.headers["Authorization"] = f"Bearer {paired.json()['session_token']}"
+        assert client.get("/api/workspace").json()["workspace"] == workspace
+        assert client.post("/api/artifacts/query", json=query(workspace)).json() == catalog
+        poll = {"api_version": 1, "request_id": "poll", "workspace_id": workspace["workspace_id"],
+                "dataset_id": accepted["dataset_id"]}
+        assert client.post("/api/datasets/status", json=poll).json()["state"] == "loading"
+        assert app.state.datasets._future is future and not future.done()
+        for endpoint in ("/api/session/reset", "/api/session/rearm", "/api/jobs/submit", "/api/jobs/stop"):
+            assert client.post(endpoint, json={}).status_code == 404
+            assert client.post(endpoint, json={}, headers={"Authorization": ""}).status_code == 403
+    finally:
+        release.set()
+    future.result(timeout=10)
+    assert client.post("/api/datasets/status", json=poll).json()["state"] == "ready"
+    assert (tmp_path / "empty.jsonl").read_bytes() == b""
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["empty.jsonl", "one.json"]
+
+
+def test_revocation_during_body_read_cannot_admit_a_stale_handler(session, monkeypatch):
+    import asyncio
+
+    _, app, workspace, _, token = session
+    body = json.dumps({"api_version": 1, "request_id": "slow", "workspace_id": workspace["workspace_id"]}).encode()
+    messages = []
+    new_secret = secrets.token_urlsafe(32)
+    reads = 0
+
+    def forbidden_refresh():
+        pytest.fail("a revoked request reached catalog mutation")
+
+    monkeypatch.setattr(app.state.catalog, "refresh", forbidden_refresh)
+
+    async def receive():
+        nonlocal reads
+        reads += 1
+        if reads == 1:
+            app.state.pairing.rearm(new_secret)
+            return {"type": "http.request", "body": body[:5], "more_body": True}
+        return {"type": "http.request", "body": body[5:], "more_body": False}
+
+    async def send(message):
+        messages.append(message)
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+             "scheme": "http", "path": "/api/artifacts/refresh", "raw_path": b"/api/artifacts/refresh",
+             "query_string": b"", "root_path": "", "server": ("127.0.0.1", 8000), "client": ("127.0.0.1", 1234),
+             "headers": [(b"host", b"127.0.0.1:8000"), (b"authorization", f"Bearer {token}".encode()),
+                         (b"content-type", b"application/json"), (b"x-request-id", b"slow")]}
+    asyncio.run(app(scope, receive, send))
+    assert reads == 2
+    assert messages[0]["status"] == 403
+    assert json.loads(messages[1]["body"])["code"] == "unauthorized"
+
+
 def test_startup_failure_and_bad_port_are_explicit(tmp_path):
     secret = secrets.token_urlsafe(32)
     for port in (0, 65536, True):

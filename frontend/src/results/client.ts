@@ -23,7 +23,7 @@ export class ApiError extends Error {
 }
 
 function isSession(data: unknown): data is SessionResponse {
-  return isObject(data) && data.token_type === 'Bearer' && isText(data.session_token);
+  return isObject(data) && data.token_type === 'Bearer' && isId(data.session_token) && isId(data.session_id);
 }
 
 function isWorkspace(data: unknown): data is WorkspaceResponse {
@@ -220,10 +220,11 @@ export class ApiClient {
     return data;
   }
 
-  async pair(secret: string, signal: AbortSignal): Promise<void> {
+  async pair(secret: string, signal: AbortSignal): Promise<string> {
     const data = await this.#request('/session', { secret }, isSession, signal);
     signal.throwIfAborted();
     this.#token = data.session_token;
+    return data.session_id;
   }
 
   workspace(signal: AbortSignal) {

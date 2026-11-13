@@ -52,6 +52,7 @@ class SessionResponse(TypedDict):
     request_id: str
     token_type: Literal["Bearer"]
     session_token: str
+    session_id: str  # Correlation identity, never a credential; changes on re-pairing.
 
 
 class CatalogRefreshRequest(TypedDict):
