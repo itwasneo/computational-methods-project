@@ -22,7 +22,7 @@ def test_production_registry_exposes_only_real_nn_and_detached_capabilities():
     registry = default_registry()
     descriptions = registry.capabilities()
     assert [entry["implementation"] for entry in descriptions] == ["visited-scan-v1", "remaining-array-v1"]
-    assert registry.resolve("nn").implementation == "visited-scan-v1"
+    assert registry.resolve("nn", timed=True, record_history=True).implementation == "visited-scan-v1"
     descriptions[0]["distance_modes"].clear()
     assert registry.capabilities()[0]["distance_modes"] == ["dense", "on_demand"]
     for algorithm in ("ga", "sa"):
@@ -33,7 +33,6 @@ def test_production_registry_exposes_only_real_nn_and_detached_capabilities():
 @pytest.mark.parametrize("changes", [
     {"implementation": "missing"}, {"backend": "multicore"},
     {"distance_kind": "tsplib_euc_2d"}, {"distance_mode": "auto"},
-    {"timed": True}, {"record_history": True},
 ])
 def test_unavailable_capabilities_fail_explicitly(changes):
     with pytest.raises(ValueError):
