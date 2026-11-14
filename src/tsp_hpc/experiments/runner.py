@@ -8,7 +8,6 @@ as completed campaigns. No resume, implicit generation, or resource allocation.
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from dataclasses import replace
-import math
 import os
 from pathlib import Path
 import platform
@@ -26,7 +25,7 @@ from tsp_hpc.problem.distances import DEFAULT_MAX_MATRIX_BYTES, prepare_distance
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.problem.instances import load_instance
 from tsp_hpc.experiments.manifests import Manifest
-from tsp_hpc.solvers.registry import SolverRegistry, default_registry
+from tsp_hpc.solvers.registry import SolverRegistry, default_registry, validate_adapter_metadata
 from tsp_hpc.solvers.validation import aggregate_results, encode_result, validate_result, validate_nested_duration
 from tsp_hpc.problem.objective import validate_solution
 from tsp_hpc.solvers.results import SolverResult
@@ -104,20 +103,6 @@ def _execution(plan, registry):
     return execution, spec
 
 
-def _adapter_metadata(solver, prepared, spec):
-    metadata = solver.metadata
-    expected = {**prepared.metadata, "algorithm": spec.algorithm, "variant": spec.variant,
-                "implementation": spec.implementation, "backend": "serial"}
-    if type(metadata) is not dict or metadata.keys() != expected.keys() | {"solver_warmup_time_s"}:
-        raise ValueError("adapter must report the shared preparation/warm-up metadata")
-    if canonical_json({key: metadata[key] for key in expected}) != canonical_json(expected):
-        raise ValueError("adapter metadata disagrees with its registration/preparation")
-    duration = metadata["solver_warmup_time_s"]
-    if type(duration) not in (int, float) or not math.isfinite(duration) or duration < 0:
-        raise ValueError("invalid adapter warm-up duration")
-    return dict(metadata)
-
-
 def _write_record(stream, record) -> None:
     # Serialize fully before writing: NaN/type failures cannot write half a JSON
     # object. I/O failure or interruption can still leave a partial last line.
@@ -172,7 +157,7 @@ def _trial(plan, execution, spec, capability_error, bindings, provenance, campai
         phase = "solver_warmup"
         phase_start = perf_counter()
         solver = spec.factory(prepared)
-        record["adapter"] = _adapter_metadata(solver, prepared, spec)
+        record["adapter"] = validate_adapter_metadata(solver, prepared, spec)
         record["timings"]["solver_warmup_time_s"] = record["adapter"]["solver_warmup_time_s"]
         validate_nested_duration(record["timings"]["solver_warmup_time_s"], perf_counter() - phase_start)
 
