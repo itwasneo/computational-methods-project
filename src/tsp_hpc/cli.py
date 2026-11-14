@@ -37,7 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     serve.add_argument("--workspace", required=True, help="fixed workspace directory for this session")
     serve.add_argument("--port", type=int, default=8000, help="127.0.0.1 port (default: 8000)")
     serve.add_argument("--session-secret-stdin", action="store_true",
-                       help="read a private session-pairing secret from stdin instead of a hidden terminal prompt")
+                       help="read a private startup secret from stdin; disables terminal re-pairing controls")
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()

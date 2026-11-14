@@ -25,7 +25,10 @@ export interface Artifact {
   validation: 'unvalidated';
 }
 export interface SessionRequest { api_version: 1; request_id: string; secret: string; }
-export interface SessionResponse { api_version: 1; request_id: string; token_type: 'Bearer'; session_token: string; }
+export interface SessionResponse {
+  api_version: 1; request_id: string; token_type: 'Bearer'; session_token: string;
+  session_id: string; // Correlation identity, not authority; changes on re-pairing.
+}
 export interface CatalogRefreshRequest { api_version: 1; request_id: string; workspace_id: string; }
 export interface CatalogRefreshResponse extends CatalogRefreshRequest { revision: string; }
 export interface WorkspaceResponse {

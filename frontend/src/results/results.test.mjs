@@ -43,7 +43,7 @@ function harness(overrides = {}) {
     const context = { api_version: 1, request_id: options.headers['X-Request-ID'],
       ...Object.fromEntries(['workspace_id', 'dataset_id', 'revision'].filter(key => key in body).map(key => [key, body[key]])) };
     const defaults = {
-      '/api/session': { token_type: 'Bearer', session_token: 'private-token' },
+      '/api/session': { token_type: 'Bearer', session_token: 'private-token', session_id: 'session-1' },
       '/api/workspace': { workspace: { workspace_id: 'workspace', display_name: 'Test', access: 'read_only' } },
       '/api/artifacts/query': { revision: 'catalog', items: [candidate], next_cursor: null },
       '/api/artifacts/refresh': { revision: 'catalog' },
@@ -130,7 +130,7 @@ test('late requests cannot replace a newer query or restore a disconnected sessi
   const pairing = deferred();
   const other = harness({ '/api/session': () => pairing.promise }); t.after(() => other.controller.dispose());
   const connect = other.controller.connect('private-secret'); other.controller.disconnect();
-  pairing.resolve({ token_type: 'Bearer', session_token: 'obsolete-token' }); await connect;
+  pairing.resolve({ token_type: 'Bearer', session_token: 'obsolete-token', session_id: 'obsolete-session' }); await connect;
   assert.equal(other.controller.state.paired, false); assert.equal(other.controller.state.workspace, null);
   await other.api.workspace(new AbortController().signal);
   assert.equal(other.calls.at(-1).options.headers.Authorization, undefined);
@@ -177,6 +177,42 @@ test('authorization loss clears session data and transport failures are explicit
   const api = new ApiClient(async () => { throw new Error('private transport detail'); });
   await assert.rejects(api.workspace(new AbortController().signal), error =>
     error.code === 'connection_failed' && !error.message.includes('private transport detail'));
+});
+
+test('pairing validates the new session identity before retaining a token', async () => {
+  for (const session_id of [undefined, null, '', 1, 'x'.repeat(129)]) {
+    const { api, calls } = harness({ '/api/session': () => ({ token_type: 'Bearer', session_token: 'private-token', session_id }) });
+    await assert.rejects(api.pair('private-secret', new AbortController().signal), error => error.code === 'invalid_response');
+    await api.workspace(new AbortController().signal);
+    assert.equal(calls.at(-1).options.headers.Authorization, undefined);
+  }
+  const { api } = harness();
+  assert.equal(await api.pair('private-secret', new AbortController().signal), 'session-1');
+});
+
+test('owner-enabled reconnect cannot be undone by an obsolete revoked response and never resubmits work', async t => {
+  const pending = deferred(); let delay = false; let grant = 0;
+  const { controller, api, calls } = harness({
+    '/api/session': () => ({ token_type: 'Bearer', session_token: `private-token-${++grant}`, session_id: `session-${grant}` }),
+    '/api/trials/query': () => delay ? pending.promise : { query_key: 'query', items: [row], next_cursor: null },
+  });
+  t.after(() => controller.dispose());
+  await ready(controller);
+  delay = true;
+  const old = controller.query();
+  await flush();
+  controller.disconnect();
+  await controller.connect('replacement-secret');
+  pending.resolve({ code: 'unauthorized', message: 'Access was revoked.' });
+  await old;
+  assert.equal(controller.state.paired, true);
+  assert.equal(controller.state.workspace.workspace_id, 'workspace');
+  assert.equal(controller.state.error, '');
+  assert.equal(calls.filter(call => call.url === '/api/datasets').length, 1);
+  assert.ok(!calls.some(call => call.url.includes('reset') || call.url.includes('/jobs/')));
+  assert.ok(!JSON.stringify(controller.state).includes('private-token'));
+  await api.workspace(new AbortController().signal);
+  assert.equal(calls.at(-1).options.headers.Authorization, 'Bearer private-token-2');
 });
 
 test('catalog pages must share revision and query pages must share query key', async t => {
