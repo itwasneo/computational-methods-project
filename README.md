@@ -17,7 +17,7 @@ This is the project-wide implementation-status summary; specifications describe 
 | Experiments | Manifests, logical RNG planning, sequential NN runner, v2 results with v1 reading, verified-wheel provenance and validated analysis tables/plots | Campaign scheduling, resume and production protocol |
 | Stopping and progress | Fixed-work NN and phase timing | Time budgets and progress histories |
 | Tooling | Locked environment, tests/builds in CI; run/analyze CLI; local Results table wired to bounded ingestion/paged queries; separate synthetic viewer | Real-data geometry, installed frontend delivery, editing and job controls |
-| Cluster deployment | ULHPC selected; local image build evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) | Finished-image and allocated-cluster runtime validation |
+| Cluster deployment | ULHPC selected; [CPU image definition and owner workflow](docs/hpc-resources.md#reproducible-container-environment) consume the verified wheel | Updated-image build, finished-image and allocated-cluster validation; historical evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) |
 
 Solver execution uses **unrounded Euclidean distances** on complete symmetric 2D instances. Rounded data/reference compatibility is retained, but is not an executable solver mode. See the [objective contract](docs/contracts.md#distance-conventions-and-representations) before choosing benchmark reference costs.
 
