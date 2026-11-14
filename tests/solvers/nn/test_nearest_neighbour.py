@@ -207,7 +207,7 @@ def test_empty_bound_request_skips_selected_kernel_and_validation(monkeypatch):
     ({"seed": True}, TypeError), ({"seed": 2**64}, ValueError),
     ({"parameters": None}, TypeError), ({"parameters": {"start_city": 0}}, ValueError),
     ({"budget": None}, TypeError), ({"budget": {}}, ValueError),
-    ({"budget": {"start_cities": [0], "time_limit_s": 1.}}, ValueError),
+    ({"budget": {"start_cities": [0], "time_limit_s": 0.}}, ValueError),
     ({"budget": {"time_limit_s": 1.}}, ValueError),
     ({"budget": {"start_cities": None}}, TypeError),
     ({"budget": {"start_cities": (0, 1)}}, TypeError),
@@ -217,7 +217,7 @@ def test_empty_bound_request_skips_selected_kernel_and_validation(monkeypatch):
     ({"budget": {"start_cities": [-1]}}, ValueError),
     ({"budget": {"start_cities": [4]}}, ValueError),
     ({"budget": {"start_cities": [0, 0]}}, ValueError),
-    ({"record_history": True}, ValueError), ({"record_history": 0}, TypeError),
+    ({"history_policy": {}}, ValueError), ({"record_history": 0}, TypeError),
 ])
 def test_invalid_requests_fail_before_preparation(changes, error, monkeypatch):
     arguments = dict(seed=42, budget={"start_cities": [0]}, parameters={})
