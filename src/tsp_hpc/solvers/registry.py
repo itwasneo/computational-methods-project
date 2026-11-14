@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 class SolverAdapter(Protocol):
     @property
+    def native_dispatchers(self) -> tuple[object, ...]: ...
+
+    @property
     def metadata(self) -> dict: ...
 
     def solve(self, instance: "TSPInstance", *, seed: int, budget: dict,

@@ -13,8 +13,8 @@ This is the project-wide implementation-status summary; specifications describe 
 | Area | Available | Remaining work |
 | --- | --- | --- |
 | Inputs and objective | Canonical data/validation, independent objective, seeded generators, saved artifacts and fixtures | TSPLIB import and production datasets |
-| Execution | Dense/on-demand distances; serial NN with `visited-scan-v1` and `remaining-array-v1` implementations | GA/SA, multicore and optional accelerator backends |
-| Experiments | Manifests, logical RNG planning, registered serial runner, v3 logical results with v1/v2 reading, verified-wheel provenance and validated analysis tables/plots | Campaign scheduling, resume and production protocol |
+| Execution | Native-verified dense/on-demand distances and serial NN (`visited-scan-v1`, `remaining-array-v1`); explicit solver registry/conformance suite | GA/SA, multicore and optional accelerator backends |
+| Experiments | Manifests, logical RNG planning, registered serial runner, v3 logical results with v1/v2 reading, verified-wheel provenance and validated analysis tables/plots | Local campaign queue and production protocol; resume deferred |
 | Stopping and progress | Fixed-work/timed NN, bounded best-so-far histories, observed progress/target tables and phase timing; shared stopping helpers | GA/SA algorithm-specific checkpoints |
 | Tooling | Locked environment, tests/builds in CI; run/analyze CLI; local Results table wired to bounded ingestion/paged queries; separate synthetic viewer | Real-data geometry, installed frontend delivery, editing and job controls |
 | Cluster deployment | ULHPC selected; local image build evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) | Finished-image and allocated-cluster runtime validation |

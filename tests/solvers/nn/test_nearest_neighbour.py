@@ -155,7 +155,12 @@ def test_selected_kernel_is_warmed_and_executed(monkeypatch):
     def resolve(name):
         return observed_kernel if name == "test-only" else original(name)
     monkeypatch.setattr(nn, "_resolve_implementation", resolve)
+    # This selection spy is deliberately Python, not a production registration.
+    # The native verifier is separately tested against real dispatchers/failures.
+    verified = []
+    monkeypatch.setattr(nn, "verify_dispatchers", lambda kernels: verified.extend(kernels))
     solver = nn.NearestNeighbourSolver(prepared, implementation="test-only")
+    assert verified == [observed_kernel]
     assert calls and all(call == "warmup" for call in calls)
     calls.clear()
     phase = "search"
@@ -194,6 +199,8 @@ def test_empty_bound_request_skips_selected_kernel_and_validation(monkeypatch):
     # Bind the guard before construction: changing a module alias afterwards
     # cannot intercept the callable already retained by the adapter.
     monkeypatch.setattr(nn, "_resolve_implementation", lambda name: guarded_kernel)
+    # Scope this Python dispatch spy out of the separately tested native gate.
+    monkeypatch.setattr(nn, "verify_dispatchers", lambda kernels: None)
     solver = adapter(instance, "on_demand")
     searching = True
     monkeypatch.setattr(nn, "validate_solution", lambda *args: pytest.fail("unexpected validation"))
