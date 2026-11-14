@@ -126,7 +126,7 @@ def read_sources(inputs: Iterable[ShardSource], *, expected_manifest: Manifest |
                         diagnostics.append({"code": "unterminated_tail", "path": str(path), "line": line})
                         break
                     record = decode_record(raw)
-                    if type(record) is not dict or type(record.get("schema_version")) is not int or record["schema_version"] not in (1, 2):
+                    if type(record) is not dict or type(record.get("schema_version")) is not int or record["schema_version"] not in (1, 2, 3):
                         raise ValueError("unsupported runner envelope schema")
                     if envelope_version is not None and record["schema_version"] != envelope_version:
                         raise ValueError("mixed runner envelope schemas in one campaign")
