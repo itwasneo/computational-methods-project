@@ -95,6 +95,26 @@ Keep package initializers lightweight: root imports and CLI help must not load n
 
 Old flat imports have no compatibility aliases; use the paths in this guide and the [usage examples](usage.md). The [package migration PR](https://github.com/itwasneo/computational-methods-project/pull/95) records the old-to-new mapping. Native caches may rebuild after relocation and are not portable project artifacts.
 
+## Solver registration
+
+`solvers.configuration` owns scientific parameter/budget normalization for both
+manifests and adapters. It is independent of installed implementations, so reading
+historical records does not depend on today's registry.
+
+`solvers.registry` defines `SolverAdapter`, immutable `SolverSpec` records and an
+explicit `SolverRegistry`. Factories bind a prepared distance representation and
+warm an adapter outside measured search. NN registrations use ordered-start
+`batch` execution; future GA populations and SA chains use `independent`
+execution. Defaults are explicit, descriptions are detached, and unsupported
+algorithms/backends/objectives/capabilities fail rather than falling back.
+
+Only the two real NN implementations are registered by `default_registry()`.
+Adding an algorithm requires its adapter/registrations plus an explicit entry in
+that function; no filesystem or third-party plugin discovery occurs. Test-only
+registries are constructed separately, never advertised as real GA/SA solvers.
+The registry is the integration foundation; runner dispatch and timed/history
+support are separate follow-ups in the solver-readiness milestone.
+
 ## CI and review
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) owns tool versions, action pins and commands. On pushes and PRs to `master`, it runs:
