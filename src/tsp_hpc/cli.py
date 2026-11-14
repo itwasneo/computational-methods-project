@@ -7,12 +7,12 @@ from tsp_hpc import __version__
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Show package information or execute a fixed-work manifest."""
+    """Show package information or execute/analyze registered serial searches."""
     parser = argparse.ArgumentParser(
         prog="tsp-hpc",
         description=(
             "TSP heuristics and HPC experiment tools. "
-            "Run fixed-work serial NN campaigns from manifests."
+            "Run registered serial campaigns from manifests (NN currently available)."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -33,6 +33,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     analyze.add_argument("--baseline-distance-mode", choices=("dense", "on_demand"))
     analyze.add_argument("--metric", choices=("search_time_s", "end_to_end_time_s"), default="search_time_s")
     analyze.add_argument("--max-plot-groups", type=int, default=40)
+    analyze.add_argument("--max-history-points", type=int, default=100_000,
+                         help="hard bound for history analysis; never silently downsample")
+    analyze.add_argument("--target", action="append", default=[], metavar="INSTANCE_ID=COST",
+                         help="predefined absolute time-to-target goal for one instance; repeat for distinct instances")
     serve = commands.add_parser("serve", help="start the optional read-only local workspace API")
     serve.add_argument("--workspace", required=True, help="fixed workspace directory for this session")
     serve.add_argument("--port", type=int, default=8000, help="127.0.0.1 port (default: 8000)")
@@ -61,12 +65,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ModuleNotFoundError as error:
             parser.exit(2, f"Analysis dependencies unavailable ({error}); in the checkout use uv run --locked --group analysis tsp-hpc analyze ...\n")
         try:
+            targets = {}
+            for binding in args.target:
+                identifier, separator, cost = binding.partition("=")
+                if not separator or not identifier or not cost or identifier in targets:
+                    raise ValueError("--target requires unique INSTANCE_ID=COST bindings")
+                targets[identifier] = float(cost)
             report = write_report(
                 args.shards, output_dir=args.output,
                 expected_manifest=None if args.manifest is None else Manifest.from_file(args.manifest),
                 references=None if args.references is None else load_references(args.references),
                 baseline_implementation=args.baseline, baseline_distance_mode=args.baseline_distance_mode,
                 metric=args.metric, max_plot_groups=args.max_plot_groups,
+                max_history_points=args.max_history_points, target_costs=targets or None,
             )
         except (OSError, ValueError, TypeError) as error:
             parser.exit(2, f"tsp-hpc: {error}\n")

@@ -358,6 +358,22 @@ def trial_row(record):
     method = build["method"] if build else "legacy-source"
     build_status = build["status"] if build else "reported"
     build_identity = (build["identity"] or {}) if build else {}
+    budget = search["budget"]
+    work_name = {"nn": "start_cities", "ga": "max_generations", "sa": "max_proposals"}[search["algorithm"]]
+    work_count = (len(budget[work_name]) if search["algorithm"] == "nn" else budget.get(work_name))
+    time_limit = budget.get("time_limit_s")
+    budget_summary = ({**{key: value for key, value in budget.items() if key != "start_cities"},
+                       "start_count": work_count} if search["algorithm"] == "nn" else budget)
+    entries = record.get("logical_results", [])
+    logical_work = None
+    if work is not None:
+        logical_work = ([{key: entry[key] for key in ("kind", "logical_id")} |
+                         {key: entry["result"][key] for key in ("work", "status", "termination_reason")}
+                         for entry in entries] if record["schema_version"] == 3 else
+                        [{"kind": "batch", "logical_id": None, "work": work, "status": status,
+                          "termination_reason": record["result"]["termination_reason"]}])
+    overshoot = None if time_limit is None or work is None else math.fsum(
+        max(0., entry["timings"]["search_time_s"] - time_limit) for entry in entries)
     group = {"workload": workload, "execution": config, "runtime": context,
              "setup_policy": record["setup_policy"], "max_matrix_bytes": record["max_matrix_bytes"],
              "unverified_source_campaign": None if source["revision"] and source["dirty"] is False else record["campaign_id"]}
@@ -370,8 +386,17 @@ def trial_row(record):
         "distance_kind": search["instance"]["distance_kind"], "n_cities": search["instance"]["n_cities"],
         "algorithm": search["algorithm"], "variant": search["variant"], "repetition": search["repetition"],
         "parameters_json": canonical_json(search["parameters"]), "solver_seed": str(search["solver_seed"]),
-        "budget_name": next(iter(search["budget"])),
-        "budget_count": len(search["budget"]["start_cities"]) if search["algorithm"] == "nn" else next(iter(search["budget"].values())),
+        "budget_name": work_name if work_name in budget else None, "budget_count": work_count,
+        "budget_summary_json": canonical_json(budget_summary),
+        "budget_mode": "work" if time_limit is None else "time" if work_count is None else "work_and_time",
+        "time_limit_s": time_limit, "time_overshoot_s": overshoot,
+        "logical_search_count": len(plan.invocations()),
+        "completed_logical_searches": len(entries) if record["schema_version"] == 3 else int(work is not None),
+        "history_recorded": search["record_history"],
+        "history_policy_json": None if not search["record_history"] else canonical_json(search["history_policy"]),
+        "history_points": sum(len(entry["result"]["history"] or []) for entry in entries),
+        "termination_reason": None if work is None else record["result"]["termination_reason"],
+        "logical_work_id": None if logical_work is None else stable_id("logical-work", logical_work),
         "trial_seed": str(plan.trial_seed), "implementation": config.get("implementation"),
         "distance_mode": config["distance_mode"], "backend": config["backend"],
         "profile": config["resources"]["profile"], "workers": config["resources"]["workers"],
