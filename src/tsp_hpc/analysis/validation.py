@@ -16,6 +16,7 @@ from tsp_hpc.experiments.manifests import Manifest
 from tsp_hpc.problem.data import validate_tour
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.reproducibility.build import validate_observation, validate_source
+from tsp_hpc.reproducibility.native import validate_compiler_observation, validate_native_observation
 from tsp_hpc.solvers.results import WorkCounters
 from tsp_hpc.solvers.validation import aggregate_results, decode_result, validate_nested_duration as _less_equal
 
@@ -107,7 +108,10 @@ def _plan(record):
 def _runtime(runtime, schema_version):
     fields = {"versions", "source", "platform", "machine", "processor", "cpu_count",
               "memory", "runner_workers", "solver_threads", "cpu_affinity", "environment"}
-    require_fields(runtime, fields | ({"build"} if schema_version >= 2 else set()))
+    require_fields(runtime, fields | ({"build"} if schema_version >= 2 else set()),
+                   {"compiler"} if schema_version == 3 else set())
+    if "compiler" in runtime:
+        validate_compiler_observation(runtime["compiler"])
     require_fields(runtime["versions"], {"python", "tsp_hpc", "numpy", "numba", "llvmlite"})
     for value in runtime["versions"].values():
         require_text(value)
@@ -137,6 +141,25 @@ def _runtime(runtime, schema_version):
     # Job identity changes per allocation; numerical/resource observations do not.
     context = {**runtime, "environment": {k: v for k, v in runtime["environment"].items() if k != "SLURM_JOB_ID"}}
     return stable_id("analysis-runtime", context)
+
+
+def _native_execution(record):
+    observed = "compiler" in record["runtime"]
+    if observed != ("native_execution" in record):
+        raise ValueError("compiler and native-execution observations must appear together")
+    if not observed:
+        return "legacy-unobserved", None
+    native = record["native_execution"]
+    if native is None:
+        if record["outcome"] == "completed" or record["logical_results"]:
+            raise ValueError("accepted results require an execution-mode observation")
+        return "not-verified", False
+    validate_native_observation(native)
+    if native["required"] and not native["verified"] and (record["outcome"] == "completed" or record["logical_results"]):
+        raise ValueError("native accepted results lack dispatcher verification")
+    if native["verified"] and record["runtime"]["compiler"]["config"]["disable_jit"]:
+        raise ValueError("verified native execution contradicts disabled JIT")
+    return ("native-required" if native["required"] else "non-native"), native["verified"]
 
 
 def _timings(values, allowed, required=()):
@@ -322,7 +345,8 @@ def _logical_results(record, plan):
 
 def trial_row(record):
     """Validate one trial and project only the analysis table's scalar metadata."""
-    require_fields(record, TRIAL_FIELDS | ({"budget_scope", "logical_results"} if record["schema_version"] == 3 else set()))
+    require_fields(record, TRIAL_FIELDS | ({"budget_scope", "logical_results"} if record["schema_version"] == 3 else set()),
+                   {"native_execution"} if record["schema_version"] == 3 else set())
     require_uuid(record["campaign_id"])
     require_uuid(record["attempt_id"])
     if datetime.fromisoformat(record["started_at"]).utcoffset() is None:
@@ -334,6 +358,9 @@ def trial_row(record):
         raise ValueError("unsupported setup policy")
     _count(record["max_matrix_bytes"])
     context = _runtime(record["runtime"], record["schema_version"])
+    execution_kind, native_verified = _native_execution(record)
+    if execution_kind != "legacy-unobserved":
+        context = stable_id("analysis-runtime-mode", {"runtime": context, "execution_kind": execution_kind})
     require_fields(record["input"], {"path"}, {"descriptor", "provenance"})
     if record["input"]["path"] is not None:
         require_text(record["input"]["path"])
@@ -403,7 +430,8 @@ def trial_row(record):
         "threads_per_worker": config["resources"]["threads_per_worker"], "max_matrix_bytes": record["max_matrix_bytes"],
         "setup_policy": record["setup_policy"], "source_revision": record["runtime"]["source"]["revision"],
         "source_dirty": record["runtime"]["source"]["dirty"], "source_method": method,
-        "build_status": build_status, "build_id": build_identity.get("build_id"),
+        "build_status": build_status, "build_id": build_identity.get("build_id"), "execution_kind": execution_kind,
+        "native_verified": native_verified,
         "outcome": record["outcome"], "status": status,
         "best_cost": cost, "tour_digest": tour_digest,
         "work_json": None if work is None else canonical_json(work),

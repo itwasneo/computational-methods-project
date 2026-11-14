@@ -28,7 +28,7 @@ TRIAL_COLUMNS = ("attempt_id campaign_id requested_execution_id execution_id sea
                  "time_overshoot_s logical_search_count completed_logical_searches history_recorded history_policy_json "
                  "history_points termination_reason logical_work_id trial_seed implementation "
                  "distance_mode backend profile workers threads_per_worker max_matrix_bytes setup_policy "
-                 "source_revision source_dirty source_method build_status build_id outcome status best_cost tour_digest work_json error_phase error_type").split() + list(METRICS) + ["shard", "campaign_complete", "duplicate_execution", "usable"]
+                 "source_revision source_dirty source_method build_status build_id execution_kind native_verified outcome status best_cost tour_digest work_json error_phase error_type").split() + list(METRICS) + ["shard", "campaign_complete", "duplicate_execution", "usable"]
 
 
 class AnalysisLimitError(ValueError):
@@ -211,7 +211,7 @@ def summary_table(analysis: Analysis) -> pd.DataFrame:
               "backend", "profile", "workers", "threads_per_worker", "setup_policy", "max_matrix_bytes",
               "parameters_json", "solver_seed", "budget_name", "budget_count", "budget_summary_json", "budget_mode",
               "time_limit_s", "logical_search_count", "history_recorded", "history_policy_json", "source_revision", "source_dirty",
-              "source_method", "build_status", "build_id", "runtime_context_id", "workload_id"]
+              "source_method", "build_status", "build_id", "execution_kind", "runtime_context_id", "workload_id"]
     metrics = ["best_cost", "time_overshoot_s", *METRICS]
     if frame.empty:
         columns = ["group_id", *labels, "attempt_count", "failed_count", "no_solution_count",

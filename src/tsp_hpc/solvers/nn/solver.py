@@ -19,6 +19,7 @@ from tsp_hpc.solvers.nn.visited_scan import search_kernel as _search_kernel
 from tsp_hpc.solvers.nn.remaining_array import search_kernel as _remaining_array_kernel
 from tsp_hpc.problem.objective import validate_solution
 from tsp_hpc.reproducibility.random_streams import validate_seed
+from tsp_hpc.reproducibility.native import require_native_runtime, verify_dispatchers
 from tsp_hpc.solvers.results import SolverResult, WorkCounters
 
 VARIANT = "nn-fixed-starts-v1"
@@ -58,6 +59,7 @@ def warmup_nearest_neighbour(*, implementation: str = DEFAULT_IMPLEMENTATION) ->
     writable int64 start-array signatures. No caller data or RNG is consumed.
     """
     kernel = _resolve_implementation(implementation)
+    require_native_runtime()
     coordinates = np.array([[0., 0.], [1., 0.]], dtype=np.float64)
     matrix = np.array([[0., 1.], [1., 0.]], dtype=np.float64)
     coordinates.flags.writeable = False
@@ -65,6 +67,7 @@ def warmup_nearest_neighbour(*, implementation: str = DEFAULT_IMPLEMENTATION) ->
     starts = np.array([0, 1], dtype=np.int64)
     for use_dense in (False, True):
         kernel(coordinates, matrix, use_dense, starts)
+    verify_dispatchers((kernel,))
 
 
 def _request(instance, seed, budget, parameters, record_history, history_policy):
@@ -88,6 +91,7 @@ def _empty_result(record_history=False) -> SolverResult:
 def _run(prepared, starts, kernel, budget, record_history, policy) -> SolverResult:
     if starts.size == 0:
         return _empty_result(record_history)
+    require_native_runtime()
     history = None
     reason = "work_limit"
     if "time_limit_s" not in budget and not record_history:
@@ -146,6 +150,10 @@ class NearestNeighbourSolver:
         warmup_nearest_neighbour(implementation=self.implementation)
         object.__setattr__(self, "solver_warmup_time_s", perf_counter() - start)
         object.__setattr__(self, "_kernel", kernel)
+
+    @property
+    def native_dispatchers(self):
+        return (self._kernel,)
 
     @property
     def metadata(self) -> dict:

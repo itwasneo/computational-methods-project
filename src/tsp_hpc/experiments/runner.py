@@ -21,6 +21,7 @@ import numpy as np
 
 from tsp_hpc import __version__
 from tsp_hpc.reproducibility.build import runtime_build
+from tsp_hpc.reproducibility.native import compiler_observation, adapter_native_observation
 from tsp_hpc.problem.distances import DEFAULT_MAX_MATRIX_BYTES, prepare_distances
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.problem.instances import load_instance
@@ -79,13 +80,15 @@ def runtime_provenance() -> dict:
         "versions": {"python": platform.python_version(), "tsp_hpc": __version__,
                      "numpy": np.__version__, "numba": numba.__version__,
                      "llvmlite": llvmlite.__version__},
-        "source": source, "build": build,
+        "source": source, "build": build, "compiler": compiler_observation(),
         "platform": platform.platform(), "machine": platform.machine(),
         "processor": platform.processor(), "cpu_count": os.cpu_count(),
         "memory": _memory_resources(), "runner_workers": 1, "solver_threads": 1,
         "cpu_affinity": affinity,
         "environment": {key: os.environ[key] for key in (
             "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+            "NUMBA_DISABLE_JIT", "NUMBA_OPT", "NUMBA_BOUNDSCHECK", "NUMBA_LOOP_VECTORIZE",
+            "NUMBA_SLP_VECTORIZE", "NUMBA_ENABLE_AVX", "NUMBA_DEBUGINFO",
             "NUMBA_NUM_THREADS", "NUMBA_THREADING_LAYER", "NUMBA_CPU_NAME",
             "NUMBA_CPU_FEATURES", "SLURM_JOB_ID", "SLURM_CPUS_PER_TASK",
             "SLURM_MEM_PER_NODE", "SLURM_MEM_PER_CPU",
@@ -125,7 +128,9 @@ def _trial(plan, execution, spec, capability_error, bindings, provenance, campai
         "runtime": provenance, "input": {"path": str(bindings[identifier]) if identifier in bindings else None},
         "setup_policy": "fresh-per-trial", "max_matrix_bytes": matrix_limit,
         "adapter": None, "outcome": "failed", "result": None, "error": None,
-        "budget_scope": "per-logical-invocation", "logical_results": [], "timings": {},
+        "budget_scope": "per-logical-invocation", "logical_results": [],
+        "native_execution": None if spec is None else {"required": spec.native, "verified": False, "dispatchers": []},
+        "timings": {},
     }
     result = None
     logical_index = None
@@ -158,6 +163,7 @@ def _trial(plan, execution, spec, capability_error, bindings, provenance, campai
         phase_start = perf_counter()
         solver = spec.factory(prepared)
         record["adapter"] = validate_adapter_metadata(solver, prepared, spec)
+        record["native_execution"] = adapter_native_observation(solver, spec)
         record["timings"]["solver_warmup_time_s"] = record["adapter"]["solver_warmup_time_s"]
         validate_nested_duration(record["timings"]["solver_warmup_time_s"], perf_counter() - phase_start)
 

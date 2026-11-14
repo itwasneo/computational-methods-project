@@ -49,6 +49,8 @@ def example(tmp_path_factory):
         if item["record_type"] == "trial":
             item.pop("budget_scope")
             item.pop("logical_results")
+            item.pop("native_execution")
+            item["runtime"].pop("compiler")
             item["result"].pop("best_logical_index")
     # Synthetic durations/provenance for exact arithmetic assertions, not a benchmark.
     for trial, receipt in zip(original[:-1], original[-1]["trial_timings"]):

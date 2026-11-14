@@ -15,6 +15,7 @@ from tsp_hpc.problem.data import TSPInstance
 from tsp_hpc.problem.distances import prepare_distances
 from tsp_hpc.problem.objective import validate_solution
 from tsp_hpc.reproducibility.random_streams import validate_seed
+from tsp_hpc.reproducibility.native import adapter_native_observation
 from tsp_hpc.solvers.configuration import normalize_budget, normalize_history, normalize_parameters
 from tsp_hpc.solvers.registry import SolverSpec, validate_adapter_metadata
 from tsp_hpc.solvers.validation import validate_nested_duration, validate_result
@@ -47,6 +48,7 @@ def check_adapter(spec, instance, *, seed, budget, parameters=None, distance_mod
     flags = instance.coordinates.flags.writeable, prepared.matrix.flags.writeable
     adapter = spec.factory(prepared)
     validate_adapter_metadata(adapter, prepared, spec)
+    adapter_native_observation(adapter, spec)
 
     def invoke(request_seed, history, sampling):
         request = {"seed": request_seed, "budget": deepcopy(budget), "parameters": deepcopy(parameters),
