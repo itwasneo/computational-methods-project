@@ -183,7 +183,7 @@ def test_installed_cli_run_and_analysis_with_and_without_evidence(built, install
         command(str(python), "-I", "-m", "tsp_hpc", "run", str(manifest),
                 "--instance", f"{instance_id}={artifact}", "--output", str(shard), cwd=built[0])
         rows = [json.loads(line) for line in shard.read_text().splitlines()]
-        assert len(rows) == 5 and all(row["schema_version"] == 2 for row in rows)
+        assert len(rows) == 5 and all(row["schema_version"] == 3 for row in rows)
         for row in rows[:-1]:
             assert row["result"]["best_cost"] == 4
             if verified:

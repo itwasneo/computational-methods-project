@@ -116,8 +116,12 @@ registries are constructed separately, never advertised as real GA/SA solvers.
 NN supports time/history directly using the same native kernels at complete-start
 checkpoints. Its history-disabled fixed-work path retains the original single
 kernel call. Instrumented execution includes per-start call/workspace overhead in
-search time. Generic runner dispatch and versioned persistence are follow-ups;
-the legacy runner explicitly rejects these new requests until upgraded.
+search time. The serial runner dispatches registered factories and persists envelope-v3 logical
+outcomes. `TrialPlan.invocations()` supplies one NN batch or ordered independent
+population/chain seeds. Shared result validation covers all three agreed variants
+without importing their implementations. Tests inject clearly named, non-native
+scripted adapters to exercise GA/SA-shaped accounting—not scientific solvers.
+Production capabilities continue to advertise only real NN.
 
 ## CI and review
 

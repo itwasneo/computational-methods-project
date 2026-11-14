@@ -87,7 +87,7 @@ Parameter defaults/ranges and work semantics are defined in the [algorithm speci
 
 Zero-work plans are not dropped. For GA/SA the work field may be omitted when a finite positive `time_limit_s` is supplied. Timed SA additionally resolves integer `time_check_interval_proposals >= 1` (default `256`); it is rejected without a time limit. NN always retains an explicit finite start list. Time limits apply once per NN batch or once per independent population/chain, not to the whole campaign.
 
-The additive time/history extension leaves all previously valid fixed-work normalization and IDs unchanged; disabled history omits `history_policy`. Older readers reject these newly supported requests rather than interpreting them as fixed work. Enabled policy defaults and all supplied limits enter search identity, but not RNG derivation. See [sampling and stopping](contracts.md#solver-results-and-progress). The direct NN adapter supports these requests; runner transport requires the separate versioned-runner extension and fails explicitly until enabled. Other variants and extra parameters remain errors.
+The additive time/history extension leaves all previously valid fixed-work normalization and IDs unchanged; disabled history omits `history_policy`. Older readers reject these newly supported requests rather than interpreting them as fixed work. Enabled policy defaults and all supplied limits enter search identity, but not RNG derivation. See [sampling and stopping](contracts.md#solver-results-and-progress). The registered runner persists these requests using envelope v3. Production execution currently registers NN only; GA/SA planning does not advertise unimplemented algorithms. Other variants and extra parameters remain errors.
 
 ### Execution configurations
 

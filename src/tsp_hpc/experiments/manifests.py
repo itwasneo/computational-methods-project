@@ -184,6 +184,13 @@ class TrialPlan:
         """Return a detached snapshot of the requested execution configuration."""
         return json.loads(self._execution_json)
 
+    def invocations(self) -> tuple[dict, ...]:
+        """Serial adapter calls: one NN batch, or the ordered independent searches."""
+        if self.search["algorithm"] == "nn":
+            return ({"kind": "batch", "logical_id": None, "seed": self.trial_seed},)
+        return tuple({"kind": item.kind, "logical_id": item.logical_id, "seed": item.stream.seed}
+                     for item in self.logical_searches)
+
     def stream(self, role: str, *logical_ids: str | int) -> RandomStream:
         """Plan another role-specific stream, e.g. warm-up or a future island."""
         return derive_stream(self.trial_seed, role, *logical_ids)
