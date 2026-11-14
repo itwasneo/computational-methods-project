@@ -1,6 +1,7 @@
 """Optional pandas/Matplotlib presentation over the reusable analysis API."""
 
 from copy import deepcopy
+import json
 from pathlib import Path
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -9,7 +10,8 @@ import numpy as np
 import pandas as pd
 import matplotlib
 
-from tsp_hpc.analysis import read_shards, summary_table, paired_comparisons, reference_gaps
+from tsp_hpc.analysis import read_shards, summary_table, paired_comparisons, reference_gaps, progress_table, time_to_target
+from tsp_hpc.analysis.validation import require_number, require_text
 from tsp_hpc.reproducibility.identity import canonical_json
 from tsp_hpc.experiments.runner import runtime_provenance
 
@@ -25,6 +27,19 @@ def _scale(values):
     return maximum if maximum > 1e100 or 0 < maximum < 1e-100 else 1.0
 
 
+def budget_label(row):
+    budget = json.loads(row["budget_summary_json"])
+    key, label = {"nn": ("start_count", "starts"), "ga": ("max_generations", "generations"),
+                  "sa": ("max_proposals", "proposals")}[row["algorithm"]]
+    parts = []
+    if key in budget:
+        count = budget[key]
+        parts.append(f"{label}={count}")
+    if "time_limit_s" in budget:
+        parts.append(f"time={budget['time_limit_s']:g}s")
+    return ", ".join(parts) + f" / invocation; calls={row['logical_search_count']}"
+
+
 def _plots(analysis, summary, comparisons, gaps, output, limit):
     files, notes = [], []
     groups = summary.loc[summary["usable_count"] > 0] if not summary.empty else summary
@@ -33,7 +48,7 @@ def _plots(analysis, summary, comparisons, gaps, output, limit):
     if len(groups) > limit:
         return files, [f"Static plots omitted: {len(groups)} groups exceeds limit {limit}; all tables are retained."]
     ids = groups["group_id"].tolist()
-    labels = [f"{row['label']} | {row['implementation']} | {row['distance_mode']} | cities={row['n_cities']} | starts={row['budget_count']} | usable={row['usable_count']}/{row['attempt_count']}"
+    labels = [f"{row['label']} | {row['algorithm']}:{row['implementation']} | {row['distance_mode']} | cities={row['n_cities']}\n{budget_label(row)} | usable={row['usable_count']}/{row['attempt_count']}"
               for row in groups.to_dict("records")]
     height = max(3.5, len(ids) * 0.45 + 1.5)
     figure = _figure(height)
@@ -48,7 +63,7 @@ def _plots(analysis, summary, comparisons, gaps, output, limit):
         title = "Search time" if metric == "search_time_s" else "End-to-end time"
         axis.set_xlabel(f"{title} (seconds)" if scale == 1 else f"{title} / {scale:g} seconds")
         axis.grid(axis="x", alpha=0.25)
-    figure.suptitle("Fixed-work runtime: median and min–max; groups are not pooled")
+    figure.suptitle("Observed runtime: median and min–max; budgets/groups are not pooled")
     figure.savefig(output / "runtime.png", dpi=140)
     files.append("runtime.png")
 
@@ -109,9 +124,38 @@ def _plots(analysis, summary, comparisons, gaps, output, limit):
     return files, notes
 
 
+def _progress_plots(points, summary, output, limit):
+    if points.empty or not points["usable"].any():
+        return [], ["No usable recorded incumbent histories to plot."]
+    points = points.loc[points["usable"]]
+    count = points["attempt_id"].nunique()
+    if count > limit:
+        return [], [f"Progress plots omitted: {count} attempts exceeds limit {limit}; progress.csv is retained."]
+    labels = dict(zip(summary["group_id"], summary["label"]))
+    files = []
+    for index, (instance, subset) in enumerate(points.groupby("instance_id", sort=False), start=1):
+        figure = _figure(5)
+        axis = figure.add_subplot()
+        xscale = _scale(subset["search_elapsed_s"].to_numpy(dtype=float))
+        yscale = _scale(subset["trial_best_cost"].to_numpy(dtype=float))
+        for attempt_index, (_, samples) in enumerate(subset.groupby("attempt_id", sort=False), start=1):
+            axis.plot(samples["search_elapsed_s"].to_numpy(dtype=float) / xscale,
+                      samples["trial_best_cost"].to_numpy(dtype=float) / yscale,
+                      linestyle="none", marker=".", label=f"{labels[samples['group_id'].iloc[0]]} / attempt {attempt_index}")
+        axis.set_xlabel("Concatenated search time (seconds)" if xscale == 1 else f"Concatenated search time / {xscale:g} seconds")
+        axis.set_ylabel("Observed incumbent cost" if yscale == 1 else f"Observed incumbent cost / {yscale:g}")
+        axis.set_title(f"Safe-checkpoint observations, no interpolation\n{instance}")
+        axis.legend(fontsize="small")
+        name = f"history-{index}.png"
+        figure.savefig(output / name, dpi=140)
+        files.append(name)
+    return files, []
+
+
 def write_report(paths, *, output_dir, expected_manifest=None, references=None,
                  baseline_implementation=None, baseline_distance_mode=None,
-                 metric="search_time_s", max_plot_groups=40) -> dict:
+                 metric="search_time_s", max_plot_groups=40, max_history_points=100_000,
+                 target_costs=None) -> dict:
     """Create a new report directory, never modifying shards or replacing output.
 
     CSVs retain all observations and explicit exclusion flags/counts. Plots use
@@ -124,6 +168,11 @@ def write_report(paths, *, output_dir, expected_manifest=None, references=None,
         raise ValueError("max_plot_groups must be a positive integer")
     if baseline_distance_mode is not None and baseline_implementation is None:
         raise ValueError("a baseline distance mode requires a baseline implementation")
+    if type(max_history_points) is not int or max_history_points < 1:
+        raise ValueError("max_history_points must be a positive integer")
+    if target_costs is not None and type(target_costs) is not dict:
+        raise TypeError("target_costs must map instance IDs to absolute target costs")
+    targets = None if target_costs is None else {require_text(key): require_number(value) for key, value in target_costs.items()}
     references = deepcopy(references)
     analysis = read_shards(paths, expected_manifest=expected_manifest)
     summary = summary_table(analysis)
@@ -132,6 +181,11 @@ def write_report(paths, *, output_dir, expected_manifest=None, references=None,
         analysis, baseline_implementation=baseline_implementation,
         baseline_distance_mode=baseline_distance_mode, metric=metric)
     gaps = None if references is None else reference_gaps(analysis, references)
+    progress = progress_table(analysis, max_points=max_history_points)
+    crossings = None
+    if targets:
+        crossings = pd.concat([time_to_target(analysis, instance_id=key, target_cost=value,
+                                             max_points=max_history_points) for key, value in targets.items()], ignore_index=True)
     output = Path(output_dir)
     output.mkdir()  # Exclusive creation; a failed render leaves evidence, not an overwritten report.
     analysis.trials.to_csv(output / "trials.csv", index=False)
@@ -140,18 +194,29 @@ def write_report(paths, *, output_dir, expected_manifest=None, references=None,
         comparisons.to_csv(output / "comparisons.csv", index=False)
     if gaps is not None:
         gaps.to_csv(output / "gaps.csv", index=False)
+    if not progress.empty or analysis.trials["history_recorded"].any():
+        progress.to_csv(output / "progress.csv", index=False)
+    if crossings is not None:
+        crossings.to_csv(output / "time-to-target.csv", index=False)
     # Isolate reports from user matplotlibrc styles (including external TeX).
     with matplotlib.rc_context({**matplotlib.rcParamsDefault, "text.parse_math": False}):
         figures, notes = _plots(analysis, summary, comparisons, gaps, output, max_plot_groups)
+        progress_figures, progress_notes = _progress_plots(progress, summary, output, max_plot_groups)
+        figures.extend(progress_figures)
+        notes.extend(progress_notes)
     notes.extend([
-        "Quality-over-time and time-to-target are unavailable: runner-v1/v2 record no history.",
-        "Parallel efficiency is unavailable: runner-v1/v2 execute serial NN only.",
+        "Histories contain actual safe-checkpoint observations, not interpolated trajectories or invented final-cost histories.",
+        "Concatenated search clocks exclude setup/validation/persistence gaps; they are not trial wall time. Limits apply per invocation.",
+        "Target crossings are first observed crossings, not exact first hitting times; sampling may delay observations. Non-reaching eligible trials remain censored rows.",
+        "Parallel efficiency is unavailable: the runner executes serial searches only.",
         "Recorded tours/identities were checked; objective costs were not recomputed without input artifacts.",
         "Runtime context matching is observational, not hardware attestation or statistical significance.",
         "Warm-up/cache state and trial order can dominate end-to-end ratios; these are observed ratios, not controlled speedup conclusions.",
         "Failed, no-solution, duplicate-execution and incomplete-campaign observations are excluded from numeric aggregates, not from counts.",
         "Quality boxplots omit individual outlier markers; all observations remain in tables. Speed-ratio plots summarize paired ratios, not ratios of aggregate medians.",
     ])
+    if not targets:
+        notes.append("Time-to-target table unavailable: no explicit instance-bound absolute targets supplied.")
     if references is None:
         notes.append("Reference gaps unavailable: no explicit compatible references supplied.")
     elif gaps.empty:
@@ -165,7 +230,8 @@ def write_report(paths, *, output_dir, expected_manifest=None, references=None,
         "schema_version": 1, "sources": analysis.sources,
         "analysis_runtime": {**runtime_provenance(), "pandas": pd.__version__, "matplotlib": matplotlib.__version__},
         "configuration": {"expected_manifest": None if expected_manifest is None else expected_manifest.to_dict(),
-                          "references": references, "max_plot_groups": max_plot_groups},
+                          "references": references, "max_plot_groups": max_plot_groups,
+                          "max_history_points": max_history_points, "target_costs": targets},
         "observed_trials": len(analysis.trials), "diagnostics": analysis.diagnostics,
         "comparison": {"baseline_implementation": baseline_implementation,
                        "baseline_distance_mode": baseline_distance_mode, "metric": metric,

@@ -41,6 +41,8 @@ Supply multiple shard paths to combine campaigns. The output directory must be n
 | `summary.csv` | Per-group attempt/failure/no-solution/incomplete/duplicate/usable counts and count/min/median/mean/max/sample-standard-deviation statistics |
 | `comparisons.csv` | When a baseline is supplied: paired attempt IDs, selected metric, baseline/target duration ratio or a rejection reason |
 | `gaps.csv` | When references are supplied: matched usable attempts, reference kind/source/cost, absolute and percentage gaps |
+| `progress.csv` | When history is enabled: actual logical observations, original and concatenated search clocks, cumulative incumbent/work and usability flags |
+| `time-to-target.csv` | With explicit `--target INSTANCE_ID=COST`: observed crossings, eligible/non-reaching/censored rows and exclusion reasons |
 | `report.json` | Source file hashes, analysis runtime versions/provenance, manifest/reference/plot configuration, diagnostics, requested comparison, available figures and limitations |
 | PNG figures | Runtime summaries and quality distributions; speed ratios and reference gaps only when applicable |
 
@@ -54,9 +56,9 @@ The reader accepts legacy runner-v1/v2 fixed-work NN records and v3 serial NN/GA
 
 Malformed complete records, unsupported versions, duplicate attempts/campaigns, conflicting IDs and contradictory summaries are errors, not silently skipped rows. A missing summary or unterminated final line is an incomplete campaign: retain the validated prefix for inspection, but exclude it from numerical aggregates. Repeated execution IDs with distinct attempt IDs are retries/duplicate observations—not new statistical repetitions—and all ambiguous copies are excluded. Select the intended shard(s) explicitly; there is no automatic “latest wins” policy. `--manifest` detects entirely absent or unexpected requested executions; absent runs cannot be inferred from the available shards alone.
 
-`--baseline` names an explicit implementation. By default it is matched within the target's distance mode; `--baseline-distance-mode on_demand` can explicitly compare representations too. `--metric` selects `search_time_s` (default) or `end_to_end_time_s` from the post-write receipts. Each ratio is paired by **search ID**, not file order or a ratio of aggregate medians. Require unique usable attempts, equal actual work and returned tours/costs (within objective tolerance), clean known source revision, and matching observed runtime/resources/setup. Incompatible or missing baselines get reasons, never a substitute chosen for being fastest.
+`--baseline` names an explicit implementation. By default it is matched within the target's distance mode; `--baseline-distance-mode on_demand` can explicitly compare representations too. `--metric` selects `search_time_s` (default) or `end_to_end_time_s` from the post-write receipts. Each ratio is paired by **search ID**, not file order or a ratio of aggregate medians. Require fixed-work-only budgets, unique usable attempts, equal actual work per logical invocation and returned tours/costs (within objective tolerance), clean known source revision, and matching observed runtime/resources/setup. Time-only and combined-limit trials are quality-under-budget observations, not implementation speed-ratio evidence, even if they happen to return the same work. Incompatible or missing baselines get reasons, never a substitute chosen for being fastest.
 
-These are **observed ratios**, not controlled speedup evidence: cache state, warm-up and order can dominate, and context matching is not hardware attestation. Timings overlap. Parallel efficiency and time/history plots require actual parallel/history evidence; never fabricate progress from final costs.
+These are **observed ratios**, not controlled speedup evidence: cache state, warm-up and order can dominate, and context matching is not hardware attestation. Timings overlap. Parallel efficiency requires actual parallel evidence. History figures use recorded observations only, keep instances separate and do not interpolate. Legacy/final-cost-only records do not acquire synthetic histories.
 
 ### Explicit reference costs
 
@@ -68,7 +70,40 @@ Absolute gap is `observed_cost - reference_cost`; percentage gap is `100 * absol
 
 `tsp_hpc.analysis` supplies `read_shards(paths, *, expected_manifest=None, max_record_bytes=...)`, `summary_table(analysis)`, `paired_comparisons(analysis, *, baseline_implementation, baseline_distance_mode=None, metric=...)`, and `reference_gaps(analysis, document)`. The first returns an `Analysis` with a compact pandas `.trials` table, structured `.diagnostics` and hashed `.sources`; the other functions return DataFrames. `tsp_hpc.analysis.reports.write_report(...)` is a separate Matplotlib/CSV presentation layer, not part of the numerical calculation API.
 
+Scalar rows distinguish `budget_mode` (`work`, `time`, `work_and_time`), nullable work-limit name/count, per-invocation `time_limit_s`, logical invocation count, history policy/count and termination. `time_overshoot_s` sums each completed invocation's nonnegative overrun, never compares a multi-search total to one allowance. `budget_summary_json` preserves exact limits without retaining NN start arrays; `logical_work_id` fingerprints ordered work/status/termination rather than retaining all logical records in the table.
+
 The reader retains O(trial count) scalar summaries/locators, discarding validated tours/plans. Its default encoded-line limit is 64 MiB, not an RSS ceiling. `analysis.trial(attempt_id)` reads details lazily and rechecks source metadata/record digest; changed sources require reload. `read_sources` uses the same validator over authorized binary sources for the interface, with additional optional bounds/cancellation. Neither reader owns HTTP or caches.
+
+### Histories and observed time-to-target
+
+`progress_table(analysis, *, attempt_ids=None, max_points=100_000)` lazily rereads
+verified records and returns genuine observations. `elapsed_s` belongs to one
+logical invocation; `search_elapsed_s` concatenates completed search durations
+plus that observation's elapsed time. It excludes setup, validation and persistence
+gaps, so it is **not trial wall time**. `trial_best_cost` and cumulative work reduce
+only observations/evidence already available in that serial order. Unusable
+prefixes remain inspectable with `usable=False`. No interpolation, inferred
+intermediate tour or final-cost-to-history conversion occurs.
+
+`time_to_target(analysis, *, instance_id, target_cost, attempt_ids=None,
+max_points=100_000)` uses a predefined finite nonnegative absolute target for one
+instance/objective. It records the first **observed** crossing, not the exact
+first hitting time. Sampling can delay that observation. Eligible trials with no
+crossing—including completed `no_solution` trials—remain censored rows through
+the recorded observation end. Missing histories, failed/incomplete campaigns and
+duplicate attempts remain explicit ineligible rows; an observed crossing in a
+failed prefix is not an eligible success. This is not survival-model inference.
+
+The [timed/history NN example](../examples/manifests/nn-timed-history.json) runs
+against the same saved square. Replace the manifest/output in the run command,
+then analyze its new shard with `--target
+instance-v1-434c24120a05da693ed0f22582acc664ddef0f054a900905b4cf275ba68f5699=4`.
+It is an integration exercise, not a meaningful timing or deadline benchmark.
+The CLI and `write_report(..., target_costs={instance_id: cost})` export progress
+and target tables. `--max-history-points` / `max_history_points` is a hard total
+bound: exceeding it fails before creating output rather than silently sampling.
+History plots also obey the attempt-count plot ceiling and show points only.
+Absolute targets are user-supplied goals, not claims of certified optimality.
 
 ## JSONL records and timing boundaries
 
