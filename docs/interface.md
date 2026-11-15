@@ -1,28 +1,23 @@
-# Optional local interface
+# Local interface
 
-The interface is a read-only-by-default companion to [run → analyze](usage.md), not a second scientific engine. Python owns validation and statistics. **Browser benchmarks, profiling campaigns and numerical browser-performance gates remain withdrawn**, not certified as passed.
-
-## Current boundary and selected stack
-
-| Part | Implemented | Not implemented |
-| --- | --- | --- |
-| Svelte 5 / TypeScript / Vite | Pairing, workspace selection, ingestion status, paged real trial rows, server-side filters/sorting | Facet lists, charts, editor and job controls |
-| FastAPI / Pydantic / Uvicorn | Owner-only pairing/authority, immutable instances, capabilities/preflight, durable serial jobs/recovery, independently verified final geometry, bounded shared analysis/history; installed-process/security acceptance | Production GA/SA await teammate algorithms; multicore/remote/resume are outside this milestone |
-| WebGL2 | Separate synthetic viewer preview | Real-result artifact binding |
-| Delivery | Guarded same-origin development proxy | Bundled frontend serving from the installed CLI |
-
-No SSR/SvelteKit, cloud accounts, telemetry, CDNs, arbitrary shell endpoints or cluster operations. ECharts is selected for future presentational charts but is not installed. Numerical-only installations remain independent of interface dependencies.
+The FastAPI service is a read-only-by-default companion to [run → analyze](usage.md).
+Python owns scientific validation, execution and statistics. The Svelte/TypeScript
+browser presents saved trial rows; its separate WebGL2 viewer uses synthetic data.
+The CLI serves the API, not frontend assets. Numerical installations need no web dependencies.
 
 ## Browser local results
 
-Use Python 3.12, Node 24 and the pinned pnpm version; see [development](development.md). From the repository root, start the backend in one terminal:
+Use the [development environment](development.md). Start the backend from the repository root:
 
 ```bash
 uv sync --locked --extra interface
 uv run --locked --extra interface tsp-hpc serve --workspace results --port 8000
 ```
 
-Choose a small trusted workspace containing your JSONL files, not a repository with large dependency directories. At the hidden prompt, supply a fresh random **43–128-character URL-safe secret** (for example, generated privately with a password manager). Keep it for browser pairing; never put it in arguments, URLs, environment variables, shell history or logs.
+Choose a small, existing trusted workspace containing JSONL and optional instance,
+manifest or reference JSON files. Avoid roots containing large dependency trees.
+At the hidden prompt, supply a fresh random **43–128-character URL-safe secret**.
+Generate it privately; never put it in arguments, URLs, environment variables or logs.
 
 In another terminal:
 
@@ -31,481 +26,311 @@ pnpm --dir frontend install --frozen-lockfile
 pnpm --dir frontend run dev
 ```
 
-Open **http://127.0.0.1:5173**, enter the same secret, select `nn.jsonl` and click **Load**. Leave the expected manifest unset unless an actual manifest JSON is present; instance/reference JSON is not a manifest. The owner's square example produces four real trial rows. This reads the existing shard without changing it.
+Open **http://127.0.0.1:5173**, pair with the secret, select a result shard and click
+**Load**. Select an expected manifest only when the file is actually a manifest,
+not an instance or reference document. The ports are fixed at 5173/8000; use
+`127.0.0.1`, not `localhost`. An occupied port fails rather than changing authority.
+`vite preview` is static-only and has no API proxy.
 
-- The secret input clears on submission; the session token stays in memory, never browser storage. After reload/disconnect, type `pair` and Enter **in the running backend terminal**, supply a fresh secret at the hidden prompt, then pair in the browser. No backend restart is needed. Switching views retains the session.
-- Trial pages contain up to 100 attempts. Previous/Next, sorting and exact-value filters operate on the entire dataset **on the server**. Enter one value per line; blank filters are unrestricted. Nullable columns offer **Include missing values**. There are no misleading current-page facet lists.
-- Attempt expansion shows completeness, duplicate and usable flags. `usable` does not certify comparison eligibility or producer provenance. The current browser view does not request the new verified-geometry API; synthetic geometry is never substituted.
-- Loading, empty, failed and stale states are explicit. Selection/refresh changes discard old pages; request/context checks reject late replies. Ready datasets are rechecked every five seconds and on queries, not through an instantaneous filesystem watcher.
+- Tokens stay in memory. After a reload, type `pair` in the backend terminal and
+  supply a fresh secret, then reconnect in the browser. Switching views retains the session.
+- Previous/Next, exact-value filters and sorting query the **whole dataset** on the
+  server. Enter one value per line; blank filters are unrestricted. Nullable columns
+  offer **Include missing values**. Attempt expansion displays eligibility flags.
+- Selection/refresh discards old pages. Context checks reject late replies. Ready
+  datasets are rechecked every five seconds and on queries, not by a filesystem watcher.
+- The trial table does not display geometry. Use the verified-publication API below;
+  synthetic geometry is never a substitute for a missing real result.
 
-The development ports are fixed at 5173/8000. An occupied frontend port fails rather than changing the trusted origin. Use the exact address above, not `localhost`. Stop each server with Ctrl-C. `vite preview` is static-only: it has no API proxy.
-
-## Results and viewer preview
-
-**Viewer preview** needs no backend. It contains only synthetic 128-city geometry and a synthetic permutation, not a second Results table or solver evidence.
-
-Drag/arrow keys pan; wheel/plus/minus zoom; Fit/Home resets; repeated coincident picks cycle city IDs. Fullscreen exits with Escape. The shared icon toggle changes themes without replacing geometry/camera; theme preference may use local storage, credentials may not. Context loss exposes Retry; unmounting releases resources. Editing and complete non-canvas accessibility remain unimplemented.
-
-The [rendering primitives](../frontend/src/rendering/) retain canonical float64 coordinates separately from float32 display buffers. They use instanced points, a final selection overlay, an O(n) closed polyline and bounded picking. Unsupported float32 edits fail atomically; automatic rebasing is not implemented. WebGL2 is a display choice, not a solver accelerator. [Archived rendering evidence](https://github.com/itwasneo/computational-methods-project/pull/97) retains its stalls/memory limitations without requiring further measurements.
+The independent **Viewer preview** contains synthetic 128-city geometry. Drag/arrow
+keys pan, wheel/plus/minus zoom, and Fit/Home resets. Repeated coincident picks cycle
+city IDs; Escape exits fullscreen. Theme changes preserve geometry/camera; context
+loss offers Retry. Canonical float64 coordinates remain separate from float32 display
+buffers. Unsupported display edits fail atomically; WebGL2 is not a solver accelerator.
 
 ## Local backend usage and security
 
-Installed users can install `tsp-hpc[interface]`. `tsp-hpc serve` binds only `127.0.0.1` and serves the API, not frontend assets. Startup validates the workspace/scan limits before requesting a secret; an occupied port fails explicitly. Ctrl-C cancels ingestion cooperatively, joins its worker and closes the catalog. Help/version and numerical commands do not import web dependencies.
-
-### Owner opt-in and execution requests
-
-Read-only remains the default. Local execution requires both
-`--enable-execution --execution-root /owner/chosen/output` at startup; the output
-root must already exist and be disjoint from the read workspace. Browser/native
-HTTP requests cannot enable or change this authority. `POST /api/execution`
-accepts `RunContext` (version/request/workspace/current session IDs) and returns
-`ExecutionInfo` with limits and an opaque output-root identity, never its path.
-The read workspace stays read-only even when a separate execution root is enabled.
-
-Execution requests use the solver-neutral `ScientificConfiguration` and
-`ExecutionPreflightRequest`, not the older NN-only design fixture types. They
-reuse shared parameter/budget/history normalization, preserve uint64 seeds as
-strings and require explicit independent logical IDs. Null implementation entries
-request registry default resolution, not fallback to a different algorithm.
-Actual capability/resource/instance validation remains preflight's responsibility.
-Stop-now requests require `confirm_stop_now: true` and an expected job revision.
-All actual routes use the same `ErrorResponse`/`retryable` envelope; the older
-`RunError` recovery DTO remains a design fixture only. No new UI is implemented.
-
-### Immutable instances and canonical export
-
-With execution explicitly enabled, the backend creates private `.tsp-local` state
-inside the chosen output root (mode 0700, private files, no-follow access). A
-controller lock excludes another backend using that root. State is bound to the
-original read-workspace directory identity; it cannot be silently reused for a
-different workspace. Internal paths never become HTTP authority.
-
-| Route | Request / response |
-| --- | --- |
-| `POST /api/instances/load` | `InstanceLoadRequest` / `StoredInstance` (201) |
-| `POST /api/instances/generate` | `InstanceGenerateRequest` / `StoredInstance` (201) |
-| `POST /api/instances/snapshot` | `SnapshotRequest` / `StoredInstance` |
-| `POST /api/instances/export` | `SnapshotRequest` / canonical `instance.json` attachment |
-
-Loading captures an authorized current catalog candidate using the shared loader;
-generation uses the existing Python uniform/clustered generators and private RNG.
-Limits apply before large allocation: by default 4096 cities, 2 MiB per artifact,
-64 snapshots. Snapshots retain exact coordinates, signed zero, seeds, objective,
-checksums and provenance, using exclusive files and last-step metadata publication.
-Identical generation can share scientific identity, never a snapshot handle.
-Original source changes do not change an already captured immutable snapshot.
-Changes to stored snapshot bytes/metadata fail closed. Partial creation is retained
-as evidence and consumes capacity, not published as a successful snapshot.
-
-Exports are bounded binary attachments of the validated canonical CLI artifact,
-not arbitrary file downloads. Save the bytes and use `load_instance`; do not parse
-and re-serialize them through JavaScript Number (artifact seeds are uint64 JSON
-integers). API descriptor seeds remain decimal strings. Read-only mode creates no
-state and cannot load/generate/export execution snapshots. None of these routes
-executes a solver or supplies synthetic final tours.
-
-### Capabilities and non-executing preflight
-
-`POST /api/runs/capabilities` takes `RunContext` and returns
-`ExecutionCapabilities`, including real registry entries, availability/reasons,
-resolved defaults, limits and a capabilities revision. Only NN is production
-available today. The local **process worker requires Linux pidfd support** for
-safe cancellation/recovery and readable `/proc` ownership metadata; this does not
-restrict the standalone scientific CLI. Availability probes actual kernel permissions,
-not merely Python attribute names. Disabled JIT is explicitly unavailable, never an
-interpreted fallback.
-
-`POST /api/runs/preflight` takes `ExecutionPreflightRequest` and returns
-`ReviewedExecution`: effective configuration, ordered trial/logical identities and
-exact string seeds, snapshot checksum, explicit per-invocation budget scope,
-conservative memory/output/history estimates and an expiring review identity.
-NN has one ordered batch; GA/SA have independent populations/chains. Summed search
-allowances are not a campaign wall-clock guarantee: setup/compilation/validation
-also consume the separate job ceiling. Matrix estimates are not total RSS.
-
-Preflight loads the immutable canonical snapshot but does not generate data,
-prepare distances, warm/execute solvers, launch a worker or write result files.
-Cardinalities, plan/response bytes, matrix/population estimates, recording bounds
-and total time allowances are checked before manifest expansion. Scientific
-normalization, registry resolution and logical RNG planning are the CLI's shared
-APIs. Default/explicit aliases that duplicate an execution are rejected.
-
-By default at most 64 plans remain valid for 900 seconds. Plans bind the current
-session, output root, snapshot, code/dependency/compiler context and resource
-policy. Restart, re-pairing, expiration or observed changes require fresh review;
-code changes require backend restart, not use of stale imported modules. Known
-compiler settings are resolved for the child process rather than reinterpreting
-later environment edits. These bindings are observations, not machine attestation.
-
-### Durable serial jobs
-
-| Route | Request / response |
-| --- | --- |
-| `POST /api/jobs/submit` | `JobSubmitRequest` / `JobSubmission` (202, including deduplicated retries) |
-| `POST /api/jobs/status` | `JobStatusRequest` / `JobEnvelope` |
-| `POST /api/jobs/review` | `JobStatusRequest` / `JobReview` (original accepted public plan, not a new preflight) |
-| `POST /api/jobs/control` | `ExecutionControlRequest` / `JobEnvelope` |
-| `POST /api/queue/continue` | `QueueContinueRequest` / `QueueStatus` |
-| `POST /api/jobs/query` | `JobsQueryRequest` / `JobsPage` |
-| `POST /api/queue/status` | `RunContext` / `QueueStatus` |
-
-One controller and at most one active campaign/owned Python child use an execution
-root. By default eight campaigns may wait and 256 job directories may be retained;
-finished jobs and failed/unacknowledged creation evidence consume retention, never
-silently evicting submission keys. A different key deliberately creates a fresh
-campaign/attempt and exclusive output directory, even with identical science.
-The same key plus the same preflight ID always returns the original job, including
-after review expiry/re-pairing/restart. A key with a different preflight conflicts.
-
-Immutable canonical input and reviewed manifest/runtime/resource settings are
-written before an atomic, fsynced admission record. Only committed queue entries
-can launch; a lost acknowledgement cannot create a duplicate worker. Crash-before-
-admission files remain unexecuted evidence. No browser credential is persisted.
-Queue metadata, file counts, plans, records, total result bytes and response pages
-are bounded. Oversized scientific recording fails rather than truncating history.
-
-The child runs the installed `tsp_hpc.interface.worker` via structured arguments,
-not a shell or caller-selected module. Only its job/cache/lease descriptors are
-inherited. It rechecks the immutable request/input and reviewed code/compiler
-context, pins the reviewed CPU affinity and known serial library/compiler settings,
-and invokes the same `run_manifest` as the CLI. Search seeds/IDs do not depend on
-queue order. Native compilation caches are private and separated by runtime key. Compiler-created
-files/directories use an owner-only umask. Aggregate cache ceilings are 256 MiB of
-apparent/allocated regular-file bytes, 4,096 entries and 16 runtime contexts, with
-bounded no-follow traversal. They are checked before launch, every 250 ms while an
-identified worker is active, and after exit. Exceeding a ceiling stops owned work
-and blocks further launch; caches and scientific evidence are not silently deleted.
-These are observed ceilings, **not a filesystem quota**: transient overshoot between
-checks is possible; the OS per-file limit also applies. Use a new root or inspect
-retained cache/state offline when capacity is exhausted.
-
-A worker has address-space, CPU, per-file-size and core-dump resource limits; the
-controller also enforces the job wall-clock ceiling. Defaults are 4 GiB address
-space, 300 seconds and 64 MiB result files; inherited OS/cgroup limits can be
-stricter. These are not total RSS/allocation or performance guarantees. No raw
-worker output/tracebacks are sent to HTTP. Failed trials remain genuine records;
-`completed` means the whole campaign finished, **not** that every trial succeeded.
-Inspect `failed_trials`. Job wall time is not scientific search time.
-
-Status is an observed lifecycle snapshot. Durable trial-prefix notifications do
-not invent per-proposal progress or intermediate tours. Result handles/revisions
-appear only after verified worker exit and shared source/manifest validation;
-independent final-tour authentication is a separate publication boundary. PIDs,
-internal paths, raw plans and records are not job response fields. Paging cursors
-are bound to the current queue revision and cannot silently restart pagination.
-
-### Cancellation, recovery and fresh reruns
-
-Controls name a job and its current `expected_revision`. A stale state requires a
-refresh, not an implicit repeated side effect. `cancel_queued` removes only pending
-work (including held jobs); `stop_after_trial` persists a request for the next
-trial boundary the child observes. It does **not** interrupt or invent a partial
-logical search/trial. Repeated current-revision graceful requests are idempotent.
-`stop_now` additionally requires `confirm_stop_now: true` and signals only the
-verified owned process handle. A requested stop cannot be downgraded.
-
-`stop_requested` and `stopping` are not terminal evidence. A terminal state requires
-observed pidfd exit, or reconciliation against the original persistent worker
-lease when no identified child survives. Receipt/prefix/footer disagreements are
-explicit failures; a torn operational receipt does not erase valid scientific
-records. A completion already recorded before a racing stop remains completion.
-The solver's own `time_limit` is still a normal scientific termination, not job
-cancellation. The external job wall/CPU/file/address-space ceiling is separate.
-
-Closing a browser or revoking/re-pairing its session does not cancel owned work.
-Orderly backend shutdown holds pending work and stops an active worker as an
-**interruption**, not a completed campaign. After an abrupt backend death, a child
-can survive with its lease. Restart verifies boot identity, start ticks and the
-exact installed-worker/job marker and kernel executable identity (not just `argv[0]`)
-before recovering a pidfd. It never sends a signal to an unverified or merely reused
-PID. If pidfd acquisition fails immediately after launch, only the still-owned,
-unreaped direct `Popen` child is eligible for cleanup—never a reconstructed PID. Unverifiable live ownership is
-`recovering`; pending work stays held and immediate signalling is denied.
-
-Every restart holds dispatch. After inspection, an authorized client may call
-`/api/queue/continue` with the current queue revision; queued immutable inputs and
-runtime/resource bindings are rechecked before launch. No interrupted/failed job
-is retried or continued. Job controls affect one campaign; other pending campaigns
-can follow it when dispatch remains enabled, so cancel unwanted pending work too.
-
-For a deliberate **whole-campaign rerun**, obtain the original public configuration
-from `/api/jobs/review`, review it against the current capabilities and original
-snapshot with `/api/runs/preflight`, then submit a **new submission key**. This
-creates fresh campaign/attempt IDs and exclusive output files, while scientific
-IDs/seeds can remain identical. There is no append, resume, checkpoint continuation
-or implicit latest-successful-attempt selection. Old submission keys remain retries
-of their original jobs, including cancelled/failed jobs.
-
-Private queue format v2 records the worker-lease identity and original wall ceiling.
-Unsupported pre-release/unknown queue schemas and missing state with retained jobs
-fail closed without migration, resetting keys or deleting evidence; retain the
-artifacts and use a new root or the compatible controller. Scientific JSONL
-versions remain governed by the shared backward-compatible reader. This private
-state protocol is not same-user tamper attestation. Missing owner metadata with
-retained state also fails closed: it cannot silently rebind the execution root to
-a different workspace. Retained torn atomic-state temporaries consume a 32-entry
-private-root limit (in addition to separate job/snapshot/cache bounds).
-
-A state-write failure can occur **after rename but before durable acknowledgement**.
-The controller then stops dispatch/owned work and rejects further mutations until
-restart; it must not overwrite uncertain disk admissions from older memory. Inspect
-and retry the original key/preflight after restart. A recovered admission returns
-the original job; a new key is a deliberate new campaign, not a generic error retry.
-Keep forensic evidence and choose a new root if stored state cannot be reconciled.
-
-### Verified final results and canonical geometry
-
-| Route | Request / response |
-| --- | --- |
-| `POST /api/jobs/result` | `JobPublicationRequest` / `JobDetailsResponse` |
-| `POST /api/jobs/geometry` | `JobGeometryRequest` / `JobGeometryResponse` |
-| `POST /api/trials/details` | `TrialPublicationRequest` / `TrialDetailsResponse` |
-| `POST /api/trials/geometry` | `TrialGeometryRequest` / `TrialGeometryResponse` |
-
-Job publication requires the exact terminal job revision, result-content revision,
-campaign, attempt and original snapshot ID. The copied worker input, immutable
-original snapshot, recorded descriptor/checksum/city order/objective/provenance and
-accepted manifest must agree. Missing/mutated inputs are rejected, not replaced by
-another fixture or a convenient same-named file. Results from still-active workers
-are not exposed as final artifacts.
-
-Read-only CLI artifacts remain supported without execution opt-in or filesystem
-writes. First ingest authorized shards, then explicitly name an authorized instance
-handle and its catalog revision with the exact dataset revision/campaign/attempt.
-The service **never follows the input path in a persisted record**, scans for a
-matching instance, or picks a newest successful attempt. Missing/ambiguous/mismatched
-bindings fail closed. An explicit duplicate execution can be inspected by its
-unique attempt; its duplicate/analysis-ineligibility flags remain visible.
-
-Both paths use the shared versioned reader/codec and independent coordinate-based
-`validate_solution`. Every accepted logical final solution and the actual aggregate
-permutation/cost are checked. Details expose projected configuration, genuine work,
-seeds, timings and validation results—not raw records, paths, environment, hostname
-or exception messages. Large exact integer observations are decimal strings; all
-seeds are strings. Legacy records remain readable without retroactive native or
-per-logical-observation certification.
-
-Details return a content/rules/context-bound `geometry_revision`. Supply it to the
-corresponding geometry route for canonical `f64-le-base64` coordinates and, only
-when a real final solution exists, a `u32-le-base64` permutation of **exactly n**
-city indices. Signed zero and city order are preserved; no normalization, closure
-city, interpolation or intermediate tour is added. No-solution/failed trials have
-null aggregate tours; accepted prefixes of a failed trial are not promoted to a
-winner. A completed trial in an interrupted campaign may expose its genuine final
-tour while remaining explicitly incomplete/ineligible in shared analysis.
-
-The service retains at most one bounded compact job index, never a tour cache.
-Default publication limits are 4,096 cities, 2 MiB instance artifacts, 4 MiB records
-and responses, and 64 MiB result sources, with independent source checks before and
-after publication. These are allocation/transport bounds, not hard process-RSS
-attestation. History endpoints do not gain intermediate-tour verification merely
-because a final solution was checked.
-
-`examples/interface-contracts/backend-v1.json` contains actual functional payload
-examples checked against both Python and TypeScript DTOs. It contains no credential
-and is not benchmark/provenance-attestation evidence. Older read-only/local-run
-preview fixtures are retained but do not override these implemented route types.
-
-### Bounded shared analysis and observed histories
-
-| Route | Request / response |
-| --- | --- |
-| `POST /api/analysis/query` | `DatasetAnalysisRequest` / `DatasetAnalysisResponse` (also available read-only) |
-| `POST /api/jobs/analysis` | `JobAnalysisRequest` / `JobAnalysisResponse` (owned terminal result only) |
-
-Both take a tagged `query` with `table`, nullable `attempt_ids`, `limit` (1–500)
-and nullable `cursor`. Null attempts means the full indexed selection; an empty
-list means no attempts. IDs must be distinct/known. These are explicit subsets of
-an already indexed dataset, **not** re-ingestion: selecting one duplicate cannot
-repair its ambiguity or manufacture a latest-successful-attempt winner.
-
-| Table | Additional required query fields | Meaning |
-| --- | --- | --- |
-| `trials` | none | Algorithm-aware scalar rows, budgets, actual work, history/termination/eligibility/native flags |
-| `summary` | none | Shared `summary_table`, including failure/incomplete/duplicate denominators |
-| `diagnostics` | none; attempts must be null | Paged full-index diagnostic codes, safe source handles and affected IDs; no raw messages/paths |
-| `facets` | `field` from the existing trial-field whitelist | Whole-selection distinct values/counts, ascending with missing last; not current-page values |
-| `comparisons` | `baseline_implementation`, nullable `baseline_distance_mode`, `metric` (`search_time_s` or `end_to_end_time_s`) | Shared `paired_comparisons`, including rejected pairs/reasons |
-| `references` | `reference_handle`, `artifact_catalog_revision` | Shared `reference_gaps` over an explicitly authorized captured JSON document |
-| `progress` | `max_points` | Paged shared `iter_progress` observations, the same iterator used by CLI `progress_table` |
-| `targets` | `instance_id`, `target_cost`, `max_points` | Shared `time_to_target`: first **observed** crossing and descriptive censoring |
-
-A dataset request includes workspace/dataset/revision context. A job request uses
-`RunContext`, `job_id`, `expected_revision` and `result_revision`, not a caller path.
-Responses echo that context and include `query_key`, `columns`, JSON `items`,
-`total_rows`, `next_cursor`, `history_coverage`, optional reference binding and an
-explicit clock label. Private source/exception/citation-path columns are omitted;
-canonical JSON work/configuration columns become named objects. All seeds remain
-strings; unsafe-size exact integer observations are decimal strings, while missing
-observations remain null. Finite float64 targets accept equivalent JSON numeric
-spellings; counters/IDs retain exact-integer semantics.
-
-Cursors bind the normalized query/page size and immutable dataset/result context;
-reference queries additionally bind captured content SHA-256. Request IDs can
-change. Changing selection, options, page size or revisions requires a fresh first
-page, not a silent cursor restart. Sources/rules are checked through publication.
-No full-history HTTP table or query cache is retained: progress streams the common
-iterator and retains at most one page. The **total** selected history must fit
-`max_points` (maximum/default service ceiling 100,000); this is not a sampling or
-truncation request. Default row and conservative materialization-estimate bounds
-are 10,000 and 128 MiB, with 4 MiB response and 64 KiB reference-document bounds.
-Narrow the scope or page size on a resource error. Estimates are not total RSS.
-
-History preserves logical IDs/seeds and original `elapsed_s`; `search_elapsed_s`
-concatenates logical search durations **without setup/validation/persistence gaps**.
-It is not job/trial wall time. There is no interpolation, invented intermediate
-tour or final-cost-to-history conversion. Coverage distinguishes missing histories
-from recorded empty histories; trial rows retain per-attempt flags. Target results
-retain failed/incomplete/duplicate/missing-history reasons and eligible non-reaching
-or no-solution censoring. No first-hitting-time, survival-inference or cross-algorithm
-work-equivalence claim is made. Time-limited runs cannot yield implementation-speed
-ratios; fixed-work pairs retain shared work/solution/source/compiler/context checks.
-
-References never follow a stored path. Checksum/objective mismatches, duplicate
-references, malformed JSON and solutions below a declared exact optimum fail using
-the CLI's shared rules. Response provenance is the explicit authorized handle,
-catalog revision and captured SHA, not raw citation text that could contain private
-paths. `exact`/`best_known` is the document's declaration, not a new optimum proof.
-
-`validation: "shared-records"` states the analysis boundary. Like CLI analysis, this
-is structural/source-checked recorded evidence, **not** independent coordinate-based
-certification of every observation; request the separate verified-final-publication
-API for that boundary. Captured native payloads in
-`examples/interface-contracts/analysis-v1.json` are checked against Python and
-TypeScript contracts, not used as timing/quality/attestation evidence.
-
-### Session and HTTP boundary
-
-Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.
-
-Interactive launches accept the owner's `pair` command in that terminal. Command/secret input is hidden and bounded. A valid fresh secret revokes the previous token, changes the session identity and permits one new exchange, including after exhausted attempts. Empty/invalid/unchanged secrets leave access unchanged. Catalog handles, dataset revisions and ongoing ingestion survive; the browser still reconnects explicitly. There is no HTTP reset or additional control socket.
-
-Rotation and bounded API handlers serialize at admission; handlers recheck credentials after body parsing. An already-admitted operation finishes before rotation, and its response may still arrive afterward. Revocation is not retroactive cancellation. Background ingestion runs outside this admission lock.
-
-Ctrl-D disables terminal controls without stopping the backend; Ctrl-C stops the backend, even during a partial secret. Terminal settings are restored and pending input discarded. `--session-secret-stdin` does not enable terminal controls. Without those controls, further re-arming requires a restart.
-
-Backend requests must use exactly `http://127.0.0.1:<port>`; native clients should disable environment-configured proxies. Strict Host/Origin/Fetch Metadata guards reject foreign/null origins, cross-site/same-site requests and duplicate authority headers. Native clients may omit Origin but still need credentials. Query strings, WebSockets, permissive CORS and public API-doc endpoints are unavailable.
-
-The Vite proxy validates the **frontend** authority before rewriting Host/Origin for the fixed backend. Foreign requests are not converted into trusted requests. Development CORS is disabled; Vite filesystem access stays within the frontend.
-
-Request bodies are limited to **16 KiB**, including chunked bodies; Uvicorn concurrency is capped at **32**. JSON must be UTF-8, finite and unambiguous: duplicate fields, nonfinite constants/overflow, malformed encodings, escaped unpaired surrogates and nesting beyond 64 levels are rejected before dispatch. Strict request models reject extra fields and inappropriate scalar coercions. Responses carry no-store/no-sniff/frame-denial headers and sanitized errors. Catalog operations run in the HTTP worker pool under a nonblocking operation lock.
-
-### Workspace authority and limits
-
-The owner selects a trusted POSIX root at startup. Its open directory descriptor anchors no-follow descendant reads; changing roots requires restart.
-
-- Only regular `.json`/`.jsonl` candidates are listed; hidden entries, symlinks, special files and unsupported suffixes are excluded. Candidate names are escaped display labels, not paths or authority. Embedded artifact paths confer no access.
-- Handles are opaque and backend/workspace-bound, not credentials; re-pairing does not replace them. The read workspace permits no uploads, writes, arbitrary paths or raw-file endpoints. Opt-in execution snapshots have the separate bounded canonical export described above. Ingestion reopens known handles with no-follow/nonblocking flags and verifies identity before/after reads.
-- Catalog scans allow **10,000 entries / 16 directory levels**; exceeding either publishes no partial catalog. Device/inode/mode/size/mtime/ctime and directory changes invalidate metadata. Refresh rotates revision, handles and signed cursors even without file changes.
-
-Catalog revisions are not content validation. Choosing a root authorizes its regular files, including owner-created hard links. Hostile same-user writers, filesystem owners/mounts, arbitrary directory-renaming races and metadata forgery between syscalls are outside the threat model; keep untrusted writers out of the root.
-
-### Background ingestion and in-memory index
-
-One backend holds **one in-memory dataset and one worker, with no ingestion queue, database, persistent cache or shard copies**. A new accepted selection evicts the old dataset. Concurrent submission returns `ingestion_busy`, including while cancelled work unwinds.
-
-| Bound | Limit |
-| --- | --- |
-| Selected sources | 64 distinct shards; 64 MiB total including optional manifest |
-| Manifest / JSONL record | 64 KiB / 4 MiB |
-| Observed trials | 10,000 |
-| Expected-manifest expansion, before materialization | 10,000 plans; 100,000 plan × logical-search items; conservative 16 MiB search/execution storage estimate |
-| Retained summaries/table | 16 MiB serialized scalar rows before construction; 32 MiB completed pandas deep-byte estimate |
-| Public diagnostics | 100 summaries, with explicit total/truncation fields |
-
-Input bounds fail before queuing; ingestion bounds produce `failed`/`dataset_limit_exceeded`, never silently truncated data. Estimates are **not RSS or wall-clock guarantees**: decoding, diagnostics, libraries and temporary allocations add memory. Cancellation occurs between bounded records/phases; shutdown waits for the worker.
-
-Shared `read_sources`/`read_shards` validation owns the [malformed, incomplete, failed, duplicate and missing-execution policy](usage.md#validation-and-comparison-rules). Tables retain scalar metadata and lazy source locators, not every tour/plan. An expected manifest is necessary to identify wholly missing executions. `ready` means structural acceptance, potentially with exclusions—not independently authenticated objective costs or producer provenance.
-
-Publication is atomic. Revisions bind content SHA-256, manifest bytes, analysis/schema code, relevant dependency versions, limits and backend workspace/catalog context; this is cache invalidation, not verified build provenance. Status/query/lazy-read boundaries recheck sources. Observed changes, refresh and shutdown prevent obsolete publication; unrelated catalog changes conservatively invalidate too. Code changes require restart. Public diagnostics never echo raw exceptions, contents or private paths; raw diagnostic records remain internal, while the analysis API pages their sanitized structured projections.
-
-The earlier **#75 refresh/submission race is prevented by serialized HTTP admission**:
-refresh plus dataset invalidation completes before a newly authorized submission can
-enter. A deterministic regression pauses between catalog refresh and invalidation;
-with the current admission lock the new dataset remains ready, while a fault-injected
-negative control without that lock reproduces the former unnecessary staleness.
-This is an explicit reassessment of the owner-deferred race, not an assumption that
-old implementation claims constituted acceptance.
-
-## Read-only Results contract
-
-[Python DTOs](../src/tsp_hpc/interface/contracts.py), [TypeScript DTOs](../frontend/src/contracts.ts) and the [wire fixture](../examples/interface-contracts/read-only-v1.json) describe the boundary. [Request models](../src/tsp_hpc/interface/requests.py) and the [browser client](../frontend/src/results/client.ts) validate implemented traffic; static types alone do not.
-
-All fields are required, including nullable ones. Use `api_version: 1` and `request_id`; workspace operations include `workspace_id`, and trial queries add `dataset_id`/`revision`. Echo request IDs or generate a correlation ID for invalid requests without one. Booleans are not numbers; reject non-finite numbers and fractional/unsafe integer metadata. Nullable observations use JSON null, never sentinel strings or substituted zeros.
-
-| Implemented route | Request / response | Specific input |
-| --- | --- | --- |
-| `POST /api/session` | `SessionRequest` / `SessionResponse` | Startup or owner-replaced secret; no Bearer token yet |
-| `GET /api/workspace` | `WorkspaceResponse` | Optional `X-Request-ID` header |
-| `POST /api/artifacts/query` | `ArtifactQuery` / `ArtifactPage` | `limit`, nullable `cursor` |
-| `POST /api/artifacts/refresh` | `CatalogRefreshRequest` / `CatalogRefreshResponse` | Rebuild same root, invalidate dataset |
-| `POST /api/datasets` | `DatasetRequest` / `Dataset` | `artifact_catalog_revision`, `result_handles`, nullable `expected_manifest_handle`; HTTP 202 |
-| `POST /api/datasets/status` | `DatasetStatusRequest` / `Dataset` | `dataset_id`; states `loading`, `ready`, `failed`, `stale` |
-| `POST /api/trials/query` | `TrialQuery` / `TrialPage` | Ready revision, filters, sort, limit and cursor |
-
-Only `ready` has a queryable non-null revision. Page sizes are conventionally 100, maximum 500; filters allow at most 500 values per column.
-
-### Paged trial queries
-
-Example body for `POST /api/trials/query`:
-
-```json
-{
-  "api_version": 1, "request_id": "trials-1", "workspace_id": "<workspace>",
-  "dataset_id": "<dataset>", "revision": "<ready revision>",
-  "filters": [{"field": "outcome", "values": ["completed"]}],
-  "sort": {"field": "best_cost", "direction": "ascending"},
-  "limit": 100, "cursor": null
-}
+Installed clients use `tsp-hpc[interface]`. The service binds only loopback and
+validates the workspace before pairing. To permit execution, choose **existing,
+disjoint** read and output roots and explicitly opt in:
+
+```bash
+uv run --locked --extra interface tsp-hpc serve \
+  --workspace /path/to/read-workspace \
+  --enable-execution --execution-root /path/to/execution-output
 ```
 
-Responses echo context and return `query_key`, scalar `items` and `next_cursor`. Continue with the same revision, normalized filters/sort and page size; request IDs may change. Empty pages are valid; exhaustion returns null. Cursors are session-signed and bound to that context; reject tampering/mismatches rather than restarting pagination. Queries run over the ingestion-bounded table in the HTTP worker pool, without scientific recomputation, raw-tour loading or query caches.
+Both execution flags are required. HTTP cannot enable execution, change roots,
+choose commands/imports/PIDs, or write to the read workspace. Local workers require
+native JIT, Linux pidfds and readable procfs ownership metadata; capabilities probe
+actual kernel permissions. These requirements do not restrict the standalone CLI.
 
-### Trial identity, filtering and sorting
+### Pairing and transport
 
-Rows are **attempts**, keyed and labelled by `attempt_id`, not campaign/configuration IDs. Repeated executions remain distinct attempts with shared exclusions. Instance selection uses `instance_id`, not labels. Queryable fields:
+`POST /api/session` exchanges the startup secret once for a Bearer token and a
+correlation-only `session_id`. Five failed attempts exhaust pairing. The owner's
+terminal `pair` command accepts a fresh secret, revokes the old grant and permits
+one new exchange. Invalid/unchanged secrets leave access unchanged. Rotation
+preserves catalogs, datasets and jobs; it is not cancellation. No HTTP reset exists.
 
-`attempt_id`, `instance_id`, `implementation`, `n_cities`, `algorithm`, `outcome`, `best_cost`, `search_time_s`.
+Native clients can use `--session-secret-stdin` with a private pipe; this disables
+terminal re-arming. Ctrl-D disables terminal controls without stopping the service;
+Ctrl-C shuts it down. Credentials, access logs and raw server tracebacks are not
+persisted. Browser credentials must not enter storage.
 
-- Exact typed equality: OR within a column, AND across columns; absent/empty filters are unrestricted. Reject duplicate filter entries, normalize duplicate values, and permit null only for implementation/cost/time. Strings are case-sensitive; zero is a value. Cost/time filters accept finite numbers; city counts require safe integers ≥2.
-- Sort one column numerically or by Unicode code points, nulls last in either direction. Ties/default ordering use ascending attempt IDs. Global Reset clears filters/sort; Reset column clears only its filter and active sort.
-- `outcome` is `completed`/`failed`, not job state or eligibility. Preserve `campaign_complete`, `duplicate_execution` and `usable`; filters cannot repair exclusions or choose baselines.
-- Apply responses only while request/workspace/revision/query/selection still match; cancellation alone is insufficient. Changed sources produce `stale_revision`; loading/failed datasets produce `dataset_not_ready`.
+Requests must use exactly `http://127.0.0.1:<port>`; native clients should disable
+proxy environment settings. Host/Origin/Fetch Metadata checks reject foreign/null
+origins, cross-site/same-site traffic and duplicate authority headers. Native clients
+may omit Origin but still need credentials. The Vite proxy checks frontend authority
+**before** rewriting it for the fixed backend. No permissive CORS, query strings,
+WebSockets or public API-doc endpoints are provided.
 
-### Remaining browser integration, not missing backend routes
+Bodies are bounded to **16 KiB**, including chunked bodies; concurrency is capped at
+**32**. JSON must be UTF-8 and finite, with no duplicate keys, escaped unpaired
+surrogates or nesting beyond 64 levels. Strict models reject extra fields and scalar
+coercion. Responses use no-store/no-sniff/frame-denial headers and sanitized errors.
+Authorization is rechecked at handler admission after body parsing. Bounded handlers
+and rotation serialize; an admitted operation may finish before its grant is revoked.
+Background ingestion and scientific work run outside that admission lock.
 
-Facet controls, verified-details/geometry views, charts, editor/undo and job controls
-are still frontend work. The backend routes above implement their agreed scientific
-and authority boundaries; old preview DTOs do not define those routes. A future UI
-must correlate context/query/selection, retain off-page selections, use authoritative
-server results, present exclusions/censoring and never replace missing real geometry
-with the synthetic viewer. It must not calculate new scientific summaries, inferred
-histories, speed ratios or equivalent work across algorithms.
+### Workspace and private storage
 
-### Exact geometry and seed transport
+The read catalog uses a POSIX directory descriptor and no-follow descendant reads.
+Only regular `.json`/`.jsonl` candidates are listed; hidden entries, symlinks and
+special files are excluded. Names are display labels; handles are references, not
+credentials. Persisted paths never confer filesystem authority. Refresh rotates all
+catalog handles/revisions/cursors and invalidates the dataset under the admission lock.
 
-Seeds are canonical unsigned decimal strings in `[0, 2**64)`: no signs, leading zeros except `"0"`, exponents or JavaScript Number conversion. Nullable seeds stay null. Protocol counters/indices are safe exact integers; the modern publication/analysis DTOs explicitly encode larger scientific integer observations as decimal strings.
+Execution creates owner-private `.tsp-local` state under the output root. A controller
+lock excludes a second service; directory and lease identities are checked throughout
+access. State is bound to the original read-workspace identity. Unsupported private
+schemas, missing owner/queue state with retained evidence, or replaced roots/locks
+fail closed. Inspect evidence offline and use a new root when it cannot be reconciled;
+never delete state merely to reset submission keys. Scientific JSONL compatibility is
+separate from this private protocol.
 
-| Payload | Encoding |
+These checks do not defend against hostile same-user writers, filesystem owners,
+mount changes or metadata forgery between syscalls. Selecting a root authorizes its
+regular files, including owner-created hard links. Keep untrusted writers out.
+
+## API contracts
+
+[Python DTOs](../src/tsp_hpc/interface/contracts.py) and
+[TypeScript DTOs](../frontend/src/contracts.ts) describe the wire format;
+[request models](../src/tsp_hpc/interface/requests.py) validate input.
+[Fixtures](../examples/interface-contracts/) exercise both languages. Static types
+are not runtime validation, authority or scientific evidence.
+
+All fields are required, including nullable ones. Use `api_version: 1` and a
+`request_id`; responses echo the ID or generate one for invalid input. Workspace
+requests carry `workspace_id`; execution requests add the current `session_id`
+(`RunContext`). Dataset requests bind `dataset_id` and its ready `revision`.
+All routes below are POST unless marked GET.
+
+| Route | Request → response |
 | --- | --- |
-| Coordinates | Standard padded base64, `f64-le-base64`; C-order little-endian float64 pairs; exactly `16 * n_cities` decoded bytes |
-| Non-null tour | Standard padded base64, `u32-le-base64`; exactly `4 * n_cities` bytes; open permutation with implicit closure |
+| `/api/session` | `SessionRequest` → `SessionResponse` |
+| GET `/api/workspace` | optional `X-Request-ID` → `WorkspaceResponse` |
+| `/api/artifacts/query` | `ArtifactQuery` → `ArtifactPage` |
+| `/api/artifacts/refresh` | `CatalogRefreshRequest` → `CatalogRefreshResponse` |
+| `/api/datasets` | `DatasetRequest` → `Dataset` (202) |
+| `/api/datasets/status` | `DatasetStatusRequest` → `Dataset` |
+| `/api/trials/query` | `TrialQuery` → `TrialPage` |
+| `/api/execution` | `RunContext` → `ExecutionInfo` |
+| `/api/instances/load`, `/generate` | `InstanceLoadRequest`, `InstanceGenerateRequest` → `StoredInstance` (201) |
+| `/api/instances/snapshot`, `/export` | `SnapshotRequest` → `StoredInstance`, canonical `instance.json` attachment |
+| `/api/runs/capabilities` | `RunContext` → `ExecutionCapabilities` |
+| `/api/runs/preflight` | `ExecutionPreflightRequest` → `ReviewedExecution` |
+| `/api/jobs/submit` | `JobSubmitRequest` → `JobSubmission` (202, including retries) |
+| `/api/jobs/status`, `/review` | `JobStatusRequest` → `JobEnvelope`, `JobReview` |
+| `/api/jobs/control` | `ExecutionControlRequest` → `JobEnvelope` |
+| `/api/jobs/query` | `JobsQueryRequest` → `JobsPage` |
+| `/api/queue/status`, `/continue` | `RunContext`, `QueueContinueRequest` → `QueueStatus` |
+| `/api/jobs/result`, `/geometry` | `JobPublicationRequest`, `JobGeometryRequest` → `JobDetailsResponse`, `JobGeometryResponse` |
+| `/api/trials/details`, `/geometry` | `TrialPublicationRequest`, `TrialGeometryRequest` → `TrialDetailsResponse`, `TrialGeometryResponse` |
+| `/api/analysis/query`, `/api/jobs/analysis` | `DatasetAnalysisRequest`, `JobAnalysisRequest` → `DatasetAnalysisResponse`, `JobAnalysisResponse` |
 
-Cap combined decoded geometry/tour at 16 MiB before allocation; account for base64 expansion. Decode with explicit little-endian `DataView` or an endian-checked equivalent. Preserve city order, duplicate points and signed zero; reject non-finite coordinates and invalid tour length/range/permutation. Byte round trips must preserve [checksum framing](manifests.md#encoding-contract). Float32 displays/JSON cycles do not replace canonical coordinates, and browser checks do not replace objective validation. Transport bounds do not redefine scientific tours.
+### Read-only Results contract
 
-### Errors and compatibility
+One ingestion worker maintains one in-memory dataset, with no ingestion queue,
+persistent cache or shard copies. A new accepted selection replaces the old dataset;
+concurrent submissions return `ingestion_busy`. States are `loading`, `ready`,
+`failed`, `stale`; only `ready` has a queryable revision. Publication binds source
+hashes, manifest bytes, validation code, dependencies, limits and workspace context.
+Status/query/lazy-read boundaries recheck sources; observed changes invalidate the
+index. Code changes require restart. Shutdown cancels cooperatively and joins the worker.
 
-`ErrorResponse` carries version/request ID, stable `code`, sanitized `message` and `retryable`. Retryable permits recovery such as reload, not unbounded retries.
+`ready` means shared structural acceptance, not independently verified objective
+costs or provenance. The [analysis rules](usage.md#validation-and-comparison-rules)
+preserve failures, duplicates and incomplete prefixes. An expected manifest is needed
+to detect entirely absent executions. Public diagnostics omit private paths/content.
 
-| HTTP status | Codes |
+Trial rows are keyed by **attempt ID**, not configuration or campaign. Query fields:
+`attempt_id`, `instance_id`, `implementation`, `n_cities`, `algorithm`, `outcome`,
+`best_cost`, `search_time_s`.
+
+- Filters use typed equality: OR within a column, AND across columns; absent/empty
+  filters are unrestricted. Duplicate columns are rejected; duplicate values normalize.
+  Null is legal only for implementation/cost/time. Strings are case-sensitive.
+- Sort one column numerically or by Unicode code point, nulls last in either direction;
+  ties/default ordering use ascending attempt IDs. Cost/time accept finite float64
+  spellings; city counts require exact safe integers ≥2. Booleans are not numbers.
+- Keep `campaign_complete`, `duplicate_execution` and `usable`; filtering cannot
+  repair exclusions. `outcome` is trial completion/failure, not job state.
+- Pages use `limit` (1–500), nullable `cursor`, `query_key`, `items`, `next_cursor`.
+  Signed cursors bind revision, normalized query and size; request IDs may change.
+  Changed context requires a fresh first page, never silent pagination restart.
+
+### Snapshots and preflight
+
+Loading captures an authorized catalog artifact; generation uses the shared
+uniform/clustered generators. Immutable snapshots retain canonical bytes, SHA-256,
+coordinates, signed zero, seeds and provenance. Source edits do not mutate them;
+stored-byte changes fail closed. Partial creations remain evidence and consume capacity.
+Export is a bounded canonical attachment, not arbitrary file access. Save its bytes;
+JavaScript Number parse/re-serialization can corrupt the artifact's uint64 seeds.
+
+Capabilities enumerate real registry entries, resolved defaults, availability and
+limits. `ScientificConfiguration` reuses shared parameters/budgets/history and exact
+string seeds; null implementation means registry default, not algorithm fallback.
+Independent populations/chains require explicit logical IDs. NN uses one ordered batch.
+
+Preflight binds the snapshot, session, output root, code/dependencies/compiler and
+resource policy. It returns ordered trial/logical IDs/seeds, estimates and an expiring
+review ID. It prepares no distances, warms no solvers, launches no worker and writes
+no results. Bounds precede manifest expansion; duplicate default/explicit aliases
+are rejected. Expiry, re-pairing, restart or changed bindings require fresh review.
+Search allowances apply per logical invocation; their sum is not a wall-clock guarantee.
+
+### Jobs, controls and recovery
+
+One execution root permits **one active campaign/owned Python worker**. Immutable
+input and reviewed settings precede atomic, fsynced queue admission; only committed
+entries dispatch. Same submission key + same preflight ID returns the original job,
+even after expiry/re-pairing/restart. A different preflight conflicts; a new key is a
+deliberate new campaign. Unacknowledged/orphan directories consume retention and never
+silently execute. No credential enters the worker plan.
+
+Workers use a fixed isolated interpreter command and inherited job/cache/lease FDs,
+not a shell. They recheck bindings, apply reviewed affinity/serial library settings and
+OS resource limits, then call the CLI's `run_manifest`. Queue order does not affect
+scientific IDs/seeds. `completed` means every trial was recorded, **not** every trial
+succeeded; inspect `failed_trials`. Job wall time is not search time.
+
+Controls require the current `expected_revision`:
+
+- `cancel_queued`: cancel pending/held work without launching it.
+- `stop_after_trial`: persist intent for the next observed trial boundary; never
+  fabricate a partial logical search. Current-revision repetitions are idempotent.
+- `stop_now`: additionally require `confirm_stop_now: true`; signal only verified
+  owned work. Stops cannot be downgraded. `stop_requested`/`stopping` remain nonterminal
+  until exit is verified. An already recorded completion wins over a late stop.
+
+Disconnect/re-pairing does not cancel work. Shutdown holds pending jobs and interrupts
+active work. Restart **always holds dispatch**, adopts verified survivors and never
+retries interrupted jobs. Recovery checks boot/start/worker/job identity and the
+kernel executable before acquiring a pidfd; it never signals a guessed PID. Only an
+unreaped direct child is eligible for cleanup if initial pidfd acquisition fails.
+Unverifiable live ownership stays `recovering` with dispatch held. Continue explicitly
+using `/api/queue/continue` and its current revision; inputs/bindings are checked again.
+Cancel other unwanted pending jobs too: stopping one campaign does not cancel the queue.
+
+Result handles appear only after verified exit and shared source/manifest validation.
+Operational failure cannot be relabelled success by a completion footer; valid scientific
+prefixes remain inspectable. A state-write error **after rename** can leave a durable
+admission without acknowledgement: the controller freezes mutations/dispatch and stops
+owned work, rather than overwriting disk from stale memory. Restart, inspect, and retry
+the original key/preflight. Preserve evidence if reconciliation fails.
+
+For a whole-campaign rerun, get the accepted configuration from `/api/jobs/review`,
+preflight against current capabilities and the original snapshot, then submit a **new
+key**. Campaign/attempt IDs and output files are fresh; scientific IDs/seeds can match.
+There is no append, resume, automatic retry or latest-successful-attempt selection.
+
+### Verified publication and exact transport
+
+Job publication binds the terminal job/result revisions, campaign, attempt and original
+snapshot. Both the copied input and original snapshot must match the admitted content.
+Read-only publication instead names an authorized instance handle/catalog revision and
+exact dataset/campaign/attempt. Neither path follows a record's input path, searches
+for substitute files or chooses an attempt implicitly.
+
+Shared readers and independent coordinate-based `validate_solution` verify every
+accepted logical final tour and the aggregate. Details expose projected settings,
+work, seeds, timings and eligibility, not raw records/environment/exception text.
+Legacy records are not retroactively certified native. A failed trial has no aggregate
+winner; a completed trial in an interrupted campaign may have a valid final tour while
+remaining ineligible for aggregates.
+
+Details return a `geometry_revision` required by the geometry request. Coordinates
+are `f64-le-base64` C-order little-endian pairs (**16n bytes**); a real final tour is
+`u32-le-base64` (**4n bytes**, exactly n cities, implicit closure), otherwise null.
+Use explicit little-endian decoding, preserve signed zero/duplicates/order, and check
+bounds before allocation. No intermediate tours or normalized coordinates are invented.
+All seeds are canonical uint64 decimal strings; larger-than-safe exact integer
+observations are strings too. Missing observations are null, never zero or a sentinel.
+
+### Shared analysis queries
+
+`query` contains `table`, nullable `attempt_ids`, `limit` and nullable `cursor`.
+Null attempts means all; an empty list means none. IDs must be distinct and known.
+Subset selection preserves full-index exclusions, including duplicates.
+
+| Table | Additional required fields |
 | --- | --- |
-| 400 | `invalid_request` (also 404/405/415 for unavailable endpoints/methods/content types) |
-| 403 / 404 | `unauthorized`, `execution_disabled` / `artifact_not_found`, `dataset_not_found`, `snapshot_not_found`, `job_not_found` |
-| 409 | `catalog_busy`, `ingestion_busy`, `dataset_not_ready`, `stale_revision`, `cursor_invalid`, `snapshot_mismatch`, `snapshot_stale`, `preflight_stale`, `submission_conflict`, `queue_full`, `job_stale`, `job_state_invalid`, `queue_stale`, `execution_busy` |
-| 413 | `catalog_limit_exceeded`, `dataset_limit_exceeded`, `request_too_large`, `artifact_too_large`, `geometry_too_large`, `resource_limit` |
-| 422 / 503 / 500 | `invalid_artifact`, `unsupported_execution`, `invalid_plan` / `workspace_unavailable`, `execution_unavailable` / `internal_error` |
+| `trials`, `summary` | none |
+| `diagnostics` | none; `attempt_ids` must be null |
+| `facets` | whitelisted trial `field`; whole-selection counts, missing last |
+| `comparisons` | `baseline_implementation`, nullable `baseline_distance_mode`, `metric` |
+| `references` | authorized `reference_handle`, `artifact_catalog_revision` |
+| `progress` | `max_points` |
+| `targets` | `instance_id`, finite nonnegative `target_cost`, `max_points` |
 
-`result_unavailable` is 409 when an exited/validated source is not available, or 404
-for a missing exact attempt. Wire fixtures test compatibility, not performance or
-producer authenticity. Functional native-worker/API/client/proxy tests remain
-separate from withdrawn browser-performance gates.
+These call the same [analysis functions and history rules](usage.md#reusable-data-api)
+as the CLI. Responses include columns/items, total rows, coverage, clock labels and
+optional reference binding. Private source/exception/citation text is omitted. Cursors
+bind selection/options/size/content, including reference SHA-256. History streams one
+page at a time, but the **entire selection** must fit `max_points`; paging is not sampling.
+
+Logical and concatenated-search clocks exclude setup/validation/persistence gaps;
+targets are first **observed** crossings, with exclusions and censoring preserved.
+No interpolation, first-hitting-time inference or cross-algorithm work equivalence is
+implied. Timed trials cannot yield implementation-speed ratios. References use shared
+checksum/objective rules; `exact`/`best_known` is a declaration, not proof.
+`validation: "shared-records"` certifies structural/source checks, not independent
+coordinate verification of every historical observation. Final publication is separate.
+
+## Resource bounds and failures
+
+Defaults below are admission/materialization/observed limits, **not total RSS, hard
+real-time or filesystem quotas**. OS/cgroup limits may be stricter. Exhaustion rejects
+work or stops the owned worker; it never silently truncates science or evicts evidence.
+
+| Resource | Default bound |
+| --- | --- |
+| Catalog | 10,000 scanned entries; depth 16 |
+| Ingestion | 64 shards; 64 MiB including manifest; 64 KiB manifest; 4 MiB record |
+| Ingestion index | 10,000 trials/plans; 100,000 plan × logical items; 16 MiB plan/serialized rows; 32 MiB table estimate |
+| Public ingestion diagnostics | 100 summaries, with explicit total/truncation |
+| Execution | 4,096 cities; 128 logical searches; 32 repetitions; 128 trials |
+| Retention | 8 pending jobs; 256 job directories; 64 snapshots; 64 preflights (900 s validity) |
+| Private state | 32 root entries, including torn atomic-write temporaries |
+| Input/matrix/output | 2 MiB instance; 128 MiB matrix; 4 MiB plan/record/response; 64 MiB results |
+| Worker | 4 GiB address space; 300 s wall ceiling; CPU/file/core limits |
+| Compiler cache | 256 MiB apparent/allocated bytes; 4,096 entries; 16 contexts; traversal depth 8 |
+| Analysis | 100,000 selected history points; 10,000 materialized rows; 128 MiB estimate; 64 KiB reference |
+| Geometry | 16 MiB combined decoded coordinates/tour, also subject to response bound |
+
+Cache files use an owner-only umask and no-follow scans before launch, every 250 ms
+while ownership is known, and at finalization. Transient overshoot is possible; cache
+faults stop owned work and preserve files. Use a new root or inspect retained state
+offline at capacity. Ingestion estimates likewise exclude temporary/library allocations.
+
+Every endpoint uses `ErrorResponse`: version/request ID, stable `code`, sanitized
+`message`, `retryable`. Retryable permits explicit recovery, not an unbounded loop.
+400 covers invalid fields/JSON; 403 authority; 404 missing objects/routes; 409 stale
+context, unavailable state, busy queues or conflicts; 413 resource bounds; 422 invalid
+artifacts/plans; 503 unavailable workspace/execution; 500 internal errors. Unsupported
+methods/content types use 405/415. `result_unavailable` is 409 before valid publication
+or 404 for a missing exact attempt. Reload stale context; never substitute data or
+create a new submission key merely to retry a lost acknowledgement.

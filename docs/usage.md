@@ -1,10 +1,11 @@
 # Usage
 
-The working scientific path is **saved instance + manifest → registered serial runner → JSONL → analysis/report**. Start with the CLI workflow below; Python library examples follow. Use the installed [development environment](development.md) and run commands from the repository root. The [README](../README.md#current-capabilities) lists available features; [contracts](contracts.md) define scientific rules.
+**Saved instance + manifest → serial runner → JSONL → analysis/report.**
+Use the [development environment](development.md) and run commands from the repository
+root. [Contracts](contracts.md) define the scientific rules; [manifests](manifests.md)
+define configuration and identity. The [local API](interface.md) delegates to this same pipeline.
 
 ## Run a manifest
-
-The [sequential runner](../src/tsp_hpc/experiments/runner.py) turns resolved plans and saved artifacts into a new JSONL shard. From the repository root, run the [NN example](../examples/manifests/nn-fixed-work.json):
 
 ```bash
 mkdir -p results
@@ -13,17 +14,34 @@ uv run --locked tsp-hpc run examples/manifests/nn-fixed-work.json \
   --output results/nn.jsonl
 ```
 
-It executes both NN implementations in both distance modes, producing four trial records and one campaign summary. Each result has tour `[2, 1, 0, 3]`, cost `4.0`, and two completed starts. This is an integration example, not performance evidence. Use a **new output path** for another attempt; existing files are never overwritten or appended to.
+This runs two NN implementations in both distance modes: four trials and a campaign
+summary. Each returns `[2, 1, 0, 3]`, cost `4.0`, and two completed starts. It is a
+correctness example, not a performance measurement. **Use a new output path for each
+attempt**; existing files are never overwritten or appended to. Create the parent first.
 
-Repeat `--instance ID=PATH` to bind more inputs. Paths are relative to the current working directory, not the manifest directory. No filename discovery, regeneration or TSPLIB loading occurs. The full loaded descriptor—including generation seed—must match the manifest; build descriptors from `InstanceRecord.descriptor`. This artifact-based runner requires canonical artifact IDs; it does not automatically rebind the generic planner's logical aliases. `--max-matrix-bytes` overrides the [matrix-only ceiling](#distance-preparation-and-compiled-callers) without allowing fallback to another representation.
+Repeat `--instance ID=PATH` for more inputs. Paths are relative to the working directory,
+not the manifest. The loaded descriptor, including generation seed, must match exactly;
+use `InstanceRecord.descriptor`. Canonical artifact IDs are not interchangeable with
+planner aliases. No filename discovery, regeneration or TSPLIB loading occurs.
+`--max-matrix-bytes` overrides the matrix-only ceiling without changing representation.
 
-The Python boundary is `run_manifest(manifest, *, instance_paths={instance_id: artifact_path}, output_path=..., max_matrix_bytes=..., registry=None)` in `tsp_hpc.experiments.runner`; it returns the saved summary. Create the output parent first. Manifest parsing is separate; unknown bindings, malformed arguments, duplicate requested plans or collisions after default-implementation resolution fail before output creation. A missing binding/file, invalid artifact, unavailable capability or solver/validation error becomes a failed trial and execution continues in declared order. The CLI exits **0** if all trials completed, **1** if any trial failed, and **2** for invocation/preflight or shard-I/O errors. Interrupts propagate.
+The Python entry point is `tsp_hpc.experiments.runner.run_manifest(manifest, *,
+instance_paths, output_path, max_matrix_bytes=..., registry=None)`, returning the saved
+summary. Malformed arguments, unknown bindings or duplicate plans (including resolved
+aliases) fail before output creation. Missing inputs, unavailable capabilities and
+solver/validation errors become failed trials; subsequent trials continue. CLI exits:
+**0** all trials completed, **1** any failed trial, **2** invocation/preflight/shard-I/O
+error. Interrupts propagate and preserve the written prefix.
 
-Each trial reloads its input and prepares/warms fresh adapters (**`fresh-per-trial`** policy). Native caches may make later warm-ups cheaper, but no mutable search state or prepared matrix is reused. NN receives the plan's trial seed and ordered starts; it consumes no randomness. Independent stochastic dispatch uses the planned logical chain/population seeds, not this NN seed convention. A warmed adapter is reused within the trial but each solve must initialize fresh RNG/search state; settings are detached for every call. Production registration contains NN only. Explicit trusted Python registries support conformance tests and future implementations, not user-supplied plugin paths. Even an empty NN workload follows runner setup policy; its solver result is a normal `no_solution`, not a failed trial.
+Each trial reloads input and prepares/warms fresh adapters (**`fresh-per-trial`**).
+Within a trial an adapter is reused, but each invocation gets fresh RNG/search state
+and detached settings. NN uses the trial seed and ordered starts; independent populations/
+chains use logical-stream seeds. Native caches may reduce warm-up cost, not scientific
+work. Even an empty runner workload follows full setup policy. Explicit trusted Python
+registries support [adapter integration](development.md#solver-registration-and-conformance),
+not caller-supplied imports or fallback algorithms.
 
 ## Analyze result shards
-
-Use the existing NN run as a small correctness example, not a speedup experiment:
 
 ```bash
 uv run --locked --group analysis tsp-hpc analyze results/nn.jsonl \
@@ -33,172 +51,213 @@ uv run --locked --group analysis tsp-hpc analyze results/nn.jsonl \
   --references examples/references/square.json
 ```
 
-Supply multiple shard paths to combine campaigns. The output directory must be new and its parent must exist. The command leaves raw shards unchanged and creates:
+Pass multiple shards to combine campaigns. The output directory must be new with an
+existing parent; raw shards are unchanged.
 
 | File | Contents |
 | --- | --- |
-| `trials.csv` | Compact observations, identities, configuration/context grouping keys, phase/receipt timings, outcomes and exclusion flags; no tour arrays |
-| `summary.csv` | Per-group attempt/failure/no-solution/incomplete/duplicate/usable counts and count/min/median/mean/max/sample-standard-deviation statistics |
-| `comparisons.csv` | When a baseline is supplied: paired attempt IDs, selected metric, baseline/target duration ratio or a rejection reason |
-| `gaps.csv` | When references are supplied: matched usable attempts, reference kind/source/cost, absolute and percentage gaps |
-| `progress.csv` | When history is enabled: actual logical observations, original and concatenated search clocks, cumulative incumbent/work and usability flags |
-| `time-to-target.csv` | With explicit `--target INSTANCE_ID=COST`: observed crossings, eligible/non-reaching/censored rows and exclusion reasons |
-| `report.json` | Source file hashes, analysis runtime versions/provenance, manifest/reference/plot configuration, diagnostics, requested comparison, available figures and limitations |
-| PNG figures | Runtime summaries and quality distributions; speed ratios and reference gaps only when applicable |
+| `trials.csv` | Scalar observations, identities, settings, phase/receipt timings and exclusion flags; no tour arrays |
+| `summary.csv` | Group counts (attempt/failed/no-solution/incomplete/duplicate/usable), count/min/median/mean/max/sample deviation |
+| `comparisons.csv` | With a baseline: paired attempts, baseline/target duration ratio or rejection reason |
+| `gaps.csv` | With references: matched usable attempts, reference kind/source/cost and gaps |
+| `progress.csv` | Recorded logical observations, search clocks, cumulative incumbent/work and eligibility |
+| `time-to-target.csv` | With `--target INSTANCE_ID=COST`: observed crossings, censoring and exclusions |
+| `report.json` | Source hashes, analysis runtime, configuration, diagnostics, figures and limitations |
+| PNG figures | Runtime/quality summaries and applicable ratios/gaps/history observations |
 
-Groups preserve workload (instance, parameters, ordered starts and solver root seed), execution and observed runtime, excluding only repetition. Unknown/dirty source is isolated per campaign; paired ratios require a clean known revision. `G1`, `G2`, … map to full group IDs in `summary.csv`; they are presentation labels, not identities. Quality plots include only usable observations and never pool different instances/configurations. Statistics are descriptive, not independence/significance evidence. Scaled means/deviations and overflow-safe medians support large finite values; singleton sample deviations are blank, not zero.
+Groups preserve workload, execution and observed runtime, excluding only repetition.
+Unknown/dirty source is isolated per campaign. `G1`, `G2`, … are presentation labels
+mapped in `summary.csv`, not identities. Plots use eligible observations and never pool
+different instances/settings. Statistics are descriptive; singleton sample deviations
+are blank, not zero. Overflow-safe aggregates retain large finite values.
 
-Exit codes are **0** without detected issues, **1** for failed/incomplete/missing/duplicate observations or blocked comparisons, and **2** for invalid records/options or I/O errors. Above `--max-plot-groups` (default 40), figures are omitted with a note; tables remain complete. Narrow large campaigns explicitly rather than silently sampling charts. Review paths/provenance before sharing reports.
+Exit codes: **0** no detected issues, **1** failed/incomplete/missing/duplicate observations
+or blocked comparisons, **2** invalid records/options or I/O errors. Above
+`--max-plot-groups` (default 40), figures are omitted with a note; tables remain complete.
+Review paths/provenance before sharing reports.
 
 ### Validation and comparison rules
 
-The reader accepts legacy runner-v1/v2 fixed-work NN records and v3 serial NN/GA/SA-shaped outcomes and failures. Shared `Manifest` reconstruction verifies IDs/seeds/streams; implementation-independent checks cover effective execution, tour structure, algorithm-specific actual work, initialization/stopping/history, adapter metadata, logical-order reduction, timings, summary counts and receipt linkage. Reading a historical implementation never requires registering or installing it. It does **not** authenticate provenance/reference optimality or independently recompute costs without original instances.
+The reader accepts runner envelopes v1/v2 (fixed-work NN) and v3 (logical outcomes).
+Shared manifest reconstruction checks IDs/seeds/streams; validation covers tour structure,
+actual work, stopping/history, metadata, reduction, timings, summary counts and receipts.
+Historical implementations need not be installed. Record validation does **not**
+authenticate provenance/reference optimality or recompute costs without original coordinates.
 
-Malformed complete records, unsupported versions, duplicate attempts/campaigns, conflicting IDs and contradictory summaries are errors, not silently skipped rows. A missing summary or unterminated final line is an incomplete campaign: retain the validated prefix for inspection, but exclude it from numerical aggregates. Repeated execution IDs with distinct attempt IDs are retries/duplicate observations—not new statistical repetitions—and all ambiguous copies are excluded. Select the intended shard(s) explicitly; there is no automatic “latest wins” policy. `--manifest` detects entirely absent or unexpected requested executions; absent runs cannot be inferred from the available shards alone.
+- Malformed complete records, unsupported versions, duplicate attempts/campaigns,
+  conflicting IDs and contradictory summaries are errors, not skipped rows.
+- A missing summary or unterminated last line leaves an incomplete campaign. Its valid
+  prefix remains inspectable but excluded from aggregates.
+- Repeated execution IDs are duplicate attempts, not new repetitions; all ambiguous
+  copies are excluded. Select intended shards explicitly; no “latest wins” policy exists.
+- `--manifest` detects wholly absent/unexpected executions; shards alone cannot reveal them.
 
-`--baseline` names an explicit implementation. By default it is matched within the target's distance mode; `--baseline-distance-mode on_demand` can explicitly compare representations too. `--metric` selects `search_time_s` (default) or `end_to_end_time_s` from the post-write receipts. Each ratio is paired by **search ID**, not file order or a ratio of aggregate medians. Require fixed-work-only budgets, unique usable attempts, equal actual work per logical invocation and returned tours/costs (within objective tolerance), clean known source revision, and matching observed runtime/resources/setup. Time-only and combined-limit trials are quality-under-budget observations, not implementation speed-ratio evidence, even if they happen to return the same work. Incompatible or missing baselines get reasons, never a substitute chosen for being fastest.
+`--baseline` names an implementation, matched within each target's distance mode unless
+`--baseline-distance-mode` is supplied. `--metric` is `search_time_s` or
+`end_to_end_time_s`. Ratios pair **search IDs**, not file order or aggregate medians.
+They require fixed-work-only budgets, unique usable attempts, equal logical work and
+returned tours/costs, clean known source, compatible observed runtime/resources/setup,
+and positive finite durations. Incompatible pairs retain reasons. Timed/combined budgets
+measure quality under budget, not implementation-speed ratios.
 
-These are **observed ratios**, not controlled speedup evidence: cache state, warm-up and order can dominate, and context matching is not hardware attestation. Timings overlap. Parallel efficiency requires actual parallel evidence. History figures use recorded observations only, keep instances separate and do not interpolate. Legacy/final-cost-only records do not acquire synthetic histories.
+These are observed ratios, not hardware attestation or controlled speedup evidence.
+Cache/order/warm-up effects need experimental controls; overlapping timings cannot be
+summed. See [comparison methodology](contracts.md#experimental-comparisons).
 
 ### Explicit reference costs
 
-The [square reference](../examples/references/square.json) illustrates the versioned JSON format: `schema_version: 1` and a `references` list, each with `instance_id`, `coordinate_checksum`, `distance_kind`, `kind` (`exact` or `best_known`), finite non-negative `cost`, and a non-empty `source` citation/explanation. At most one reference per instance is accepted. References must match both coordinate checksum and objective; rounded optima cannot be used for unrounded executions.
+[Reference JSON](../examples/references/square.json) has `schema_version: 1` and a
+`references` list: one entry per instance with `instance_id`, `coordinate_checksum`,
+`distance_kind`, `kind` (`exact` or `best_known`), finite nonnegative `cost`, and nonempty
+`source`. Checksum and objective must match; rounded optima cannot benchmark unrounded runs.
 
-Absolute gap is `observed_cost - reference_cost`; percentage gap is `100 * absolute_gap / reference_cost`. Zero references or unrepresentable percentages produce a blank percentage, retaining the absolute gap. A negative best-known gap is valid; a cost below a declared exact optimum beyond validation tolerance is rejected. The reference kind is preserved in tables/plots rather than turning every supplied value into an optimum claim. Unmatched references/observations are not assigned fabricated gaps.
+Absolute gap is `observed - reference`; percentage gap is `100 * gap / reference`.
+Zero references/unrepresentable percentages yield a blank percentage. Negative best-known
+gaps are valid; a solution below a declared exact optimum beyond tolerance is rejected.
+Kinds remain declarations, not new optimum proofs. Unmatched observations get no fabricated gap.
 
 ### Reusable data API
 
-`tsp_hpc.analysis` supplies `read_shards(paths, *, expected_manifest=None, max_record_bytes=...)`, `summary_table(analysis)`, `paired_comparisons(analysis, *, baseline_implementation, baseline_distance_mode=None, metric=...)`, and `reference_gaps(analysis, document)`. The first returns an `Analysis` with a compact pandas `.trials` table, structured `.diagnostics` and hashed `.sources`; the other functions return DataFrames. `tsp_hpc.analysis.reports.write_report(...)` is a separate Matplotlib/CSV presentation layer, not part of the numerical calculation API.
+`tsp_hpc.analysis` exports:
 
-Scalar rows distinguish `budget_mode` (`work`, `time`, `work_and_time`), nullable work-limit name/count, per-invocation `time_limit_s`, logical invocation count, history policy/count and termination. `time_overshoot_s` sums each completed invocation's nonnegative overrun, never compares a multi-search total to one allowance. `budget_summary_json` preserves exact limits without retaining NN start arrays; `logical_work_id` fingerprints ordered work/status/termination rather than retaining all logical records in the table.
+- `read_shards(paths, *, expected_manifest=None, max_record_bytes=...)` → `Analysis`
+  with compact pandas `.trials`, structured `.diagnostics` and hashed `.sources`.
+- `summary_table(analysis)`, `paired_comparisons(analysis, *, baseline_implementation,
+  baseline_distance_mode=None, metric=...)`, `reference_gaps(analysis, document)` → DataFrames.
+- `iter_progress`, `progress_table` and `time_to_target`, described below.
 
-The reader retains O(trial count) scalar summaries/locators, discarding validated tours/plans. Its default encoded-line limit is 64 MiB, not an RSS ceiling. `analysis.trial(attempt_id)` reads details lazily and rechecks source metadata/record digest; changed sources require reload. `read_sources` uses the same validator over authorized binary sources for the interface, with additional optional bounds/cancellation. Neither reader owns HTTP or caches.
+The reader retains O(trials) scalar rows and lazy source locators, not tours/plans.
+`analysis.trial(attempt_id)` reopens details and checks source metadata/digest. The
+64 MiB default line bound is not an RSS limit. `read_sources` applies the same validator
+to authorized binary sources with optional bounds/cancellation. Neither reader owns HTTP
+or caches. `analysis.reports.write_report` is the separate CSV/Matplotlib layer.
+
+Rows distinguish work/time/combined budgets, nullable work limits, logical invocation
+count, history policy/count and termination. `time_overshoot_s` sums each invocation's
+nonnegative overrun, not a multi-search duration against one allowance.
+`budget_summary_json` omits NN start arrays; `logical_work_id` fingerprints ordered
+work/status/termination without retaining whole logical records.
 
 ### Histories and observed time-to-target
 
-`progress_table(analysis, *, attempt_ids=None, max_points=100_000)` lazily rereads
-verified records and returns genuine observations. `elapsed_s` belongs to one
-logical invocation; `search_elapsed_s` concatenates completed search durations
-plus that observation's elapsed time. It excludes setup, validation and persistence
-gaps, so it is **not trial wall time**. `trial_best_cost` and cumulative work reduce
-only observations/evidence already available in that serial order. Unusable
-prefixes remain inspectable with `usable=False`. No interpolation, inferred
-intermediate tour or final-cost-to-history conversion occurs.
+`progress_table(analysis, *, attempt_ids=None, max_points=100_000)` materializes the
+shared `iter_progress` iterator over source-checked records. `elapsed_s` belongs to one
+logical invocation; `search_elapsed_s` concatenates logical search durations, **excluding
+setup/validation/persistence gaps**. It is not trial wall time. Cumulative work/incumbents
+use only evidence available in that order. Unusable prefixes retain their flags; there
+is no interpolation, invented tour or conversion of final costs into history.
 
-`time_to_target(analysis, *, instance_id, target_cost, attempt_ids=None,
-max_points=100_000)` uses a predefined finite nonnegative absolute target for one
-instance/objective. It records the first **observed** crossing, not the exact
-first hitting time. Sampling can delay that observation. Eligible trials with no
-crossing—including completed `no_solution` trials—remain censored rows through
-the recorded observation end. Missing histories, failed/incomplete campaigns and
-duplicate attempts remain explicit ineligible rows; an observed crossing in a
-failed prefix is not an eligible success. This is not survival-model inference.
+`time_to_target(analysis, *, instance_id, target_cost, attempt_ids=None, max_points=100_000)`
+uses a finite nonnegative target for one instance. It returns first **observed** crossings,
+not exact first hitting times. Eligible non-reaching/no-solution trials remain censored
+through the observation end; missing histories and failed/incomplete/duplicate attempts
+retain exclusion reasons. A crossing in a failed prefix is not eligible success.
 
-The [timed/history NN example](../examples/manifests/nn-timed-history.json) runs
-against the same saved square. Replace the manifest/output in the run command,
-then analyze its new shard with `--target
-instance-v1-434c24120a05da693ed0f22582acc664ddef0f054a900905b4cf275ba68f5699=4`.
-It is an integration exercise, not a meaningful timing or deadline benchmark.
-The CLI and `write_report(..., target_costs={instance_id: cost})` export progress
-and target tables. `--max-history-points` / `max_history_points` is a hard total
-bound: exceeding it fails before creating output rather than silently sampling.
-History plots also obey the attempt-count plot ceiling and show points only.
-Absolute targets are user-supplied goals, not claims of certified optimality.
+Use [nn-timed-history.json](../examples/manifests/nn-timed-history.json) with the same square
+and a fresh shard, then analyze with
+`--target instance-v1-434c24120a05da693ed0f22582acc664ddef0f054a900905b4cf275ba68f5699=4`.
+`write_report(..., target_costs={instance_id: cost})` provides the Python equivalent.
+`--max-history-points` / `max_history_points` bounds the **entire selected history**:
+excess fails before output creation, never silently samples. History plots show points
+only and obey the attempt-count plot ceiling. Targets are goals, not optimality claims.
 
 ## JSONL records and timing boundaries
 
-New shards use `schema_version: 3`, `record_type` and one fresh `campaign_id` shared by their lines. Treat this as the runner-envelope version, separate from manifest and solver variants; v1 compatibility is described [below](#build-provenance).
+A new shard uses envelope `schema_version: 3` and one fresh `campaign_id`. Envelope,
+manifest, solver-variant and HTTP versions are independent; a campaign cannot mix envelopes.
 
-- **`trial`:** fresh `attempt_id`, UTC start timestamp, complete `requested_plan` (science, seeds, streams and requested IDs), `effective_execution` and its `execution_id`, input path/descriptor/provenance, runtime observations, adapter metadata, matrix ceiling, setup policy, timings, outcome, result and error. Omitted implementation labels are resolved before effective identity assignment; requested plans stay unchanged. Unsupported capability records have null effective execution/ID rather than claiming execution occurred.
-- **Logical outcomes:** `budget_scope="per-logical-invocation"` is explicit. `logical_results` contains ordered `{kind, logical_id, seed, result, timings}` entries: one `batch` with null logical ID for NN, or each planned population/chain. Each result uses the [shared fields](contracts.md#solver-results-and-progress), including its own history/clock, actual work and termination. Each complete tour is independently recomputed before acceptance. Entry timings contain search, solver validation, solve wall time and runner validation; trial values sum these accepted entries.
-- **Aggregate result:** completed trials sum work and select the minimum independently recomputed boundary cost, retaining the earliest logical result on exact ties. `best_logical_index` names that entry (null if no solution). `termination_reason` is the common reason or `mixed`; this aggregate is not an individual `SolverResult`. Aggregate `history` is always null: authoritative observations remain under their original logical clocks, not duplicated or assigned fabricated trial-wall timestamps. Both `ok` and normal `no_solution` count as completed.
-- **Failures:** `outcome="failed"` has a null aggregate result and `{phase, type, message, reported_work, logical_index}` error. Already accepted logical entries remain visible but do not make the failed trial usable. `reported_work` preserves returned counters from the failed invocation, otherwise null; it is not added to accepted work. `logical_index` identifies the failed next invocation, or is null during setup/aggregate validation. Remaining invocations in that trial are not attempted; subsequent trials continue. A `solve` error may originate in search or adapter validation; interrupts and persistence errors still abort the campaign.
-- **`campaign_summary`:** planned-trial count, completed/failed counts, setup time, total trial persistence time and campaign end-to-end time. Its ordered `trial_timings` entries join by `attempt_id` and record each trial's persistence and end-to-end durations after its line was flushed/fsynced. Its presence means all planned trial records were written, not that every trial succeeded. The API returns this same dictionary.
+| Record/field | Meaning |
+| --- | --- |
+| `trial` | Fresh attempt ID and UTC start; requested plan; effective execution/ID; input descriptor/provenance/path; runtime, metadata, timings, outcome/result/error |
+| `logical_results` | Ordered `{kind, logical_id, seed, result, timings}`: one NN batch or independent population/chain entries; `budget_scope="per-logical-invocation"` |
+| Aggregate `result` | Sum of accepted work; minimum independently recomputed cost, earliest logical entry on exact ties; `best_logical_index` or null; common termination or `mixed`; no aggregate history |
+| Failure | Null aggregate; `{phase, type, message, reported_work, logical_index}` error; accepted prefixes retained but not usable; unaccepted work not added |
+| `campaign_summary` | Planned/completed/failed counts, setup/persistence/end-to-end time and ordered per-attempt post-write timing receipts |
 
-`timings` records successful phase observations; missing fields on failures mean **unknown/not completed**, not zero. Distance-preparation wall time includes helper warm-up plus preprocessing. Solve wall time includes request/packaging overhead and the solver's search/validation phases. Runner validation is additional, not hidden in search counters. These nested fields overlap: do not sum all of them.
+Omitted implementation labels resolve before effective identity; requested plans remain
+unchanged. Unsupported capability trials have null effective execution. Both `ok` and
+normal `no_solution` count as completed trials. A summary means all trials were written,
+not that all succeeded. Failed invocations stop that trial, not subsequent trials;
+interrupts and persistence errors abort the campaign.
 
-A trial's `pre_persistence_time_s` ends before its JSON serialization/write. Its summary timing entry measures from just before trial execution through that line's `fsync`, including input loading, fresh setup, solving, validation and persistence (but not shared campaign setup). Summary `trial_persistence_time_s` sums serialization, write, flush and `fsync` of trial lines. Summary `end_to_end_time_s` spans **runner API entry through all trial writes**, including planning, provenance collection, loading, setup, solving and validation. It excludes manifest parsing, process startup/imports, and the summary's own serialization/write; a record cannot include its own final write duration. Measure whole-command time externally if that boundary is needed.
+Timings are successful phase observations; absent failure fields mean unknown, not zero.
+Distance-preparation wall time includes helper warm-up and preprocessing; solve wall time
+includes wrapper overhead, search and solver validation. Runner validation is additional.
+These nested fields **overlap**. Logical timings sum accepted entries only.
 
-Runtime observations are sampled at campaign start and include package/compiler-library versions, platform/CPU/affinity observations, one runner worker/serial solver thread, host physical memory and address-space soft limit where available, and an allowlist of numerical/Slurm environment settings. Host memory is not a container/cgroup or job allocation limit, and profile labels/environment variables do not certify resources. Source provenance comes from the package's own checkout or a verified installed build, never the caller's working directory. File verification belongs to campaign setup, not individual search timings; see [build provenance](#build-provenance).
+`pre_persistence_time_s` ends before trial serialization. Summary receipts span trial
+entry through that line's `fsync`; persistence time includes serialization/write/flush/
+fsync. Campaign end-to-end spans runner entry through all trial writes, including planning
+and provenance setup, but excludes manifest parsing, process startup/imports and the
+summary's own write. Measure whole-command duration externally when needed.
 
-The shard has one writer, exclusive creation, and a flush/`fsync` after each line. Serialization finishes before writing, but I/O failure or interruption can still leave a partial last line. Failed writes abort; completed prefixes are retained. A missing summary marks an incomplete campaign. This is not transactional storage, automatic retry or resume support; do not append to or silently reuse an incomplete shard.
+The shard has one writer, exclusive creation and per-line flush/fsync. Interrupted I/O
+can leave a torn final line; retain the prefix, never append or invent a footer.
+Runtime observations include package/platform/CPU/affinity, compiler, resource and
+allowlisted numerical/Slurm settings. Host memory is not a cgroup/allocation limit;
+labels and environment settings do not certify resources. Source identity comes from
+the package, not the caller's working directory.
 
 ### Native execution and compiler observations
 
-Current v3 writers add `runtime.compiler` (observation schema 1) and a paired
-`native_execution` field. The former records resolved Numba configuration—not
-just environment strings—including JIT enablement, bounds checks, optimization
-(`max` is distinguished from `3`), loop/SLP vectorization, AVX, debug information
-and CPU targeting policy, plus LLVM host-CPU observations. The numerical
-configuration and declared execution kind participate in comparison context, not
-scientific IDs or RNG derivation.
+V3's paired `runtime.compiler` and `native_execution` observations distinguish declared
+native requirements from verification. Resolved settings include JIT, bounds checks,
+optimization (`max` versus `3`), vectorization/AVX/debug, CPU targeting and LLVM host
+observations. They affect comparison context, not scientific IDs or RNG streams.
 
-Native distance preparation and solver warm-up reject `NUMBA_DISABLE_JIT` with
-`NativeExecutionError`; no interpreted fallback is accepted under a native label.
-After warm-up the runner verifies the adapter's selected CPU dispatchers have
-nopython signatures and `fastmath=False` / `parallel=False`, recording qualified
-names, signatures and relevant declared target options. `native_execution`
-separates `required` from `verified`; failed warm-up does not claim verification,
-and cannot supply accepted logical results. Scalar `execution_kind` is the
-**declared requirement** (`native-required`, `non-native`, or an unobserved state);
-`native_verified` records the actual check. Verification failures remain in the
-same workload denominator as successful trials, rather than changing configuration.
-An empty standalone NN convenience request still skips all native work; runner
-campaigns follow full setup policy even for empty workloads.
+Native preparation/warm-up rejects disabled JIT with `NativeExecutionError`. The runner
+checks selected warmed CPU dispatchers for nopython signatures and strict serial options,
+recording names/signatures/options. `execution_kind` retains the declared requirement;
+`native_verified` records actual verification. A warm-up failure cannot supply accepted
+logical results and remains in the same workload denominator.
 
-The compiler/native pair is an additive v3 observation: pre-extension v3 and
-v1/v2 remain readable as `legacy-unobserved`, without retroactive attestation or
-rewriting their old context/group IDs. Known and missing/different observations
-do not pair. Matching legacy contexts retain their historical observational
-meaning; they do not establish that a run was nopython-compiled.
-
-Use trusted dependencies and JIT caches. Keep compiler configuration fixed for a
-process and use a separate clean `NUMBA_CACHE_DIR` for changed source, compiler,
-CPU-target or optimization settings. Current settings and dispatcher signatures
-are observations, not proof of cached machine-code origin, absence of embedded
-Python/object-mode regions, hardware identity or performance. Nondefault compiler
-settings may produce cache/compiler warnings; validation does not suppress them.
+Older v3 and v1/v2 observations remain `legacy-unobserved`, without retroactive native
+certification or altered historical IDs. Missing/different compiler observations do not
+pair with known ones. Keep settings fixed per process and use a fresh trusted
+`NUMBA_CACHE_DIR` when source/compiler/CPU targets change. These checks do not prove cached
+machine-code origin, absence of embedded object-mode regions, hardware identity or performance.
 
 ## Build provenance
 
-The runner writes **envelope v3** trials and campaign summaries, retaining v2 build evidence and adding logical outcomes. Updated readers accept v1/v2 without reinterpreting their source claims; v1 runtime/group identities and unknown/dirty exclusions remain unchanged. One campaign cannot mix envelope versions. Older readers reject newer envelopes explicitly. Manifest, instance, reference, report and HTTP schema versions do not change. Report `analysis_runtime` also gains build evidence; CSV tables gain the provenance columns described below.
+`runtime.build` (v2/v3) contains `schema_version: 1`, `method`, `status` and nullable
+`identity`; `runtime.source` retains revision/dirty observations.
 
-V2 adds `runtime.build`: `schema_version: 1`, `method`, `status`, and nullable `identity`. `runtime.source` retains `revision`/`dirty`:
-
-| Evidence | Method / status | Source and comparison treatment |
+| Evidence | Method / status | Treatment |
 | --- | --- | --- |
-| Package's own Git checkout | `git-checkout` / `verified` | Observed revision/dirty state; dirty remains ineligible |
-| Matching installed payload | `package-sha256-v1` / `verified` | Source and compact identity from the build manifest; clean compatible builds can be paired |
-| No metadata or checkout | `unknown` / `unavailable` | Null source/identity; descriptive results only |
-| Malformed, mismatched or conflicting installed evidence | `package-sha256-v1` / `invalid` | Null source/identity; never fall back to a clean claim |
+| Package's Git checkout | `git-checkout` / `verified` | Observed revision/dirty state; dirty remains ineligible |
+| Matching installed payload | `package-sha256-v1` / `verified` | Source and compact identity from the verified build manifest |
+| No metadata/checkout | `unknown` / `unavailable` | Null source/identity; descriptive results only |
+| Malformed/conflicting payload evidence | `package-sha256-v1` / `invalid` | Null source/identity; no fallback to a clean claim |
 
-### Identity and checksum boundaries
+The [controlled producer](development.md#verified-installed-builds) embeds installed-relative
+file hashes for the package and original distribution metadata. The manifest itself,
+mutable wheel `RECORD`, installer-generated files and `__pycache__` are excluded. Added/
+missing package files, symlinks, ambiguous distributions, wrong ownership/version and mixed
+import origins invalidate evidence. Runtime checks the bounded manifest (≤1 MiB) and files
+at campaign setup, not during search; analysis can only check the recorded identity.
 
-The [controlled producer](development.md#verified-installed-builds) embeds an inventory of installed-relative filenames → SHA-256, covering package files and original wheel distribution metadata. It excludes its own manifest and mutable wheel `RECORD`; generated installer files and `__pycache__` are not immutable payload. Package files outside that cache exclusion must match exactly, including detection of added/missing files. Symlinked payload, ambiguous distributions, wrong version/ownership and mixed imported package origins invalidate evidence.
+The compact identity contains schema/method/source/package version, `pyproject_sha256`,
+`lock_sha256`, `payload_sha256` and `build_id`. Using sorted-key, ASCII, finite compact JSON:
 
-The compact identity contains `schema_version`, `method`, `source`, `package_version`, `pyproject_sha256`, `lock_sha256`, `payload_sha256`, and `build_id`. Using sorted-key, ASCII, finite compact JSON (`separators=(",", ":")`):
+- `payload_sha256 = SHA256(b"tsp-package-files-v1\0" + JSON(inventory))`.
+- `build_id = "build-v1-" + SHA256(b"tsp-build-v1\0" + JSON(identity without build_id))`.
 
-- `payload_sha256` hashes `b"tsp-package-files-v1\0" + JSON(inventory)`.
-- `build_id` is `"build-v1-"` plus SHA-256 of `b"tsp-build-v1\0" + JSON(identity without build_id)`.
-- The full wheel SHA-256 is retained **outside** the wheel. A final SIF checksum and launcher/image evidence are separate again; neither supplies package authority.
+The wheel hash lives in its external receipt to avoid self-reference. Image/SIF checksums
+are separate and cannot substitute for package identity. Trials retain the compact identity,
+not inventories. Tables expose `source_method`, `build_status`, `build_id`; v1 is
+`legacy-source` / `reported`. Different build/legacy contexts do not automatically pair.
 
-The manifest carries the compact identity plus `files`; trials retain only the compact identity, not repeated inventories. Runtime checks (manifest ≤1 MiB) verify installed files at campaign start. Analysis checks identity digests and consistency with recorded source/version; it cannot inspect the original producer installation from JSONL alone.
-
-### Eligibility and trust
-
-Tables expose `source_method`, `build_status` and `build_id`. V1 records are labelled `legacy-source` / `reported`, not retroactively verified. Runtime grouping includes v2 build evidence, so different build identities, checkout-versus-wheel and legacy-versus-v2 observations do not automatically pair. Existing workload, returned-work/tour/cost, runtime/resource, completeness/duplicate and positive-duration rules still apply. Invalid/unknown provenance remains inspectable and campaign-isolated, not repaired by filtering or reference artifacts.
-
-**This is consistency evidence, not cryptographic authenticity.** Trust the producer, Git snapshot, installer, interpreter, dependencies and caches; avoid concurrent modification, live monkeypatching and source overlays. Source hashes cannot attest already-loaded bytecode/JIT state, hostile operators or altered dependencies/OS/hardware. Matching wheel/package identity is not proof of hardware equivalence or a controlled speedup. Missing or invalid evidence does not stop valid solver execution, but prevents eligible paired ratios.
-
-## Optional local workspace backend
-
-The [interface guide](interface.md#local-backend-usage-and-security) covers pairing, authorized ingestion and the implemented local serial API. It is read-only **by default**; explicit owner startup options enable immutable instances, preflight, durable jobs/control/recovery, verified final geometry and bounded shared analysis/history. Workers call this same `run_manifest` pipeline. Browser integration for the newer endpoints and installed frontend serving remain separate work; no automatic retry, append or campaign resume is supported.
-
-For the library examples below, use `uv run --locked python` from the repository root.
+This is consistency evidence, **not cryptographic authenticity**. Trust the producer,
+Git snapshot, interpreter, dependencies and caches; avoid source overlays, concurrent
+mutation and monkeypatching. Hashes cannot attest loaded bytecode/JIT state or hostile
+operators/OS/hardware. Missing/invalid provenance need not prevent valid science, but
+blocks eligible paired ratios. Unknown/dirty evidence is never repaired by filtering.
 
 ## Canonical data and independent validation
 
-`TSPInstance` owns a read-only coordinate copy under a logical ID and uses object-identity equality. [Data validators](../src/tsp_hpc/problem/data.py) check without conversion, reordering or mutation. Loaders must explicitly normalize noncanonical arrays; masked arrays are unsupported. Never coerce invalid tours into validity. Coordinates/flags/shape are immutable by contract, not protection against deliberate NumPy bypass.
+For library examples, use `uv run --locked python`. `TSPInstance` owns read-only canonical
+coordinates and uses object-identity equality. Validators do not coerce, reorder or mutate
+inputs; loaders normalize explicitly. NumPy immutability is a contract, not hostile-user protection.
 
 ```python
 import numpy as np
@@ -208,20 +267,20 @@ from tsp_hpc.problem.objective import tour_cost, validate_solution
 instance = TSPInstance("triangle", np.array([[0., 0.], [3., 0.], [3., 4.]]))
 tour = np.array([0, 2, 1], dtype=np.int64)
 validate_tour(tour, instance.n_cities)
-assert tour_cost(instance, tour) == 12.0
-assert validate_solution(instance, tour, reported_cost=12.0) == 12.0
+assert tour_cost(instance, tour) == validate_solution(instance, tour, reported_cost=12.) == 12.
 ```
 
-`validate_coordinates()` checks the coordinate representation; `validate_city_index()` accepts in-range Python/NumPy integers except booleans and returns a Python `int`. [objective.py](../src/tsp_hpc/problem/objective.py) supplies `edge_cost()`, `tour_cost()` and `validate_solution()` independently of compiled execution. Use them at boundaries, not on every hot-loop proposal. See the [numerical contract](contracts.md#tour-representation-and-shared-objective) for accumulation, tolerance and error rules.
+`validate_coordinates` checks representation; `validate_city_index` accepts in-range
+Python/NumPy integers except booleans. `edge_cost`, `tour_cost` and `validate_solution`
+provide independent ordinary-Python objective checks. Use them at boundaries, not each
+hot-loop proposal; [contracts](contracts.md#tour-representation-and-shared-objective)
+define accumulation, tolerance and numerical errors.
 
 ## Instances and artifacts
 
-[instances.py](../src/tsp_hpc/problem/instances.py) provides `uniform_instance()`, `clustered_instance()`, `fixture()`, `fixture_names()`, `save_instance()` and `load_instance()`. Constructors return an `InstanceRecord` with:
-
-- `.instance`: the owned canonical TSP instance;
-- `.descriptor`: a detached descriptor for a [manifest](manifests.md), including the effective generation seed or `None`;
-- `.provenance`: detached generation settings and original runtime versions;
-- `.to_dict()`: a detached complete artifact document.
+`problem.instances` provides `uniform_instance`, `clustered_instance`, `fixture`,
+`fixture_names`, `save_instance` and `load_instance`. Constructors return `InstanceRecord`:
+owned `.instance`, detached `.descriptor`/`.provenance`, and complete `.to_dict()`.
 
 ```python
 from pathlib import Path
@@ -230,32 +289,41 @@ from tsp_hpc.problem.instances import uniform_instance, save_instance, load_inst
 from tsp_hpc.reproducibility.random_streams import derive_stream
 
 seed = derive_stream(123, "instance", "uniform-v1", "sample-a").seed
-record = uniform_instance(32, seed=seed, side_length=100.0)
+record = uniform_instance(32, seed=seed, side_length=100.)
 with TemporaryDirectory() as directory:
     path = Path(directory) / "sample-a.json"
     save_instance(record, path)
-    loaded = load_instance(path)
-    assert loaded.to_dict() == record.to_dict()
+    assert load_instance(path).to_dict() == record.to_dict()
 ```
 
-Use the saved coordinates for shared experiments rather than regenerating during search. The [committed collection](../examples/instances/README.md) contains six fixtures and two eight-city samples. Those files are repository assets, not installed package resources; supply paths explicitly outside the checkout.
+Use saved coordinates across experiments, not regeneration during search. The
+[example collection](../examples/instances/README.md) is a repository asset, not an
+installed package resource; bind paths explicitly outside the checkout.
 
 ### Generation protocols
 
-Use Python integer counts, unsigned 64-bit Python integer seeds, and built-in int/float lengths; booleans and NumPy scalars are rejected. Require `n_cities >= 2`, `1 <= n_clusters <= n_cities`, finite positive `side_length`, and finite non-negative `standard_deviation`. Defaults are side length `1.0`, four clusters and standard deviation `0.05`; smaller clustered inputs must specify fewer clusters. Both generators accept `distance_kind` with default `euclidean_2d`.
+Counts/seeds are Python integers, lengths built-in int/float; booleans and NumPy scalars
+are rejected. Require `n_cities >= 2`, uint64 seed, finite positive `side_length`,
+`1 <= n_clusters <= n_cities`, and finite nonnegative `standard_deviation`. Defaults:
+side length 1, four clusters, deviation 0.05, objective `euclidean_2d`.
 
-Each invocation uses a fresh private `Generator(PCG64(seed))`, independent of global or solver RNG state. The argument is the effective seed, not a generation root to be derived again:
+Each call uses private `Generator(PCG64(seed))`; seed is effective, not derived again.
 
-- **`uniform-v1`:** draw one C-order `(n, 2)` array with `rng.random()` and multiply by `side_length`. The mathematical interval is `[0, side_length)` per axis; scaling may round to its upper boundary. Do not reject, deduplicate or sort cities.
-- **`clustered-v1`:** draw centres uniformly in that square; create labels `arange(n) % n_clusters` and shuffle them; then draw an `(n, 2)` standard-normal array, multiply by the absolute standard deviation and add labelled centres. Cluster populations differ by at most one. Offsets are isotropic Gaussians, **not clipped** to the square; coordinates can be negative. Zero spread places cities at their assigned centres. Labels define clusters, not guaranteed visible separation. Duplicates/overlap are valid; arithmetic overflow is rejected.
+- `uniform-v1`: draw one C-order `(n,2)` `rng.random()` array and multiply by side length.
+  The mathematical interval is `[0, side_length)`; scaling can round to its upper boundary.
+- `clustered-v1`: draw centres uniformly; shuffle `arange(n) % n_clusters` labels; draw
+  `(n,2)` standard normals, scale by absolute deviation and add labelled centres.
+  Populations differ by at most one. Offsets are **not clipped**; negative coordinates,
+  duplicates and overlap are valid. Zero spread places cities at centres; overflow fails.
 
-Changing the distance convention changes identity/objective, not coordinate draws. Unit-scale rounded data can have many zero edges and is not necessarily a useful benchmark. If effective seeds come from a root and sample IDs, retain that derivation context separately in campaign provenance; never derive cities from solver state, worker IDs, arrival order or repetition-dependent solver seeds.
+Never sort/deduplicate coordinates or derive them from solver/worker state. Changing
+objective changes identity, not draws. Retain root/sample derivation separately.
 
 ### Correctness fixtures
 
-City IDs follow row order. The natural tour `[0, ..., n-1]` attains each certified optimum under both retained data/reference conventions.
+The natural tour `[0, ..., n-1]` attains these optima under both data/reference conventions:
 
-| Name | Coordinates | Optimum |
+| Fixture | Coordinates | Optimum |
 | --- | --- | --- |
 | `two-city` | `(0,0), (3,4)` | 10 |
 | `triangle` | `(0,0), (3,0), (3,4)` | 12 |
@@ -264,19 +332,23 @@ City IDs follow row order. The natural tour `[0, ..., n-1]` attains each certifi
 | `duplicates` | `(0,0), (0,0), (3,4), (3,4)` | 10 |
 | `coincident` | four copies of `(0,0)` | 0 |
 
-The line/duplicate optima require travel between extrema and back; the square perimeter is optimal, while its rounded distinct-city edges all cost one. Tests also exhaustively score these tiny tours with the independent reference. This is correctness evidence, not a fourth solver or a representative campaign.
+Line/duplicate tours must reach both extrema and return; the square perimeter is optimal
+(and rounded distinct-city edges all cost one). Tests exhaustively score tiny permutations
+with the independent reference; these are correctness fixtures, not representative benchmarks.
 
 ### Artifact guarantees
 
-Artifacts contain exactly `schema_version: 1`, `instance` (ID/checksum/count/convention/effective seed), ordered `coordinates`, and `provenance` (generator protocol, effective parameters, seed, bit generator and original runtime versions). IDs follow the [identity encoding](manifests.md#encoding-contract), not filenames/provenance.
+Artifacts contain exactly version 1, `instance` descriptor, ordered `coordinates` and
+`provenance` (generator/settings/seed/bit generator/original runtime). Loading checks
+[content identity](manifests.md#encoding-contract), fixture definitions and metadata,
+rejecting duplicate/malformed fields, nonfinite values and contradictions. Signed zero
+and row order survive JSON round trips; no pickle or automatic regeneration is used.
+Checksums are not authenticity or cross-runtime regeneration guarantees.
 
-Loading verifies coordinate bytes, metadata and named fixtures; it rejects malformed/duplicate fields, unsupported versions, non-finite coordinates and conflicting identities/seeds/counts. Row order and signed zero survive JSON round trips. No pickle or automatic regeneration is used. Checksums are not authenticity; provenance is structurally validated, with no cross-runtime regeneration guarantee. Incompatible generators require a protocol-version decision.
-
-JSON/coordinates occupy O(n) memory. Saving requires an existing parent, refuses overwrites and is not crash-atomic; interrupted files must pass loading/verification before use.
+Artifacts occupy O(n) memory. Saving needs an existing parent, refuses overwrite and
+is not crash-atomic; interrupted files must pass validation before use.
 
 ## Run nearest-neighbour
-
-NN is a constructive heuristic, not an optimality guarantee. For explicit representation, implementation selection and setup reuse:
 
 ```python
 from tsp_hpc.problem.instances import fixture
@@ -286,81 +358,85 @@ from tsp_hpc.solvers.nn.solver import NearestNeighbourSolver
 instance = fixture("square").instance
 prepared = prepare_distances(instance, mode="dense", max_matrix_bytes=1024)
 solver = NearestNeighbourSolver(prepared, implementation="visited-scan-v1")
-result = solver.solve(
-    instance, seed=42, budget={"start_cities": [2, 0]}, parameters={}
-)
+result = solver.solve(instance, seed=42, budget={"start_cities": [2, 0]}, parameters={})
 assert result.best_tour.tolist() == [2, 1, 0, 3]
-assert result.best_cost == 4.0
+assert result.best_cost == 4.
 assert result.work.nn_starts_completed == result.work.full_tour_evaluations == 2
-assert solver.metadata["implementation"] == "visited-scan-v1"
 assert prepared.metadata["matrix_bytes"] == 128
 ```
 
-The adapter requires the **same instance object** used in preparation, not just a matching ID. Reuse it for repeated solves; it retains no last-run solution, counters or RNG state. Requests use an ordered list of Python integer starts (not booleans or NumPy scalars) and an empty parameter dictionary. The [NN specification](algorithm-baselines.md#greedy-nearest-neighbour) owns start/tie rules, seed behavior and work accounting. Unsupported capabilities fail explicitly, not by changing the requested workload.
-
-The module-level `tsp_hpc.solvers.nn.solver.solve(instance, *, seed, budget, parameters, record_history=False, history_policy=None)` is a convenience wrapper using on-demand distances and the default implementation. Its overall call includes setup; prefer the explicit adapter for setup accounting and reuse. Empty convenience work skips preparation/warm-up; an existing adapter's empty solve skips search/final validation and reports zero phase durations.
+Reuse the adapter only with the **same instance object** used in preparation. It retains
+no last-run solution/counters/RNG state. Starts are ordered Python integers; parameters
+are empty. [NN rules](algorithm-baselines.md#greedy-nearest-neighbour) define ties and work.
+The module-level `solvers.nn.solver.solve` uses on-demand/default execution and includes
+setup; an empty convenience request skips native work. An existing adapter's empty solve
+reports zero search/validation time; runner setup policy is separate.
 
 ### Implementation selection
 
-Both serial implementations follow `nn-fixed-starts-v1` and are listed by `implementation_names()`:
+Both implementations follow `nn-fixed-starts-v1` and are listed by `implementation_names()`:
 
 | Implementation | Candidate search |
 | --- | --- |
-| `visited-scan-v1` (unchanged default) | [Baseline](../src/tsp_hpc/solvers/nn/visited_scan.py): scan all city IDs, skipping visited entries |
-| `remaining-array-v1` | [Compact pool](../src/tsp_hpc/solvers/nn/remaining_array.py): scan only unvisited IDs and remove the winner by swapping with the last active entry; explicit `(cost, city ID)` comparison preserves ties despite reordered storage |
+| `visited-scan-v1` (default) | Scan all city IDs, skipping visited entries |
+| `remaining-array-v1` | Scan unvisited IDs; swap-remove the winner; explicit `(cost, city ID)` ties |
 
-Select the alternative with `NearestNeighbourSolver(prepared, implementation="remaining-array-v1")`. Both take O(S n²) time for S starts and O(n) working storage, plus an O(S) start snapshot. Per start, the compact pool reduces candidate-loop iterations from `n*(n-1)` to `n*(n-1)/2`; both evaluate that same latter number of candidate distances plus n edges for final tour scoring. It trades a boolean visited mask for int64 remaining IDs: raw working-array elements occupy `24*n-8` bytes versus `17*n` in the baseline, excluding starts, array overhead, result copies and separately prepared distance storage. All workspace allocation/reset stays inside search timing. These are operation/storage counts, **not a measured speedup**.
+Both cost O(S n²) time for S starts and O(n) workspace plus O(S) starts. The compact pool
+reduces per-start candidate-loop iterations from `n(n-1)` to `n(n-1)/2`; both evaluate the
+latter number of candidate distances plus n scoring edges. Raw workspace is `24n-8`
+versus `17n` bytes, excluding arrays' overhead/copies and distance storage. These are
+operation/storage counts, not measured speedups. Allocation/reset is inside search timing.
 
-Register optimized kernels explicitly alongside that baseline in [solver.py](../src/tsp_hpc/solvers/nn/solver.py), under new stable IDs. The adapter resolves, warms and executes the selected callable and exposes its ID in metadata; unavailable IDs fail before warm-up. There is no filename-based discovery. Implementations must share scientific conformance tests; changes to search rules require a different variant, not an optimization label.
-
-For a plan with an explicit label, pass `implementation=plan.execution["implementation"]` to the adapter. Labels, omission compatibility and scientific-versus-execution identity are specified once in [manifest execution configurations](manifests.md#execution-configurations). Planning does not authorize or dispatch execution; callers must check the requested backend rather than treating a multicore plan as serial.
+Choose a stable implementation ID explicitly; [manifest labels](manifests.md#execution-configurations)
+affect execution identity, not scientific work. Register optimized kernels alongside the
+baseline; changed search rules require a different variant. Never execute multicore plans
+as serial merely because the planner accepts them.
 
 ## Distance preparation and compiled callers
 
-[distances.py](../src/tsp_hpc/problem/distances.py) creates factory-only `PreparedDistances` records sharing the instance's read-only coordinates. Each call prepares fresh storage; no hidden global cache or fallback exists. Reuse the result outside iteration loops. Checked `.edge_cost(a, b)` and `.tour_cost(tour)` methods validate structural inputs before querying it.
+`problem.distances.prepare_distances` returns factory-only `PreparedDistances`, sharing
+read-only coordinates. Each call prepares fresh storage, without a global cache/fallback.
+Checked `.edge_cost(a,b)` and `.tour_cost(tour)` validate structural inputs.
 
-| Mode | Storage and checks |
+| Mode | Storage/checks |
 | --- | --- |
-| `dense` | One read-only C-contiguous float64 `(n,n)` matrix; compute unordered pairs once, mirror, zero diagonal. Serial preparation validates every edge, with no second quadratic temporary. |
-| `on_demand` | Shared coordinates and a read-only `(0,0)` matrix placeholder. Validate only queried edges; preparation does not certify all possible edges or tours. |
+| `dense` | Read-only C-contiguous float64 `(n,n)`; compute unordered pairs, mirror, zero diagonal; no second quadratic temporary |
+| `on_demand` | Shared coordinates and `(0,0)` matrix placeholder; only queried edges are validated |
 
-`estimated_matrix_bytes(n)` returns exact Python-integer `8*n*n`. The default ceiling is **256 MiB**, configurable with non-negative Python integer `max_matrix_bytes`; exact-limit allocations are permitted. Oversize requests raise `MemoryError` before warm-up/allocation, platform address overflow raises `OverflowError`, and real allocation may still fail below the ceiling. On-demand permits a zero ceiling. The ceiling covers matrix elements only, not RSS, JIT, coordinates (`16*n` shared bytes), O(n) validation scratch, solver buffers or extra process copies; no host/Slurm limit is inferred.
+`estimated_matrix_bytes(n)` is exact `8*n*n`. Default `max_matrix_bytes` is **256 MiB**;
+exact-limit allocations pass, oversize fails before warm-up/allocation, and platform
+overflow fails explicitly. On-demand permits zero. This bounds matrix elements, not RSS,
+JIT, `16n` coordinate bytes or workspace; real allocation can still fail. Finite edges
+can overflow a total; [numerical failures](contracts.md#distance-conventions-and-representations)
+propagate rather than becoming partial usable solutions.
 
-Both paths use native `hypot` and sequential scoring under the [numerical contract](contracts.md#tour-representation-and-shared-objective). Dense/on-demand edges agree on tested inputs, but reference last-bit differences are allowed. Even finite matrix edges can overflow a tour total. Numerical failures propagate rather than returning partial usable results.
-
-Compiled callers pass primitive inputs, not Python records:
-
-```python
-import numpy as np
-from numba import njit
-from tsp_hpc.problem.instances import fixture
-from tsp_hpc.problem.distances import prepare_distances, distance_tour_kernel
-
-@njit(fastmath=False)
-def evaluate(coordinates, matrix, use_dense, tour):
-    return distance_tour_kernel(coordinates, matrix, use_dense, tour)
-
-prepared = prepare_distances(fixture("square").instance, mode="on_demand")
-tour = np.arange(4, dtype=np.int64)  # Known valid permutation.
-assert evaluate(prepared.coordinates, prepared.matrix, prepared.use_dense, tour) == 4.0
-```
-
-`distance_edge_kernel(coordinates, matrix, use_dense, a, b)` and `coordinate_edge_kernel(coordinates, a, b)` provide edge queries. Raw kernels trust canonical finite arrays, valid indices/permutations and the prepared matrix/flag pair; they are not an arbitrary weight-matrix interface. Structural validation belongs at the Python boundary. Numerical guards remain active, `fastmath` must stay disabled, and the compiled scoring loop allocates no matrix or tour copy.
-
-NN kernels currently take coordinates, matrix, mode flag and ordered starts. Keep the complete construction loop compiled; similarly, avoid Python dispatch per SA proposal and keep GA operator outputs disjoint. Additional optimization-specific prepared state requires an explicit adapter/preprocessing extension, not hidden untimed work.
+Compiled callers pass primitive arrays/scalars to `distance_tour_kernel(coordinates,
+matrix, use_dense, tour)`, `distance_edge_kernel(..., a, b)` or
+`coordinate_edge_kernel(coordinates, a, b)`. Kernels trust canonical finite arrays,
+valid indices/permutations and the prepared matrix/flag pairing, not arbitrary weights.
+Validate at the Python boundary; retain numerical guards and `fastmath=False`.
+Keep complete construction/operator loops compiled instead of dispatching each proposal
+from Python. Extra prepared state needs an explicit timed preprocessing boundary.
 
 ## Timing and results
 
-The solver independently checks its selected native score/tour with `validate_solution()` and returns the recomputed reference cost. This **does not rerank candidates or redefine native tie rules**. [Shared result contracts](contracts.md#solver-results-and-progress) define owned tours, statuses and counters; constructing a result alone is not an objective certificate. NN emits `work_limit` or `time_limit`. Add finite positive `time_limit_s` alongside `start_cities` to stop at complete-start checkpoints; a deadline before the first complete tour yields `no_solution`. Enable `record_history=True` and optionally `history_policy={"interval_s": 0.1, "max_points": 4096}` for immutable best-so-far observations. Instrumented execution calls the selected native kernel once per start and charges that overhead to search. Disabled history is `None`; enabled no-solution history is empty. See the [shared sampling policy](contracts.md#solver-results-and-progress). Errors, including exceeded history bounds, remain exceptions, not `no_solution` or infinity.
+The adapter independently verifies its selected native tour/score and returns the
+reference cost, without reranking candidates or changing native ties. Finite positive
+`budget.time_limit_s` stops NN at complete-start checkpoints; enable `record_history=True`
+and optional `history_policy` for observations. Instrumented per-start calls charge their
+overhead to search; fixed-work/history-disabled execution uses one native batch call.
+[Shared stopping/history rules](contracts.md#solver-results-and-progress) define empty
+histories, terminal samples and bound errors; failures are not `no_solution` or infinity.
 
 | Observation | Included work |
 | --- | --- |
-| `prepared.metadata["jit_warmup_time_s"]` | Fixed tiny distance-helper dispatches, including compilation/cache loading if needed; writable/read-only tour signatures |
-| `prepared.metadata["preprocessing_time_s"]` | Coordinate validation, actual representation allocation/fill and read-only marking, after helper warm-up |
-| `solver.metadata["solver_warmup_time_s"]` | Selected solver warm-up on tiny inputs for both distance modes; separate from distance-helper warm-up |
-| `result.search_time_s` | Warmed compiled call, including private workspace allocation/reset, constructions, scoring, saved-best copies and work accounting |
-| `result.validation_time_s` | Independent post-search permutation/cost checking |
+| `prepared.metadata["jit_warmup_time_s"]` | Tiny distance-helper warm-up, compilation/cache loading |
+| `prepared.metadata["preprocessing_time_s"]` | Validation, representation allocation/fill and read-only marking after warm-up |
+| `solver.metadata["solver_warmup_time_s"]` | Selected solver's tiny warm-up in both modes |
+| `result.search_time_s` | Workspace allocation/reset, search, scoring, best copies and instrumentation |
+| `result.validation_time_s` | Independent post-search permutation/cost checks |
 
-Prepared metadata also reports instance/convention/mode, hypothetical dense bytes, actual matrix/coordinate bytes and ceiling. Solver metadata adds backend/variant/implementation. Metadata snapshots are detached and retain original setup timings when reused.
-
-Request validation/start marshalling occur before the search clock; result packaging/ownership copies occur after validation timing. Loading, process startup and persistence are also outside these phase fields. Their sum is **not end-to-end time**. Use the [comparison methodology](contracts.md#experimental-comparisons) to account for omitted overhead and preparation reuse. These are phase observations, not time-budget stopping or a persisted run envelope.
+Metadata snapshots are detached and retain original setup timings on reuse. Request
+validation/marshalling precedes search; result packaging/copies follow validation.
+Loading/startup/persistence are outside these fields, so their sum is **not end-to-end**.
+Use the [runner timing receipts](#jsonl-records-and-timing-boundaries) for that boundary.

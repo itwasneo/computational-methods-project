@@ -1,32 +1,20 @@
 # Computational Methods Project: TSP Heuristics and HPC
 
-Implement and compare nearest-neighbour (NN), a genetic algorithm (GA), and simulated annealing (SA) for the Traveling Salesman Problem.
+Study nearest-neighbour (NN), genetic algorithms (GA) and simulated annealing (SA)
+for the Traveling Salesman Problem.
 
-**Research question:** How do implementation choices, memory behavior, and parallel execution affect solution quality under limited computational budgets?
+**Research question:** How do implementation choices, memory behavior and parallel
+execution affect solution quality under limited computational budgets?
 
-We use Python, NumPy and Numba with our own lightweight experiment runner, rather than an external TSP solver or benchmark framework. CPU baselines come first; MPI, GPU, NUMA, SIMD and targeted C++ investigations are optional and must be justified by measurements.
-
-## Current capabilities
-
-This is the project-wide implementation-status summary; specifications describe agreed behavior, not necessarily available execution features.
-
-| Area | Available | Remaining work |
-| --- | --- | --- |
-| Inputs and objective | Canonical data/validation, independent objective, seeded generators, saved artifacts and fixtures | TSPLIB import and production datasets |
-| Execution | Native-verified dense/on-demand distances and serial NN (`visited-scan-v1`, `remaining-array-v1`); explicit solver registry/conformance suite | GA/SA, multicore and optional accelerator backends |
-| Experiments | Manifests, logical RNG planning, registered serial runner, v3 logical results with v1/v2 reading, verified-wheel provenance and shared analysis tables/plots | Freeze the research tuning/evaluation campaign protocol; resume deferred |
-| Stopping and progress | Fixed-work/timed NN, bounded best-so-far histories, observed progress/target tables and phase timing; shared stopping helpers | GA/SA algorithm-specific checkpoints |
-| Local backend | Owner-opted immutable instances/preflight, durable serial jobs, cancellation/recovery, independently verified final geometry and bounded shared analysis/history; installed-process acceptance | Real GA/SA availability awaits teammate algorithms; multicore/remote/resume are separate |
-| Tooling | Locked environment, Python/frontend checks in CI; run/analyze/serve CLI; browser Results table and separate synthetic viewer | Browser geometry/charts/editor/job integration and installed frontend delivery |
-| Cluster deployment | ULHPC selected; local image build evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) | Finished-image and allocated-cluster runtime validation |
-
-Solver execution uses **unrounded Euclidean distances** on complete symmetric 2D instances. Rounded data/reference compatibility is retained, but is not an executable solver mode. See the [objective contract](docs/contracts.md#distance-conventions-and-representations) before choosing benchmark reference costs.
-
-No comparative solver performance or cluster-scaling results are established yet. Track implementation work and reviews on the [project board](https://github.com/users/itwasneo/projects/11); PRs and issues hold change history and verification evidence.
+Python, NumPy and Numba provide the numerical core. A shared runner records saved
+inputs, logical random streams, independently validated solutions and phase timings;
+analysis keeps failed, incomplete and duplicate attempts explicit. The objective is
+**unrounded Euclidean distance** on complete symmetric 2D instances. Rounded benchmark
+reference costs are not interchangeable with this objective.
 
 ## Quick start
 
-With uv installed, run from the repository root:
+Use Python 3.12 and uv from the repository root:
 
 ```bash
 uv sync --locked
@@ -34,48 +22,29 @@ uv run --locked tsp-hpc --help
 uv run --locked pytest -W error
 ```
 
-To run and save NN experiments, follow [Run a manifest](docs/usage.md#run-a-manifest), then [Analyze result shards](docs/usage.md#analyze-result-shards). Individual Python solver calls are covered in [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour). For installation groups, dependency updates and builds, see [development](docs/development.md).
+Follow [Run a manifest](docs/usage.md#run-a-manifest) for a four-trial NN example,
+then [Analyze result shards](docs/usage.md#analyze-result-shards) for tables and plots.
+Use a fresh output path for each attempt; result shards are never appended or overwritten.
+For direct Python calls, see [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour).
 
-### Local serial API
-
-The optional service remains **read-only by default**. To enable owned serial NN
-jobs, choose two existing, disjoint directories and opt in at startup:
-
-```bash
-uv run --locked --extra interface tsp-hpc serve \
-  --workspace /path/to/read-workspace \
-  --enable-execution --execution-root /path/to/execution-output
-```
-
-Supply the pairing secret privately at the prompt. HTTP cannot enable execution,
-select arbitrary paths/commands or resume an interrupted search. Linux pidfds and
-enabled native JIT are required for owned workers. Restart holds queued work;
-reruns require fresh review and a new submission key. Native/API clients can use
-the implemented workflow today; the existing browser does not yet expose those
-controls. See [owner operation and API contracts](docs/interface.md#local-backend-usage-and-security).
+The optional [local interface](docs/interface.md) reads saved results and provides an
+owner-authorized serial job API. It is read-only by default; execution requires both
+`--enable-execution` and a disjoint `--execution-root` at startup. Algorithm availability
+comes from the explicit solver registry and API capabilities, not the scientific specifications.
 
 ## Documentation
 
-Each reference owns one kind of information. Update that reference rather than copying its rules or current status into other pages.
-
-| Read this | For |
+| Reference | Contents |
 | --- | --- |
-| [Usage guide](docs/usage.md) | Run manifests, analyze saved results, then use the data/solver Python APIs |
-| [Shared contracts and experiment methodology](docs/contracts.md) | Data/objective/result rules, validation, execution boundaries and fair comparisons |
-| [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA variants, tie rules, operators, budgets, initialization accounting and stopping checkpoints |
-| [Manifests and reproducibility](docs/manifests.md) | Schema, implementation labels, scientific/execution identities and RNG ownership |
-| [Development](docs/development.md) | Environment, package layout, tests, CI and packaging |
-| [Optional local interface](docs/interface.md) | Owner operation, implemented API/security boundaries and remaining browser integration |
-| [HPC operations](docs/hpc-resources.md) | Owner-operated allocations, containers, placement, storage and deployment checks |
+| [Usage](docs/usage.md) | CLI workflow, analysis, records/provenance and Python APIs |
+| [Shared contracts](docs/contracts.md) | Data, objective, results, validation and fair comparisons |
+| [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA rules, operators, budgets and checkpoints |
+| [Manifests](docs/manifests.md) | Configuration schema, identities and RNG ownership |
+| [Development](docs/development.md) | Environment, architecture, solver integration, tests and packaging |
+| [Local interface](docs/interface.md) | Owner operation, HTTP contracts, security and recovery |
+| [HPC operations](docs/hpc-resources.md) | Allocations, containers, placement and storage |
 
-The [saved input collection](examples/instances/README.md) contains tiny correctness examples, not a benchmark campaign. [Presentations](presentations/README.md) preserve the original proposal and a dated progress snapshot; they are not the current status reference.
-
-## Research sequence
-
-1. Establish correct serial NN, GA and SA against shared validation.
-2. Compare separately named serial implementations and distance representations without changing scientific workloads.
-3. Use the runner to establish and freeze a reproducible tuning/evaluation protocol.
-4. Measure controlled multicore scaling; distinguish single-search acceleration from experiment throughput.
-5. Select a focused advanced extension only if profiling and available resources justify it.
-
-Benchmark sizes, tuning budgets, reference sources and final campaign settings still need to be chosen. Exact small-instance optima are correctness/quality references, not a fourth primary solver; SA reversal moves do not add a separate 2-opt solver. Completing every optional backend is not a project requirement.
+[Example inputs](examples/instances/README.md) are tiny correctness fixtures, not a
+benchmark campaign. [Presentation assets](presentations/README.md) are archived separately.
+Change history and review evidence belong in [issues and PRs](https://github.com/itwasneo/computational-methods-project),
+not in the reference documentation.

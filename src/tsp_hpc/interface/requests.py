@@ -1,9 +1,7 @@
 """Strict request validators, separate from wire types and routing.
 
-Implemented route models and retained legacy preview models are distinguished
-below. Wire DTOs remain in contracts; validation alone neither grants authority nor
-validates scientific
-identities, reference freshness or advertised runtime limits.
+Validation neither grants authority nor establishes reference freshness or
+runtime availability. Scientific normalization delegates to the shared APIs.
 """
 
 import math
@@ -13,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, Stri
 
 from tsp_hpc.interface.contracts import (
     Field as QueryField, NUMERIC_FIELDS, NULLABLE_FIELDS, PAGE_MAX, SAFE_INTEGER,
-    SHARDS_MAX, VALUES_PER_FILTER_MAX, RUN_LIST_MAX, Implementation, DistanceMode,
+    SHARDS_MAX, VALUES_PER_FILTER_MAX, RUN_LIST_MAX, DistanceMode,
 )
 
 OpaqueId = Annotated[StrictStr, Field(min_length=1, max_length=128)]
@@ -165,24 +163,6 @@ class InstanceGenerateRequest(RunRequest):
     generation: Annotated[UniformGenerationRequest | ClusteredGenerationRequest, Field(discriminator="generator")]
 
 
-class CampaignConfigurationRequest(StrictModel):
-    implementations: Annotated[list[Implementation], Field(min_length=1, max_length=2)]
-    distance_modes: Annotated[list[DistanceMode], Field(min_length=1, max_length=2)]
-    start_cities: Annotated[list[Count], Field(max_length=RUN_LIST_MAX)]  # Empty work remains legal.
-    repetitions: Annotated[list[Count], Field(min_length=1, max_length=RUN_LIST_MAX)]
-    solver_seed: Seed
-    max_matrix_bytes: Count
-
-    _seed = field_validator("solver_seed")(_seed_value)
-    _distinct = field_validator("implementations", "distance_modes", "start_cities", "repetitions")(_distinct)
-
-
-class PreflightRequest(RunRequest):
-    instance_snapshot_id: OpaqueId
-    capabilities_revision: OpaqueId
-    configuration: CampaignConfigurationRequest
-
-
 class JobSubmitRequest(RunRequest):
     preflight_id: OpaqueId
     submission_key: OpaqueId
@@ -201,14 +181,6 @@ class QueueContinueRequest(RunRequest):
     expected_queue_revision: OpaqueId
 
 
-class JobResultRequest(JobStatusRequest):
-    expected_revision: OpaqueId
-    attempt_id: OpaqueId
-
-
-# Implemented execution API uses these solver-neutral models. The older NN-only
-# CampaignConfigurationRequest/PreflightRequest above are design-fixture types,
-# not accepted by /api/runs/preflight.
 class ScientificConfigurationRequest(StrictModel):
     algorithm: Literal["nn", "ga", "sa"]
     parameters: dict[StrictStr, Any]

@@ -9,26 +9,22 @@ import ts from 'typescript';
 import { PAGE_DEFAULT, PAGE_MAX, GEOMETRY_BYTES_MAX } from './contracts.ts';
 
 const wire = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/read-only-v1.json', import.meta.url), 'utf8'));
-const runs = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/local-runs-v1.json', import.meta.url), 'utf8'));
 const backend = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/backend-v1.json', import.meta.url), 'utf8'));
 const analysis = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/analysis-v1.json', import.meta.url), 'utf8'));
 
 // Compile the shared JSON as literal assignments: a cast would hide contract drift.
-test('shared wire examples satisfy the TypeScript design types', () => {
+test('shared wire examples satisfy the TypeScript API types', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tsp-contracts-'));
   try {
     const file = join(directory, 'golden.ts');
     const types = { session: 'SessionResponse', workspace: 'WorkspaceResponse', catalog: 'ArtifactPage', query: 'TrialQuery', page: 'TrialPage',
       dataset_request: 'DatasetRequest', dataset_status_request: 'DatasetStatusRequest', dataset: 'Dataset',
-      details: 'TrialDetails', missing_details: 'TrialDetails', geometry: 'Geometry', stale_error: 'ErrorResponse' };
+      geometry: 'VerifiedGeometry', stale_error: 'ErrorResponse' };
     const source = [
       `import type * as C from ${JSON.stringify(fileURLToPath(new URL('./contracts.ts', import.meta.url)))};`,
     ];
     for (const [name, type] of Object.entries(types)) {
       source.push(`const ${name}: C.${type} = ${JSON.stringify(wire[name])};`);
-    }
-    for (const [name, entry] of Object.entries(runs.examples)) {
-      source.push(`const run_${name}: C.${entry.type} = ${JSON.stringify(entry.value)};`);
     }
     for (const [name, entry] of Object.entries(backend.examples)) {
       source.push(`const backend_${name}: C.${entry.type} = ${JSON.stringify(entry.value)};`);
@@ -44,14 +40,14 @@ test('shared wire examples satisfy the TypeScript design types', () => {
       'const badVerifiedSeed: C.VerifiedDetails = {...backend_result.details, trial_seed: 42};',
       '// @ts-expect-error geometry has no caller-selected record paths',
       'const badGeometryPath: C.JobGeometryRequest = {...backend_geometry_request, path: "outside.json"};');
-    source.push('// @ts-expect-error local-run seeds must also stay strings',
-      'const badRunSeed: C.CampaignConfiguration = {...run_preflight.configuration, solver_seed: 42};',
+    source.push('// @ts-expect-error scientific seeds must stay strings',
+      'const badRunSeed: C.ScientificConfiguration = {...backend_preflight.configuration, solver_seed: 42};',
       '// @ts-expect-error arbitrary process IDs confer no control authority',
-      'const badStop: C.JobControlRequest = {...run_stop, pid: 123};',
+      'const badStop: C.ExecutionControlRequest = {...backend_preflight_request, job_id: "j", expected_revision: "r", action: "stop_now", confirm_stop_now: true, pid: 123};',
       '// @ts-expect-error submissions reference reviewed plans, not editable configuration',
-      'const badSubmit: C.JobSubmitRequest = {...run_submit, configuration: run_preflight.configuration};');
-    source.push('// @ts-expect-error seeds must not cross the wire as JS numbers',
-      `const badSeed: C.TrialDetails = {...details, solver_seed: 18446744073709551615};`,
+      'const badSubmit: C.JobSubmitRequest = {...backend_preflight_request, preflight_id: "p", submission_key: "key", configuration: backend_preflight.configuration};',
+      '// @ts-expect-error admitted jobs always have a campaign identity',
+      'const badCampaign: C.JobRecord = {...backend_completed.job, campaign_id: null};',
       '// @ts-expect-error unsupported API version',
       'const badVersion: C.TrialQuery = {...query, api_version: 2};');
     writeFileSync(file, source.join('\n'));
@@ -87,13 +83,10 @@ test('float64 and uint32 binary envelopes preserve signed zero, order and checks
   assert.deepEqual(Array.from({ length: 4 }, (_, id) => tour.readUInt32LE(id * 4)), [2, 0, 3, 1]);
 });
 
-test('large seeds, missing observations and unknown provenance remain distinct', () => {
-  assert.equal(BigInt(wire.details.solver_seed), (1n << 64n) - 1n);
-  assert.equal(BigInt(wire.details.trial_seed), (1n << 53n) + 1n);
-  assert.deepEqual(wire.details.source, { revision: null, dirty: null });
-  assert.equal(wire.details.row.best_cost, 0);
-  assert.equal(wire.missing_details.row.best_cost, null);
-  assert.equal(wire.missing_details.row.search_time_s, null);
-  assert.equal(wire.missing_details.artifact_state, 'missing');
-  assert.equal(wire.missing_details.snapshot_id, null);
+test('large seeds and missing observations remain distinct from numbers and zero', () => {
+  assert.equal(BigInt(backend.examples.result.value.details.solver_seed), (1n << 64n) - 1n);
+  assert.equal(wire.page.items[0].best_cost, 0);
+  assert.equal(wire.page.items[1].best_cost, null);
+  assert.equal(wire.page.items[1].search_time_s, null);
+  assert.equal(wire.page.items[1].usable, false);
 });

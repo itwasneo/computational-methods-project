@@ -1,6 +1,6 @@
 # Shared instance, tour, solver, and result contracts
 
-This is the reference for data, objective, result and experiment-methodology rules. [Algorithm specifications](algorithm-baselines.md) define search behavior; [manifests](manifests.md) define identities and streams. See the [README](../README.md#current-capabilities) for implementation status and [usage guide](usage.md) for executable examples. These are logical boundaries, not a required class hierarchy.
+Data, objective, result and experiment-methodology rules. [Algorithm specifications](algorithm-baselines.md) define search behavior; [manifests](manifests.md) define identities and streams; [usage](usage.md) provides executable examples. These are logical boundaries, not a required class hierarchy.
 
 ## Supported problem and instance representation
 
@@ -10,7 +10,7 @@ Asymmetric distances, missing edges, arbitrary explicit-weight input matrices, g
 
 | Instance field | Contract |
 | --- | --- |
-| `instance_id` | Non-empty, stable identifier for the logical instance; independent of worker counts, hardware, and distance representation. Content ID and checksum helpers follow the implemented [manifest identity rules](manifests.md#identity-rules). |
+| `instance_id` | Non-empty, stable identifier for the logical instance; independent of worker counts, hardware, and distance representation. Content ID and checksum helpers follow the [manifest identity rules](manifests.md#identity-rules). |
 | `coordinates` | Plain, C-contiguous NumPy array of native `float64` dtype and shape `(n, 2)`, with finite values and `n >= 2`. Row indices are the internal city IDs `0` through `n - 1`. |
 | `distance_kind` | Explicitly either `euclidean_2d` or `tsplib_euc_2d`; never inferred separately by individual solvers. |
 
@@ -81,9 +81,9 @@ Wrappers validate records and pass primitive scalars and arrays into compiled ke
 
 An optional initial tour, if supported by the chosen algorithm, is supplied through its parameters and follows the same tour contract. The solver owns its working copy and does not mutate caller-provided arrays. Returned best tours must not alias mutable solver state or caller-owned buffers.
 
-Use fresh random state for each invocation. Instance-generation seeds and solver seeds are distinct. Derive subsearch streams from stable logical IDs, never thread numbers, worker counts, scheduling order, process-global RNG state, or Python's randomized `hash()`. The [versioned stream scheme](manifests.md#random-stream-planning) is implemented; this interface does not promise bitwise equivalence across different runtimes or numerical backends.
+Use fresh random state for each invocation. Instance-generation seeds and solver seeds are distinct. Derive subsearch streams from stable logical IDs, never thread numbers, worker counts, scheduling order, process-global RNG state, or Python's randomized `hash()`. Use the [versioned stream scheme](manifests.md#random-stream-planning); bitwise equivalence across different runtimes or numerical backends is not guaranteed.
 
-The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) define concrete budget fields, legal zero-work cases, initialization accounting, and safe stopping points. Fixed-work scaling must preserve those budgets and logical searches when resources change. Time limits are checked only at safe points and may overshoot; actual elapsed time must be reported. Unsupported time-budget or history requests must fail explicitly until those capabilities exist.
+The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) define concrete budget fields, legal zero-work cases, initialization accounting, and safe stopping points. Fixed-work scaling must preserve those budgets and logical searches when resources change. Time limits are checked only at safe points and may overshoot; actual elapsed time must be reported. Adapters must reject unsupported time-budget or history requests explicitly.
 
 ## Solver results and progress
 
@@ -109,7 +109,14 @@ Use these common counters, with zero for algorithms to which they do not apply:
 
 Incremental move-delta evaluations are not full-tour evaluations. Additional diagnostic counters are permitted if their meanings are documented. For a logical batch of searches, aggregate counters across those searches, not execution threads. Counters are not a claim that a GA generation and an SA proposal have equal computational cost.
 
-A progress point contains `elapsed_s`, a snapshot of `work`, and `best_cost` for a complete tour. Timestamps are monotonic search-relative wall-clock observations, counters do not decrease, and best-so-far costs do not increase beyond validation tolerance. Recording must not consume randomness or alter proposal, selection, or acceptance rules. Its overhead can change how much work fits within a time limit and must be measured and reported. `SearchControl` supplies a shared monotonic clock and sampling policy. At each safe checkpoint, resolve stopping first: use `observe` only when continuing, and `finish` for the stopping checkpoint (so the reserved terminal slot is not consumed twice). The first complete incumbent is sampled at its safe checkpoint; later observations require at least `interval_s` since the last sample. Zero requests every safe checkpoint. Finish always records the terminal incumbent, replacing the last observation if the work snapshot is identical. No complete tour means an empty enabled history. `max_points` reserves a terminal slot; exceeding the bound raises `HistoryLimitError`, never silently truncates or downsamples evidence. Use a larger bound/interval for long searches. Observations are immutable `ProgressPoint` values; no intermediate tour is fabricated.
+An immutable `ProgressPoint` contains search-relative `elapsed_s`, a `work` snapshot and a complete tour's `best_cost`. Times/counters are nondecreasing; best costs do not increase beyond validation tolerance. Recording must not consume randomness or change search decisions. Its overhead is charged to search and can change work completed under a deadline.
+
+`SearchControl` defines sampling:
+
+- Resolve stopping first at each safe checkpoint: `observe` only when continuing, `finish` when stopping.
+- Sample the first complete incumbent, then after at least `interval_s` since the last sample; zero samples every safe checkpoint.
+- `finish` records the terminal incumbent, replacing an identical-work last observation. No complete tour means an empty enabled history; no intermediate tour is fabricated.
+- `max_points` reserves a terminal slot. Exceeding it raises `HistoryLimitError`, never truncates/downsamples. Increase the bound or interval for longer searches.
 
 Time limits and history bounds apply **per adapter invocation**: once to NN's complete ordered start batch, once to each independent GA population/SA chain. Serial orchestration executes every requested logical search with its own full allowance and reports their summed work/times; this is not a shared campaign deadline. A campaign with several populations/chains therefore has several explicit allowances. Neither the runner nor an adapter silently divides a limit or adds searches.
 
@@ -160,4 +167,4 @@ A runner must resolve/verify shared input artifacts, select compatible adapters,
 
 ## Local interface boundary
 
-The [interface guide](interface.md#read-only-results-contract) owns implemented session/catalog/ingestion/query contracts and explicitly planned geometry/jobs. Adapters preserve the scientific rules above; they do not define another solver, validator or comparison engine.
+The [interface guide](interface.md#api-contracts) defines session, catalog, job, publication and query contracts. Adapters preserve the scientific rules above; they do not define another solver, validator or comparison engine.
