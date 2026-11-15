@@ -231,6 +231,59 @@ artifacts and use a new root or the compatible controller. Scientific JSONL
 versions remain governed by the shared backward-compatible reader. This private
 state protocol is not same-user tamper attestation.
 
+### Verified final results and canonical geometry
+
+| Route | Request / response |
+| --- | --- |
+| `POST /api/jobs/result` | `JobPublicationRequest` / `JobDetailsResponse` |
+| `POST /api/jobs/geometry` | `JobGeometryRequest` / `JobGeometryResponse` |
+| `POST /api/trials/details` | `TrialPublicationRequest` / `TrialDetailsResponse` |
+| `POST /api/trials/geometry` | `TrialGeometryRequest` / `TrialGeometryResponse` |
+
+Job publication requires the exact terminal job revision, result-content revision,
+campaign, attempt and original snapshot ID. The copied worker input, immutable
+original snapshot, recorded descriptor/checksum/city order/objective/provenance and
+accepted manifest must agree. Missing/mutated inputs are rejected, not replaced by
+another fixture or a convenient same-named file. Results from still-active workers
+are not exposed as final artifacts.
+
+Read-only CLI artifacts remain supported without execution opt-in or filesystem
+writes. First ingest authorized shards, then explicitly name an authorized instance
+handle and its catalog revision with the exact dataset revision/campaign/attempt.
+The service **never follows the input path in a persisted record**, scans for a
+matching instance, or picks a newest successful attempt. Missing/ambiguous/mismatched
+bindings fail closed. An explicit duplicate execution can be inspected by its
+unique attempt; its duplicate/analysis-ineligibility flags remain visible.
+
+Both paths use the shared versioned reader/codec and independent coordinate-based
+`validate_solution`. Every accepted logical final solution and the actual aggregate
+permutation/cost are checked. Details expose projected configuration, genuine work,
+seeds, timings and validation results—not raw records, paths, environment, hostname
+or exception messages. Large exact integer observations are decimal strings; all
+seeds are strings. Legacy records remain readable without retroactive native or
+per-logical-observation certification.
+
+Details return a content/rules/context-bound `geometry_revision`. Supply it to the
+corresponding geometry route for canonical `f64-le-base64` coordinates and, only
+when a real final solution exists, a `u32-le-base64` permutation of **exactly n**
+city indices. Signed zero and city order are preserved; no normalization, closure
+city, interpolation or intermediate tour is added. No-solution/failed trials have
+null aggregate tours; accepted prefixes of a failed trial are not promoted to a
+winner. A completed trial in an interrupted campaign may expose its genuine final
+tour while remaining explicitly incomplete/ineligible in shared analysis.
+
+The service retains at most one bounded compact job index, never a tour cache.
+Default publication limits are 4,096 cities, 2 MiB instance artifacts, 4 MiB records
+and responses, and 64 MiB result sources, with independent source checks before and
+after publication. These are allocation/transport bounds, not hard process-RSS
+attestation. History endpoints do not gain intermediate-tour verification merely
+because a final solution was checked.
+
+`examples/interface-contracts/backend-v1.json` contains actual functional payload
+examples checked against both Python and TypeScript DTOs. It contains no credential
+and is not benchmark/provenance-attestation evidence. Older read-only/local-run
+preview fixtures are retained but do not override these implemented route types.
+
 ### Session and HTTP boundary
 
 Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.

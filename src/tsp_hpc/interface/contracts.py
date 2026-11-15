@@ -1,7 +1,8 @@
 """API v1 wire types, not runtime validators or authorization.
 
-Workspace/session/catalog, dataset lifecycle and trial queries implement a subset;
-facet/detail/geometry and local-run DTOs remain design-only.
+See docs/interface.md for implemented routes. Legacy preview DTOs remain for
+compatibility; solver-neutral execution/publication types below define the actual
+backend endpoints, not the older NN-only design fixtures.
 
 See docs/interface.md. Scientific validation remains in the shared Python APIs.
 All fields are required, including nullable fields. Wire seeds are decimal strings.
@@ -551,3 +552,121 @@ class JobsPage(RunContext):
     queue_revision: str
     items: list[JobRecord]
     next_cursor: str | None
+
+
+class JobPublicationRequest(JobStatusRequest):
+    expected_revision: str
+    result_revision: str
+    instance_snapshot_id: str
+    campaign_id: str
+    attempt_id: str
+
+
+class JobGeometryRequest(JobPublicationRequest):
+    geometry_revision: str
+
+
+class TrialPublicationRequest(Context):
+    campaign_id: str
+    attempt_id: str
+    instance_handle: str
+    artifact_catalog_revision: str
+
+
+class TrialGeometryRequest(TrialPublicationRequest):
+    geometry_revision: str
+
+
+class WorkObservation(TypedDict):
+    nn_starts_completed: int | str
+    ga_generations_completed: int | str
+    sa_proposals_evaluated: int | str
+    full_tour_evaluations: int | str
+
+
+class FinalObservation(TypedDict):
+    status: Literal["ok", "no_solution", "failed"]
+    best_cost: float | None
+    verified_cost: float | None
+    work: WorkObservation | None
+    termination_reason: str | None
+    best_logical_index: int | None
+
+
+class LogicalObservation(TypedDict):
+    logical_index: int
+    kind: str
+    logical_id: str | None
+    seed: str
+    status: Literal["ok", "no_solution"]
+    best_cost: float | None
+    verified_cost: float | None
+    work: WorkObservation
+    termination_reason: str
+    search_time_s: float
+    history_points: int | None
+
+
+class VerifiedDetails(TypedDict):
+    row: TrialRow
+    campaign_id: str
+    attempt_id: str
+    search_id: str
+    requested_execution_id: str
+    execution_id: str | None
+    instance: InstanceDescriptor
+    snapshot_sha256: str
+    geometry_revision: str
+    solver_seed: str
+    trial_seed: str
+    variant: str
+    parameters: dict[str, object]
+    budget: dict[str, object]
+    budget_scope: Literal["per-logical-invocation", "legacy-nn-batch"]
+    record_history: bool
+    history_policy: dict[str, object] | None
+    logical_search_ids: list[str] | None
+    logical_results: list[LogicalObservation] | None
+    result: FinalObservation
+    timings: dict[str, float]
+    error_phase: str | None
+    execution_kind: str
+    native_verified: bool | None
+
+
+class VerifiedGeometry(TypedDict):
+    campaign_id: str
+    attempt_id: str
+    instance: InstanceDescriptor
+    snapshot_sha256: str
+    geometry_revision: str
+    coordinates: Coordinates
+    tour: Tour | None
+
+
+class JobPublicationContext(RunContext):
+    job_id: str
+    job_revision: str
+    result_revision: str
+    instance_snapshot_id: str
+
+
+class JobDetailsResponse(JobPublicationContext):
+    details: VerifiedDetails
+
+
+class JobGeometryResponse(JobPublicationContext):
+    geometry: VerifiedGeometry
+
+
+class TrialPublicationContext(Context):
+    instance_handle: str
+    artifact_catalog_revision: str
+
+
+class TrialDetailsResponse(TrialPublicationContext):
+    details: VerifiedDetails
+
+
+class TrialGeometryResponse(TrialPublicationContext):
+    geometry: VerifiedGeometry
