@@ -1,6 +1,6 @@
-"""Optional local API foundation: session pairing and read-only candidate catalogs."""
+"""Owner-authorized local API; read-only by default, never a second science engine."""
 
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 import hashlib
 import hmac
 import re
@@ -9,14 +9,19 @@ import threading
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException
 
 from tsp_hpc.interface.errors import InterfaceError
+from tsp_hpc.interface.json_input import decode_json
 from tsp_hpc.interface.workspace import WorkspaceCatalog
 from tsp_hpc.interface.queries import TrialQueries
 from tsp_hpc.interface.requests import (
-    ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest,
+    ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest, RunRequest,
+    InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest, ExecutionPreflightRequest,
+    JobSubmitRequest, JobStatusRequest, JobsQueryRequest, ExecutionControlRequest, QueueContinueRequest,
+    JobPublicationRequest, JobGeometryRequest, TrialPublicationRequest, TrialGeometryRequest,
+    DatasetAnalysisRequest, JobAnalysisRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -111,7 +116,10 @@ class LocalBoundary:
             if key in headers and key in (b"host", b"origin", b"authorization", b"content-length", b"content-type", b"sec-fetch-site", b"x-request-id"):
                 duplicate = True
             headers[key] = value
-        supplied_id = headers.get(b"x-request-id", b"").decode("ascii", errors="ignore")
+        try:
+            supplied_id = headers.get(b"x-request-id", b"").decode("ascii", errors="strict")
+        except UnicodeError:
+            supplied_id = ""
         request_id = supplied_id if REQUEST_ID.fullmatch(supplied_id) else secrets.token_urlsafe(16)
         scope.setdefault("state", {})["request_id"] = request_id
 
@@ -161,6 +169,16 @@ class LocalBoundary:
                 raise InterfaceError("invalid_request", "Request body length mismatch.")
             if scope["method"] == "GET" and body:
                 raise InterfaceError("invalid_request", "GET requests must not have a body.")
+            if scope["method"] == "POST":
+                try:
+                    parsed = decode_json(body)
+                    if type(parsed) is not dict:
+                        raise ValueError("object required")
+                except (ValueError, TypeError, RecursionError):
+                    raise InterfaceError("invalid_request", "Request must be bounded, unambiguous finite UTF-8 JSON.") from None
+                supplied = parsed.get("request_id")
+                if type(supplied) is str and REQUEST_ID.fullmatch(supplied):
+                    scope["state"]["request_id"] = supplied
             consumed = False
 
             async def replay():
@@ -181,33 +199,54 @@ class LocalBoundary:
                 await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
-def create_app(workspace, *, port: int, bootstrap_secret: str):
+def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=False,
+               execution_root=None, execution_limits=None):
     """Construct a session without opening its workspace until lifespan startup."""
     if type(port) is not int or not 1 <= port <= 65535:
         raise ValueError("Port must be between 1 and 65535.")
+    if type(enable_execution) is not bool or enable_execution != (execution_root is not None):
+        raise ValueError("Execution requires both --enable-execution and --execution-root.")
     pairing = Pairing(bootstrap_secret)
     origin = f"http://127.0.0.1:{port}"
 
     @asynccontextmanager
     async def lifespan(app):
         from tsp_hpc.interface.ingestion import DatasetStore
-        catalog = datasets = None
-        try:
+        from tsp_hpc.interface.execution import ExecutionAuthority
+        with ExitStack() as cleanup:
+            cleanup.callback(pairing.clear)
             catalog = WorkspaceCatalog(workspace)
+            cleanup.callback(catalog.close)
             catalog.refresh()
             app.state.catalog = catalog
+            execution = ExecutionAuthority(workspace, enabled=enable_execution, output_root=execution_root, limits=execution_limits)
+            cleanup.callback(execution.close)
+            app.state.execution = execution
+            app.state.snapshots = None
+            if execution.enabled:
+                from tsp_hpc.interface.storage import LocalStorage
+                from tsp_hpc.interface.snapshots import SnapshotStore
+                storage = LocalStorage(execution, catalog._root)
+                cleanup.callback(storage.close)
+                app.state.storage = storage
+                app.state.snapshots = SnapshotStore(storage)
+            from tsp_hpc.interface.planning import PreflightStore
+            app.state.preflights = PreflightStore(execution, app.state.snapshots)
+            app.state.jobs = None
             datasets = DatasetStore(catalog)
+            cleanup.callback(datasets.close)
             app.state.datasets = datasets
             app.state.trial_queries = TrialQueries(datasets)
+            if execution.enabled:
+                from tsp_hpc.interface.jobs import JobQueue
+                jobs = JobQueue(storage, app.state.snapshots, app.state.preflights)
+                cleanup.callback(jobs.close)  # Hold/stop jobs before waiting for ingestion shutdown.
+                app.state.jobs = jobs
+            from tsp_hpc.interface.results import ResultPublisher
+            app.state.results = ResultPublisher(catalog, datasets, app.state.jobs, app.state.snapshots, execution.limits)
+            from tsp_hpc.interface.analysis_api import AnalysisQueries
+            app.state.analysis_queries = AnalysisQueries(catalog, datasets, app.state.results, execution.limits)
             yield
-        finally:
-            try:
-                if datasets is not None:
-                    datasets.close()
-            finally:
-                if catalog is not None:
-                    catalog.close()
-                pairing.clear()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.pairing = pairing  # Launcher authority, never exposed through a route.
@@ -242,6 +281,136 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
 
     def authorized_operation(request: Request):
         return pairing.operation(request.headers.get("authorization", "").encode("latin-1"))
+
+    def run_context(request: Request, body: RunRequest):
+        catalog_for(request, body)
+        if not hmac.compare_digest(body.session_id, pairing._session_id):
+            raise InterfaceError("unauthorized", "Session identity is not current.", 403)
+        return {"api_version": 1, "request_id": body.request_id,
+                "workspace_id": body.workspace_id, "session_id": body.session_id}
+
+    @app.post("/api/execution")
+    def execution_info(body: RunRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **request.app.state.execution.describe()}
+
+    @app.post("/api/runs/capabilities")
+    def run_capabilities(body: RunRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **request.app.state.preflights.capabilities()}
+
+    @app.post("/api/runs/preflight")
+    def run_preflight(body: ExecutionPreflightRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            plan = request.app.state.preflights.preflight(body.instance_snapshot_id, body.configuration,
+                                                         body.capabilities_revision, body.session_id)
+            return {**context, **plan}
+
+    def jobs_for(request):
+        request.app.state.execution.require()
+        return request.app.state.jobs
+
+    @app.post("/api/jobs/submit", status_code=202)
+    def job_submit(body: JobSubmitRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            job, duplicate = jobs_for(request).submit(body.preflight_id, body.submission_key, body.session_id)
+            return {**context, "job": job, "deduplicated": duplicate}
+
+    @app.post("/api/jobs/status")
+    def job_status(body: JobStatusRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, "job": jobs_for(request).status(body.job_id)}
+
+    @app.post("/api/jobs/review")
+    def job_review(body: JobStatusRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).review(body.job_id)}
+
+    @app.post("/api/jobs/control")
+    def job_control(body: ExecutionControlRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            job = jobs_for(request).control(body.job_id, body.expected_revision, body.action)
+            return {**context, "job": job}
+
+    @app.post("/api/queue/continue")
+    def queue_continue(body: QueueContinueRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).continue_queue(body.expected_queue_revision)}
+
+    def job_publication_context(request, body):
+        context = run_context(request, body)
+        return {**context, "job_id": body.job_id, "job_revision": body.expected_revision,
+                "result_revision": body.result_revision, "instance_snapshot_id": body.instance_snapshot_id}
+
+    @app.post("/api/jobs/result")
+    def job_result(body: JobPublicationRequest, request: Request):
+        with authorized_operation(request):
+            context = job_publication_context(request, body)
+            return {**context, "details": request.app.state.results.job(body.model_dump())}
+
+    @app.post("/api/jobs/geometry")
+    def job_geometry(body: JobGeometryRequest, request: Request):
+        with authorized_operation(request):
+            context = job_publication_context(request, body)
+            return {**context, "geometry": request.app.state.results.job(body.model_dump(), geometry=True)}
+
+    @app.post("/api/jobs/analysis")
+    def job_analysis(body: JobAnalysisRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, "job_id": body.job_id, "job_revision": body.expected_revision,
+                    "result_revision": body.result_revision, **request.app.state.analysis_queries.job(body.model_dump())}
+
+    @app.post("/api/jobs/query")
+    def jobs_query(body: JobsQueryRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).page(limit=body.limit, cursor=body.cursor)}
+
+    @app.post("/api/queue/status")
+    def queue_status(body: RunRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).queue()}
+
+    def snapshots_for(request):
+        request.app.state.execution.require()
+        return request.app.state.snapshots
+
+    @app.post("/api/instances/load", status_code=201)
+    def instance_load(body: InstanceLoadRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            snapshot = snapshots_for(request).load(request.app.state.catalog, body.artifact_handle, body.artifact_revision)
+            return {**context, **snapshot}
+
+    @app.post("/api/instances/generate", status_code=201)
+    def instance_generate(body: InstanceGenerateRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **snapshots_for(request).generate(body.generation.model_dump())}
+
+    @app.post("/api/instances/snapshot")
+    def instance_snapshot(body: SnapshotRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **snapshots_for(request).describe(body.instance_snapshot_id)}
+
+    @app.post("/api/instances/export")
+    def instance_export(body: SnapshotRequest, request: Request):
+        with authorized_operation(request):
+            run_context(request, body)
+            raw = snapshots_for(request).export(body.instance_snapshot_id)
+            return Response(raw, media_type="application/octet-stream", headers={
+                "Content-Disposition": 'attachment; filename="instance.json"', "X-Request-ID": body.request_id})
 
     @app.get("/api/workspace")
     def workspace_info(request: Request):
@@ -283,5 +452,29 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
         with authorized_operation(request):
             catalog_for(request, body)
             return request.app.state.trial_queries.page(body.model_dump())
+
+    @app.post("/api/analysis/query")
+    def analysis_query(body: DatasetAnalysisRequest, request: Request):
+        with authorized_operation(request):
+            catalog_for(request, body)
+            context = {key: getattr(body, key) for key in ("api_version", "request_id", "workspace_id", "dataset_id", "revision")}
+            return {**context, **request.app.state.analysis_queries.dataset(body.model_dump())}
+
+    def trial_publication_context(request, body):
+        catalog_for(request, body)
+        return {key: getattr(body, key) for key in ("api_version", "request_id", "workspace_id", "dataset_id", "revision",
+                                                   "instance_handle", "artifact_catalog_revision")}
+
+    @app.post("/api/trials/details")
+    def trial_details(body: TrialPublicationRequest, request: Request):
+        with authorized_operation(request):
+            context = trial_publication_context(request, body)
+            return {**context, "details": request.app.state.results.trial(body.model_dump())}
+
+    @app.post("/api/trials/geometry")
+    def trial_geometry(body: TrialGeometryRequest, request: Request):
+        with authorized_operation(request):
+            context = trial_publication_context(request, body)
+            return {**context, "geometry": request.app.state.results.trial(body.model_dump(), geometry=True)}
 
     return app

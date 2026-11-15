@@ -82,7 +82,7 @@ src/tsp_hpc/
 │   └── nn/              # adapter and separately named native implementations
 ├── experiments/         # manifest planning and sequential execution
 ├── analysis/            # record validation, streaming tables/comparisons, reports
-└── interface/           # request models, HTTP boundary, catalog/ingestion/queries
+└── interface/           # authority, snapshots, preflight/jobs/worker, publication/analysis
 frontend/src/
 ├── results/             # typed client, controller, input parsing and Results view
 ├── rendering/           # WebGL2/model primitives and focused regressions
@@ -204,9 +204,15 @@ interface/swap variant does not meet the agreed SA contract merely by rebasing.
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) owns tool versions, action pins and commands. On pushes and PRs to `master`, it runs:
 
 - **Python checks:** locked installation with the interface extra, pytest with warnings as errors, and distribution builds.
-- **Rendering primitive checks:** Node syntax checks and the shared rendering/model tests.
+- **Rendering primitive checks:** the historical status-check name is retained, but this job now installs pinned pnpm/locked dependencies and runs Node syntax checks, Svelte/TypeScript checking, all existing frontend/shared-contract regressions and the Vite build.
 
-**Frontend type checks, non-rendering frontend tests and the Vite build are not yet run by CI.** Use the commands above for changes affecting them; a green Python/rendering run does not establish frontend correctness.
+Captured execution/publication/analysis payloads are checked against both Python and
+TypeScript DTOs. Installed acceptance runs a real wheel server outside the checkout,
+including native workers, an actual controller crash with a surviving child,
+restart-held dispatch, verified results/history and fresh reruns. Separate tests
+cover strict JSON, resource/persistence failures and the deterministic #75 race
+negative control. These are functional gates, not browser-performance, solver
+benchmark, hardware or cached-machine-code-origin attestations.
 
 Actions are commit-pinned, repository permissions are read-only, and checkout credentials are not persisted. CI uses ordinary `pull_request` events and no custom/cluster secrets. It caches dependencies, not `.venv` or restored native JIT artifacts; numerical thread limits are one and the Numba cache is temporary. Jobs have timeouts and superseded runs are cancelled separately for push and PR events.
 

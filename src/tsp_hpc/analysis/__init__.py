@@ -12,13 +12,14 @@ from tsp_hpc.analysis.core import (
     read_shards,
     read_sources,
     reference_gaps,
+    references_from_json,
     summary_table,
 )
 
-from tsp_hpc.analysis.progress import progress_table, time_to_target
+from tsp_hpc.analysis.progress import iter_progress, progress_table, time_to_target
 
 __all__ = [
     "Analysis", "MAX_RECORD_BYTES", "METRICS", "PHASES", "TRIAL_COLUMNS", "TRIAL_FIELDS",
     "load_references", "paired_comparisons", "read_shards", "read_sources", "reference_gaps", "summary_table",
-    "progress_table", "time_to_target",
+    "iter_progress", "progress_table", "time_to_target", "references_from_json",
 ]

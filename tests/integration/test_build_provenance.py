@@ -14,8 +14,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import sysconfig
-import venv
 import zipfile
 
 import pytest
@@ -37,45 +35,6 @@ def commit(root):
     command("git", "-C", str(root), "-c", "user.name=Build Test", "-c", "user.email=test@example.invalid",
             "commit", "--quiet", "--no-gpg-sign", "-m", "test snapshot")
     return command("git", "-C", str(root), "rev-parse", "HEAD").stdout.strip()
-
-
-@pytest.fixture(scope="module")
-def built(tmp_path_factory):
-    work = tmp_path_factory.mktemp("verified-wheel")
-    checkout = work / "checkout"
-    checkout.mkdir()
-    for name in ("pyproject.toml", "uv.lock", "README.md", ".gitignore"):
-        shutil.copy2(ROOT / name, checkout / name)
-    for name in ("src", "tools"):
-        shutil.copytree(ROOT / name, checkout / name, ignore=shutil.ignore_patterns("__pycache__"))
-    command("git", "init", "--quiet", str(checkout))
-    revision = commit(checkout)
-    result = command(sys.executable, str(checkout / "tools/build_verified_wheel.py"),
-                     "--offline", "--output", str(work / "wheels"), cwd=work)
-    wheel = Path(result.stdout.strip().splitlines()[-1])
-    receipt = json.loads(wheel.with_name(wheel.name + ".build.json").read_text())
-    assert receipt["wheel_sha256"] == file_digest(wheel)
-    assert receipt["build"]["source"] == {"revision": revision, "dirty": False}
-    assert command("git", "-C", str(checkout), "status", "--porcelain").stdout == ""
-    environment = work / "env"
-    venv.EnvBuilder(with_pip=False).create(environment)
-    site = environment / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-    # Share dependency files only: never source-package/editable hooks or metadata.
-    for path in Path(sysconfig.get_path("purelib")).iterdir():
-        if path.suffix == ".pth" or "tsp_hpc" in path.name or path.name == "__pycache__":
-            continue
-        (site / path.name).symlink_to(path, target_is_directory=path.is_dir())
-    command("uv", "pip", "install", "--python", str(environment / "bin/python"),
-            "--offline", "--no-deps", str(wheel))
-    return checkout, wheel, receipt, environment
-
-
-@pytest.fixture
-def installed(built, tmp_path):
-    environment = tmp_path / "env"
-    shutil.copytree(built[3], environment, symlinks=True)
-    site, = environment.glob("lib/python*/site-packages")
-    return environment / "bin/python", site
 
 
 def probe(python, cwd):

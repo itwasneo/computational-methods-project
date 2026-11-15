@@ -1,14 +1,15 @@
 """Strict request validators, separate from wire types and routing.
 
-Local-run models are not wired to endpoints. Response/design DTOs remain in
-contracts; these models neither authorize operations nor validate scientific
+Implemented route models and retained legacy preview models are distinguished
+below. Wire DTOs remain in contracts; validation alone neither grants authority nor
+validates scientific
 identities, reference freshness or advertised runtime limits.
 """
 
 import math
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator, model_validator
 
 from tsp_hpc.interface.contracts import (
     Field as QueryField, NUMERIC_FIELDS, NULLABLE_FIELDS, PAGE_MAX, SAFE_INTEGER,
@@ -16,6 +17,7 @@ from tsp_hpc.interface.contracts import (
 )
 
 OpaqueId = Annotated[StrictStr, Field(min_length=1, max_length=128)]
+ExecutionId = Annotated[StrictStr, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
 
 
 class StrictModel(BaseModel):
@@ -76,8 +78,12 @@ class ColumnFilterRequest(StrictModel):
             elif self.field == "n_cities":
                 valid = type(value) is int and 2 <= value <= SAFE_INTEGER
             elif self.field in NUMERIC_FIELDS:
-                valid = ((type(value) is int and abs(value) <= SAFE_INTEGER)
-                         or (type(value) is float and math.isfinite(value)))
+                # These columns are float64 observations, not exact integer IDs.
+                # JSON 100000000000000000000 and 1e20 have the same meaning here.
+                try:
+                    valid = type(value) in (int, float) and math.isfinite(float(value))
+                except OverflowError:
+                    valid = False
             else:
                 valid = type(value) is str
             if not valid:
@@ -123,7 +129,7 @@ def _distinct(values):
 
 
 class RunRequest(WorkspaceRequest):
-    session_id: OpaqueId
+    session_id: ExecutionId
 
 
 class GenerationParameters(StrictModel):
@@ -198,3 +204,165 @@ class QueueContinueRequest(RunRequest):
 class JobResultRequest(JobStatusRequest):
     expected_revision: OpaqueId
     attempt_id: OpaqueId
+
+
+# Implemented execution API uses these solver-neutral models. The older NN-only
+# CampaignConfigurationRequest/PreflightRequest above are design-fixture types,
+# not accepted by /api/runs/preflight.
+class ScientificConfigurationRequest(StrictModel):
+    algorithm: Literal["nn", "ga", "sa"]
+    parameters: dict[StrictStr, Any]
+    budget: dict[StrictStr, Any]
+    logical_search_ids: list[ExecutionId] | None = Field(max_length=RUN_LIST_MAX)
+    implementations: list[ExecutionId | None] = Field(min_length=1, max_length=16)
+    distance_modes: list[DistanceMode] = Field(min_length=1, max_length=2)
+    repetitions: list[Count] = Field(min_length=1, max_length=RUN_LIST_MAX)
+    solver_seed: Seed
+    max_matrix_bytes: Count
+    record_history: StrictBool
+    history_policy: dict[StrictStr, Any] | None
+
+    _seed = field_validator("solver_seed")(_seed_value)
+    _distinct = field_validator("implementations", "distance_modes", "repetitions")(_distinct)
+
+    @model_validator(mode="after")
+    def scientific_rules(self):
+        from tsp_hpc.solvers.configuration import normalize_parameters, normalize_budget, normalize_history
+        try:
+            self.parameters = normalize_parameters(self.algorithm, self.parameters)
+            # Actual city bounds are checked against the immutable snapshot during
+            # preflight. Wire normalization cannot authorize an instance.
+            self.budget = normalize_budget(self.algorithm, self.budget, SAFE_INTEGER + 1)
+            self.history_policy = normalize_history(self.record_history, self.history_policy)
+            if self.algorithm == "nn":
+                if self.logical_search_ids is not None:
+                    raise ValueError("NN logical work is the start collection")
+                if len(self.budget["start_cities"]) > RUN_LIST_MAX:
+                    raise ValueError("too many starts")
+            elif not self.logical_search_ids:
+                raise ValueError("independent searches require explicit logical IDs")
+            else:
+                _distinct(self.logical_search_ids)
+        except (TypeError, ValueError) as error:
+            raise ValueError("invalid scientific configuration") from error
+        return self
+
+
+class ExecutionPreflightRequest(RunRequest):
+    instance_snapshot_id: OpaqueId
+    capabilities_revision: OpaqueId
+    configuration: ScientificConfigurationRequest
+
+
+class ExecutionControlRequest(JobControlRequest):
+    confirm_stop_now: StrictBool
+
+    @model_validator(mode="after")
+    def confirmation(self):
+        if self.confirm_stop_now != (self.action == "stop_now"):
+            raise ValueError("stop-now requires explicit confirmation")
+        return self
+
+
+class SnapshotRequest(RunRequest):
+    instance_snapshot_id: OpaqueId
+
+
+class JobsQueryRequest(RunRequest):
+    limit: StrictInt = Field(ge=1, le=PAGE_MAX)
+    cursor: StrictStr | None = Field(max_length=512)
+
+
+class JobPublicationRequest(JobStatusRequest):
+    expected_revision: OpaqueId
+    result_revision: OpaqueId
+    instance_snapshot_id: OpaqueId
+    campaign_id: OpaqueId
+    attempt_id: OpaqueId
+
+
+class JobGeometryRequest(JobPublicationRequest):
+    geometry_revision: OpaqueId
+
+
+class TrialPublicationRequest(DatasetStatusRequest):
+    revision: OpaqueId
+    campaign_id: OpaqueId
+    attempt_id: OpaqueId
+    instance_handle: OpaqueId
+    artifact_catalog_revision: OpaqueId
+
+
+class TrialGeometryRequest(TrialPublicationRequest):
+    geometry_revision: OpaqueId
+
+
+class AnalysisSelection(StrictModel):
+    attempt_ids: list[OpaqueId] | None = Field(max_length=VALUES_PER_FILTER_MAX)
+    limit: StrictInt = Field(ge=1, le=PAGE_MAX)
+    cursor: StrictStr | None = Field(max_length=512)
+
+    @field_validator("attempt_ids")
+    @classmethod
+    def distinct_attempts(cls, value):
+        return None if value is None else _distinct(value)
+
+
+class ScalarAnalysisQuery(AnalysisSelection):
+    table: Literal["trials", "summary", "diagnostics"]
+
+    @model_validator(mode="after")
+    def diagnostic_scope(self):
+        if self.table == "diagnostics" and self.attempt_ids is not None:
+            raise ValueError("diagnostics describe the full indexed dataset")
+        return self
+
+
+class ProgressAnalysisQuery(AnalysisSelection):
+    table: Literal["progress"]
+    max_points: StrictInt = Field(ge=1, le=100_000)
+
+
+class TargetAnalysisQuery(AnalysisSelection):
+    table: Literal["targets"]
+    instance_id: OpaqueId
+    target_cost: StrictFloat = Field(ge=0, allow_inf_nan=False)
+    max_points: StrictInt = Field(ge=1, le=100_000)
+
+    @field_validator("target_cost")
+    @classmethod
+    def normalized_zero(cls, value):
+        return 0.0 if value == 0 else value
+
+
+class ComparisonAnalysisQuery(AnalysisSelection):
+    table: Literal["comparisons"]
+    baseline_implementation: OpaqueId
+    baseline_distance_mode: DistanceMode | None
+    metric: Literal["search_time_s", "end_to_end_time_s"]
+
+
+class ReferenceAnalysisQuery(AnalysisSelection):
+    table: Literal["references"]
+    reference_handle: OpaqueId
+    artifact_catalog_revision: OpaqueId
+
+
+class FacetAnalysisQuery(AnalysisSelection):
+    table: Literal["facets"]
+    field: QueryField
+
+
+AnalysisQuery = Annotated[ScalarAnalysisQuery | ProgressAnalysisQuery | TargetAnalysisQuery | ComparisonAnalysisQuery |
+                          ReferenceAnalysisQuery | FacetAnalysisQuery, Field(discriminator="table")]
+
+
+class DatasetAnalysisRequest(DatasetStatusRequest):
+    revision: OpaqueId
+    query: AnalysisQuery
+
+
+class JobAnalysisRequest(JobStatusRequest):
+    expected_revision: OpaqueId
+    result_revision: OpaqueId
+    query: AnalysisQuery

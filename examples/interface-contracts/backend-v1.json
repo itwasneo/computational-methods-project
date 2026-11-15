@@ -1,0 +1,614 @@
+{
+  "note": "Functional native/API payload examples, not performance or provenance-attestation evidence. Opaque IDs are examples, not reusable authority. No credential is included; production capabilities are NN only.",
+  "examples": {
+    "execution": {
+      "type": "ExecutionInfo",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "local_runs_enabled": true,
+        "limits": {
+          "max_cities": 4096,
+          "max_logical_searches": 128,
+          "max_repetitions": 32,
+          "max_trials": 128,
+          "max_pending": 8,
+          "max_jobs": 256,
+          "max_snapshots": 64,
+          "max_preflights": 64,
+          "max_instance_bytes": 2097152,
+          "max_matrix_bytes": 134217728,
+          "max_history_points": 100000,
+          "max_result_bytes": 67108864,
+          "max_record_bytes": 4194304,
+          "max_plan_bytes": 4194304,
+          "max_response_bytes": 4194304,
+          "max_worker_memory_bytes": 4294967296,
+          "max_job_seconds": 300,
+          "preflight_seconds": 900
+        },
+        "output_root": {
+          "root_id": "6847b811fb24ae5ba634cd9e0889117d",
+          "display_name": "output"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "StoredInstance",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+        "content_sha256": "2388ccb9293537b2cd13d3eac10df340ef858109f8a534b5231f3f1fa191161b",
+        "instance": {
+          "coordinate_checksum": "6c7920fbbf69622bafbabdcee965c9eace7138dcc5240a88741f9632a953a6d5",
+          "distance_kind": "euclidean_2d",
+          "instance_id": "instance-v1-d05ebe2607b0375a7f6615ed7774c29179151b21e02d2140066a60dcf7b74887",
+          "instance_seed": "18446744073709551615",
+          "n_cities": 4
+        },
+        "source": {
+          "kind": "generation",
+          "sha256": null
+        }
+      }
+    },
+    "capabilities": {
+      "type": "ExecutionCapabilities",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "capabilities_revision": "40ce842a2c7be4bd2d4e7b0cdd44fdaca1440b41fb06568bf1891905bdc74599",
+        "local_runs_enabled": true,
+        "limits": {
+          "max_cities": 4096,
+          "max_logical_searches": 128,
+          "max_repetitions": 32,
+          "max_trials": 128,
+          "max_pending": 8,
+          "max_jobs": 256,
+          "max_snapshots": 64,
+          "max_preflights": 64,
+          "max_instance_bytes": 2097152,
+          "max_matrix_bytes": 134217728,
+          "max_history_points": 100000,
+          "max_result_bytes": 67108864,
+          "max_record_bytes": 4194304,
+          "max_plan_bytes": 4194304,
+          "max_response_bytes": 4194304,
+          "max_worker_memory_bytes": 4294967296,
+          "max_job_seconds": 300,
+          "preflight_seconds": 900
+        },
+        "output_root": {
+          "root_id": "6847b811fb24ae5ba634cd9e0889117d",
+          "display_name": "output"
+        },
+        "implementations": [
+          {
+            "algorithm": "nn",
+            "variant": "nn-fixed-starts-v1",
+            "implementation": "visited-scan-v1",
+            "backend": "serial",
+            "distance_kinds": [
+              "euclidean_2d"
+            ],
+            "distance_modes": [
+              "dense",
+              "on_demand"
+            ],
+            "logical_mode": "batch",
+            "supports_time": true,
+            "supports_history": true,
+            "native": true,
+            "default": true,
+            "available": true,
+            "unavailable_reason": null
+          },
+          {
+            "algorithm": "nn",
+            "variant": "nn-fixed-starts-v1",
+            "implementation": "remaining-array-v1",
+            "backend": "serial",
+            "distance_kinds": [
+              "euclidean_2d"
+            ],
+            "distance_modes": [
+              "dense",
+              "on_demand"
+            ],
+            "logical_mode": "batch",
+            "supports_time": true,
+            "supports_history": true,
+            "native": true,
+            "default": false,
+            "available": true,
+            "unavailable_reason": null
+          }
+        ],
+        "budget_scope": "per-logical-invocation",
+        "worker_processes": 1
+      }
+    },
+    "preflight_request": {
+      "type": "ExecutionPreflightRequest",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+        "capabilities_revision": "40ce842a2c7be4bd2d4e7b0cdd44fdaca1440b41fb06568bf1891905bdc74599",
+        "configuration": {
+          "algorithm": "nn",
+          "parameters": {},
+          "budget": {
+            "start_cities": [
+              2,
+              0
+            ]
+          },
+          "logical_search_ids": null,
+          "implementations": [
+            null
+          ],
+          "distance_modes": [
+            "on_demand"
+          ],
+          "repetitions": [
+            0
+          ],
+          "solver_seed": "18446744073709551615",
+          "max_matrix_bytes": 0,
+          "record_history": true,
+          "history_policy": null
+        }
+      }
+    },
+    "preflight": {
+      "type": "ReviewedExecution",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "preflight_id": "85d0e0faf93427b753709df77647d56c",
+        "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+        "snapshot_sha256": "2388ccb9293537b2cd13d3eac10df340ef858109f8a534b5231f3f1fa191161b",
+        "capabilities_revision": "40ce842a2c7be4bd2d4e7b0cdd44fdaca1440b41fb06568bf1891905bdc74599",
+        "configuration": {
+          "algorithm": "nn",
+          "parameters": {},
+          "budget": {
+            "start_cities": [
+              2,
+              0
+            ]
+          },
+          "logical_search_ids": null,
+          "implementations": [
+            "visited-scan-v1"
+          ],
+          "distance_modes": [
+            "on_demand"
+          ],
+          "repetitions": [
+            0
+          ],
+          "solver_seed": "18446744073709551615",
+          "max_matrix_bytes": 0,
+          "record_history": true,
+          "history_policy": {
+            "interval_s": 0.1,
+            "max_points": 4096
+          }
+        },
+        "budget_scope": "per-logical-invocation",
+        "trial_count": 1,
+        "trials": [
+          {
+            "search_id": "search-v1-d4a49eb48e04772855109d0d2e2dbfcbf36a72a5f3ef2ebcbe60af38e6266dab",
+            "requested_execution_id": "execution-v1-0f5a011832abc36249c1d3cca19f824f44f39011f70cec8ea313026a79c1d2c7",
+            "implementation": "visited-scan-v1",
+            "distance_mode": "on_demand",
+            "repetition": 0,
+            "trial_seed": "16381594886284441454",
+            "invocations": [
+              {
+                "kind": "batch",
+                "logical_id": null,
+                "seed": "16381594886284441454"
+              }
+            ]
+          }
+        ],
+        "estimated_matrix_bytes": 0,
+        "maximum_history_points": 2,
+        "estimated_output_bytes": 34083,
+        "summed_search_allowance_s": null,
+        "job_time_ceiling_s": 300,
+        "valid_for_s": 900,
+        "output_root": {
+          "root_id": "6847b811fb24ae5ba634cd9e0889117d",
+          "display_name": "output"
+        }
+      }
+    },
+    "submitted": {
+      "type": "JobSubmission",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "job": {
+          "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+          "revision": "f354c8b1b3f9b6915ee29551b3f546df",
+          "submission_key": "example-job",
+          "preflight_id": "85d0e0faf93427b753709df77647d56c",
+          "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+          "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+          "state": "queued",
+          "stop_mode": null,
+          "planned_trials": 1,
+          "recorded_trials": 0,
+          "failed_trials": 0,
+          "attempt_ids": [],
+          "result_handle": null,
+          "result_revision": null,
+          "elapsed_time_s": null,
+          "failure_code": null,
+          "queue_position": 0
+        },
+        "deduplicated": false
+      }
+    },
+    "completed": {
+      "type": "JobEnvelope",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "job": {
+          "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+          "revision": "520ca16549d02b608fe5295041a63d89",
+          "submission_key": "example-job",
+          "preflight_id": "85d0e0faf93427b753709df77647d56c",
+          "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+          "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+          "state": "completed",
+          "stop_mode": null,
+          "planned_trials": 1,
+          "recorded_trials": 1,
+          "failed_trials": 0,
+          "attempt_ids": [
+            "9ed7eefdc52a4698bf269ebde857fdcc"
+          ],
+          "result_handle": "result-efa6a1dd76156db63915f22a48edd7bb",
+          "result_revision": "0c12412b86b8a854dee6b73d7588839366e3045b7c03174eea0527c6c2448288",
+          "elapsed_time_s": 1.252604611996503,
+          "failure_code": null,
+          "queue_position": null
+        }
+      }
+    },
+    "accepted_review": {
+      "type": "JobReview",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "job": {
+          "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+          "revision": "520ca16549d02b608fe5295041a63d89",
+          "submission_key": "example-job",
+          "preflight_id": "85d0e0faf93427b753709df77647d56c",
+          "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+          "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+          "state": "completed",
+          "stop_mode": null,
+          "planned_trials": 1,
+          "recorded_trials": 1,
+          "failed_trials": 0,
+          "attempt_ids": [
+            "9ed7eefdc52a4698bf269ebde857fdcc"
+          ],
+          "result_handle": "result-efa6a1dd76156db63915f22a48edd7bb",
+          "result_revision": "0c12412b86b8a854dee6b73d7588839366e3045b7c03174eea0527c6c2448288",
+          "elapsed_time_s": 1.252604611996503,
+          "failure_code": null,
+          "queue_position": null
+        },
+        "plan": {
+          "budget_scope": "per-logical-invocation",
+          "capabilities_revision": "40ce842a2c7be4bd2d4e7b0cdd44fdaca1440b41fb06568bf1891905bdc74599",
+          "configuration": {
+            "algorithm": "nn",
+            "budget": {
+              "start_cities": [
+                2,
+                0
+              ]
+            },
+            "distance_modes": [
+              "on_demand"
+            ],
+            "history_policy": {
+              "interval_s": 0.1,
+              "max_points": 4096
+            },
+            "implementations": [
+              "visited-scan-v1"
+            ],
+            "logical_search_ids": null,
+            "max_matrix_bytes": 0,
+            "parameters": {},
+            "record_history": true,
+            "repetitions": [
+              0
+            ],
+            "solver_seed": "18446744073709551615"
+          },
+          "estimated_matrix_bytes": 0,
+          "estimated_output_bytes": 34083,
+          "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+          "job_time_ceiling_s": 300,
+          "maximum_history_points": 2,
+          "output_root": {
+            "display_name": "output",
+            "root_id": "6847b811fb24ae5ba634cd9e0889117d"
+          },
+          "preflight_id": "85d0e0faf93427b753709df77647d56c",
+          "snapshot_sha256": "2388ccb9293537b2cd13d3eac10df340ef858109f8a534b5231f3f1fa191161b",
+          "summed_search_allowance_s": null,
+          "trial_count": 1,
+          "trials": [
+            {
+              "distance_mode": "on_demand",
+              "implementation": "visited-scan-v1",
+              "invocations": [
+                {
+                  "kind": "batch",
+                  "logical_id": null,
+                  "seed": "16381594886284441454"
+                }
+              ],
+              "repetition": 0,
+              "requested_execution_id": "execution-v1-0f5a011832abc36249c1d3cca19f824f44f39011f70cec8ea313026a79c1d2c7",
+              "search_id": "search-v1-d4a49eb48e04772855109d0d2e2dbfcbf36a72a5f3ef2ebcbe60af38e6266dab",
+              "trial_seed": "16381594886284441454"
+            }
+          ],
+          "valid_for_s": 900
+        }
+      }
+    },
+    "result_request": {
+      "type": "JobPublicationRequest",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+        "expected_revision": "520ca16549d02b608fe5295041a63d89",
+        "result_revision": "0c12412b86b8a854dee6b73d7588839366e3045b7c03174eea0527c6c2448288",
+        "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+        "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+        "attempt_id": "9ed7eefdc52a4698bf269ebde857fdcc"
+      }
+    },
+    "result": {
+      "type": "JobDetailsResponse",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+        "job_revision": "520ca16549d02b608fe5295041a63d89",
+        "result_revision": "0c12412b86b8a854dee6b73d7588839366e3045b7c03174eea0527c6c2448288",
+        "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+        "details": {
+          "row": {
+            "attempt_id": "9ed7eefdc52a4698bf269ebde857fdcc",
+            "instance_id": "instance-v1-d05ebe2607b0375a7f6615ed7774c29179151b21e02d2140066a60dcf7b74887",
+            "implementation": "visited-scan-v1",
+            "n_cities": 4,
+            "algorithm": "nn",
+            "outcome": "completed",
+            "best_cost": 2.4118450902245825,
+            "search_time_s": 5.580899596679956e-05,
+            "campaign_complete": true,
+            "duplicate_execution": false,
+            "usable": true
+          },
+          "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+          "attempt_id": "9ed7eefdc52a4698bf269ebde857fdcc",
+          "search_id": "search-v1-d4a49eb48e04772855109d0d2e2dbfcbf36a72a5f3ef2ebcbe60af38e6266dab",
+          "requested_execution_id": "execution-v1-0f5a011832abc36249c1d3cca19f824f44f39011f70cec8ea313026a79c1d2c7",
+          "execution_id": "execution-v1-0f5a011832abc36249c1d3cca19f824f44f39011f70cec8ea313026a79c1d2c7",
+          "instance": {
+            "coordinate_checksum": "6c7920fbbf69622bafbabdcee965c9eace7138dcc5240a88741f9632a953a6d5",
+            "distance_kind": "euclidean_2d",
+            "instance_id": "instance-v1-d05ebe2607b0375a7f6615ed7774c29179151b21e02d2140066a60dcf7b74887",
+            "instance_seed": "18446744073709551615",
+            "n_cities": 4
+          },
+          "snapshot_sha256": "2388ccb9293537b2cd13d3eac10df340ef858109f8a534b5231f3f1fa191161b",
+          "geometry_revision": "3c4b1a340c37b9b52e7b90d16cc853b9afc5643ed83567ee7ea7f5102f525740",
+          "solver_seed": "18446744073709551615",
+          "trial_seed": "16381594886284441454",
+          "variant": "nn-fixed-starts-v1",
+          "parameters": {},
+          "budget": {
+            "start_cities": [
+              2,
+              0
+            ]
+          },
+          "budget_scope": "per-logical-invocation",
+          "record_history": true,
+          "history_policy": {
+            "interval_s": 0.1,
+            "max_points": 4096
+          },
+          "logical_search_ids": null,
+          "logical_results": [
+            {
+              "logical_index": 0,
+              "kind": "batch",
+              "logical_id": null,
+              "seed": "16381594886284441454",
+              "status": "ok",
+              "best_cost": 2.4118450902245825,
+              "verified_cost": 2.4118450902245825,
+              "work": {
+                "nn_starts_completed": 2,
+                "ga_generations_completed": 0,
+                "sa_proposals_evaluated": 0,
+                "full_tour_evaluations": 2
+              },
+              "termination_reason": "work_limit",
+              "search_time_s": 5.580899596679956e-05,
+              "history_points": 2
+            }
+          ],
+          "result": {
+            "status": "ok",
+            "best_cost": 2.4118450902245825,
+            "verified_cost": 2.4118450902245825,
+            "work": {
+              "full_tour_evaluations": 2,
+              "ga_generations_completed": 0,
+              "nn_starts_completed": 2,
+              "sa_proposals_evaluated": 0
+            },
+            "termination_reason": "work_limit",
+            "best_logical_index": 0
+          },
+          "timings": {
+            "distance_preparation_wall_time_s": 0.47915842800284736,
+            "distance_warmup_time_s": 0.4791235430020606,
+            "input_time_s": 0.000250281002081465,
+            "pre_persistence_time_s": 0.7622003779979423,
+            "preprocessing_time_s": 2.7650996344164014e-05,
+            "runner_validation_time_s": 9.032600064529106e-05,
+            "search_time_s": 5.580899596679956e-05,
+            "solve_wall_time_s": 0.0002482249983586371,
+            "solver_validation_time_s": 7.004600047366694e-05,
+            "solver_warmup_time_s": 0.2822417269999278
+          },
+          "error_phase": null,
+          "execution_kind": "native-required",
+          "native_verified": true
+        }
+      }
+    },
+    "geometry_request": {
+      "type": "JobGeometryRequest",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+        "expected_revision": "520ca16549d02b608fe5295041a63d89",
+        "result_revision": "0c12412b86b8a854dee6b73d7588839366e3045b7c03174eea0527c6c2448288",
+        "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+        "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+        "attempt_id": "9ed7eefdc52a4698bf269ebde857fdcc",
+        "geometry_revision": "3c4b1a340c37b9b52e7b90d16cc853b9afc5643ed83567ee7ea7f5102f525740"
+      }
+    },
+    "geometry": {
+      "type": "JobGeometryResponse",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+        "job_revision": "520ca16549d02b608fe5295041a63d89",
+        "result_revision": "0c12412b86b8a854dee6b73d7588839366e3045b7c03174eea0527c6c2448288",
+        "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+        "geometry": {
+          "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+          "attempt_id": "9ed7eefdc52a4698bf269ebde857fdcc",
+          "instance": {
+            "coordinate_checksum": "6c7920fbbf69622bafbabdcee965c9eace7138dcc5240a88741f9632a953a6d5",
+            "distance_kind": "euclidean_2d",
+            "instance_id": "instance-v1-d05ebe2607b0375a7f6615ed7774c29179151b21e02d2140066a60dcf7b74887",
+            "instance_seed": "18446744073709551615",
+            "n_cities": 4
+          },
+          "snapshot_sha256": "2388ccb9293537b2cd13d3eac10df340ef858109f8a534b5231f3f1fa191161b",
+          "geometry_revision": "3c4b1a340c37b9b52e7b90d16cc853b9afc5643ed83567ee7ea7f5102f525740",
+          "coordinates": {
+            "encoding": "f64-le-base64",
+            "data": "6ohRT8fC5T8EZ74+ywzrPwAtvJWxUn4/RTTjVU2g7D/4Z03M7oHAPz5qk6PZZ9Q/DvJ5Tvnc4j/I+gSMTmLHPw=="
+          },
+          "tour": {
+            "encoding": "u32-le-base64",
+            "data": "AgAAAAMAAAAAAAAAAQAAAA=="
+          }
+        }
+      }
+    },
+    "jobs": {
+      "type": "JobsPage",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "queue_revision": "15e42e1a733ef98575a73f04f801b9af",
+        "items": [
+          {
+            "job_id": "efa6a1dd76156db63915f22a48edd7bb",
+            "revision": "520ca16549d02b608fe5295041a63d89",
+            "submission_key": "example-job",
+            "preflight_id": "85d0e0faf93427b753709df77647d56c",
+            "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
+            "campaign_id": "d3a74acd4d0bd164e122e8fe98271249",
+            "state": "completed",
+            "stop_mode": null,
+            "planned_trials": 1,
+            "recorded_trials": 1,
+            "failed_trials": 0,
+            "attempt_ids": [
+              "9ed7eefdc52a4698bf269ebde857fdcc"
+            ],
+            "result_handle": "result-efa6a1dd76156db63915f22a48edd7bb",
+            "result_revision": "0c12412b86b8a854dee6b73d7588839366e3045b7c03174eea0527c6c2448288",
+            "elapsed_time_s": 1.252604611996503,
+            "failure_code": null,
+            "queue_position": null
+          }
+        ],
+        "next_cursor": null
+      }
+    },
+    "queue": {
+      "type": "QueueStatus",
+      "value": {
+        "api_version": 1,
+        "request_id": "example",
+        "workspace_id": "_KK-flEtwNrAnqxvFmrn2mP8yC9ktK8_",
+        "session_id": "oCoywCbkBbWRWntZGOY6dQGTv9m3A15q",
+        "queue_revision": "15e42e1a733ef98575a73f04f801b9af",
+        "dispatch": "enabled",
+        "active_job_id": null,
+        "pending_job_ids": []
+      }
+    }
+  }
+}

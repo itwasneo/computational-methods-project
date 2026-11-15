@@ -33,6 +33,14 @@ def matches(value, annotation):
         return any(matches(value, item) for item in args)
     if origin is list:
         return type(value) is list and all(matches(item, args[0]) for item in value)
+    if origin is dict:
+        return type(value) is dict and all(matches(key, args[0]) and matches(item, args[1]) for key, item in value.items())
+    if annotation is object:
+        if type(value) is dict:
+            return all(type(key) is str and matches(item, object) for key, item in value.items())
+        if type(value) is list:
+            return all(matches(item, object) for item in value)
+        return value is None or type(value) in (str, bool, int) or (type(value) is float and math.isfinite(value))
     if annotation is float:
         return type(value) in (int, float) and math.isfinite(value)
     return type(value) is annotation
@@ -68,6 +76,37 @@ def test_local_run_examples_use_the_same_descriptive_type_boundary():
     assert c.RUN_LIST_MAX == 1000
     assert int(runs["examples"]["generate"]["value"]["generation"]["seed"]) == 2**64 - 1
     assert int(runs["examples"]["generate_clustered"]["value"]["generation"]["seed"]) == 2**53 + 1
+
+
+def test_captured_backend_payloads_match_python_types_and_verified_geometry():
+    document = json.loads(FIXTURE.with_name("backend-v1.json").read_text())
+    for name, entry in document["examples"].items():
+        assert matches(entry["value"], getattr(c, entry["type"])), name
+    examples = document["examples"]
+    details, geometry = examples["result"]["value"]["details"], examples["geometry"]["value"]["geometry"]
+    coords = np.frombuffer(base64.b64decode(geometry["coordinates"]["data"]), dtype="<f8").reshape(-1, 2)
+    tour = np.frombuffer(base64.b64decode(geometry["tour"]["data"]), dtype="<u4").astype(np.int64)
+    assert coordinate_checksum(coords) == geometry["instance"]["coordinate_checksum"]
+    instance = TSPInstance(geometry["instance"]["instance_id"], coords)
+    assert tour_cost(instance, tour) == details["result"]["verified_cost"]
+    assert geometry["geometry_revision"] == details["geometry_revision"]
+    assert details["solver_seed"] == geometry["instance"]["instance_seed"] == str(2**64 - 1)
+    assert {entry["algorithm"] for entry in examples["capabilities"]["value"]["implementations"]} == {"nn"}
+    assert "session_token" not in FIXTURE.with_name("backend-v1.json").read_text()
+
+
+def test_captured_analysis_payloads_match_types_and_keep_observation_semantics():
+    document = json.loads(FIXTURE.with_name("analysis-v1.json").read_text())
+    for name, entry in document["examples"].items():
+        assert matches(entry["value"], getattr(c, entry["type"])), name
+    examples = document["examples"]
+    progress = examples["progress"]["value"]
+    assert progress["next_cursor"] and progress["total_rows"] > len(progress["items"])
+    assert progress["clock"] == "logical_and_concatenated_search"
+    assert type(progress["items"][0]["logical_seed"]) is str
+    assert examples["comparisons"]["value"]["items"][0]["speedup"] is None
+    assert examples["references"]["value"]["items"][0]["reference_kind"] == "best_known"
+    assert "session_token" not in FIXTURE.with_name("analysis-v1.json").read_text()
 
 
 def test_float64_wire_preserves_bytes_identity_duplicates_and_zero_cost(wire):

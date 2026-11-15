@@ -236,7 +236,7 @@ def test_repairing_preserves_catalog_and_running_ingestion(session, tmp_path, mo
                 "dataset_id": accepted["dataset_id"]}
         assert client.post("/api/datasets/status", json=poll).json()["state"] == "loading"
         assert app.state.datasets._future is future and not future.done()
-        for endpoint in ("/api/session/reset", "/api/session/rearm", "/api/jobs/submit", "/api/jobs/stop"):
+        for endpoint in ("/api/session/reset", "/api/session/rearm", "/api/jobs/stop"):
             assert client.post(endpoint, json={}).status_code == 404
             assert client.post(endpoint, json={}, headers={"Authorization": ""}).status_code == 403
     finally:

@@ -192,7 +192,7 @@ Tables expose `source_method`, `build_status` and `build_id`. V1 records are lab
 
 ## Optional local workspace backend
 
-The [interface guide](interface.md#browser-local-results) covers browser pairing, authorized shard ingestion and real trial tables. The API remains read-only; installed frontend serving, real-data geometry and solver jobs are not implemented.
+The [interface guide](interface.md#local-backend-usage-and-security) covers pairing, authorized ingestion and the implemented local serial API. It is read-only **by default**; explicit owner startup options enable immutable instances, preflight, durable jobs/control/recovery, verified final geometry and bounded shared analysis/history. Workers call this same `run_manifest` pipeline. Browser integration for the newer endpoints and installed frontend serving remain separate work; no automatic retry, append or campaign resume is supported.
 
 For the library examples below, use `uv run --locked python` from the repository root.
 

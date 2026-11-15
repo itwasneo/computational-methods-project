@@ -1,5 +1,6 @@
-// API v1 wire types. Workspace/session/catalog/datasets/trial queries are implemented.
-// Facets/details/geometry/local runs remain planned. Response guards live in results/client.ts.
+// API v1 wire types; see docs/interface.md for implemented backend routes.
+// Legacy preview DTOs remain; the existing results/client.ts guards cover the
+// read-only table UI, not an implementation of the newer execution/publication UI.
 // Mirrors tsp_hpc.interface.contracts; all fields are required, even when nullable.
 export const API_VERSION = 1;
 export const PAGE_DEFAULT = 100;
@@ -153,7 +154,12 @@ export interface ErrorResponse {
   code: 'invalid_request' | 'unauthorized' | 'workspace_unavailable' | 'artifact_not_found' |
     'invalid_artifact' | 'dataset_not_ready' | 'stale_revision' | 'cursor_invalid' |
     'snapshot_mismatch' | 'geometry_too_large' | 'internal_error' | 'catalog_busy' |
-    'catalog_limit_exceeded' | 'artifact_too_large' | 'request_too_large';
+    'catalog_limit_exceeded' | 'artifact_too_large' | 'request_too_large' |
+    'dataset_not_found' | 'ingestion_busy' | 'dataset_limit_exceeded' |
+    'execution_disabled' | 'execution_unavailable' | 'execution_busy' | 'resource_limit' |
+    'snapshot_not_found' | 'snapshot_stale' | 'unsupported_execution' | 'invalid_plan' |
+    'preflight_stale' | 'queue_full' | 'submission_conflict' | 'job_stale' | 'job_not_found' |
+    'job_state_invalid' | 'queue_stale' | 'result_unavailable';
   message: string;
   retryable: boolean;
 }
@@ -224,3 +230,149 @@ export interface RunError {
     'submission_conflict' | 'job_stale' | 'job_not_found' | 'session_revoked' | 'owner_pairing_required' | 'internal_error';
   message: string; recovery: 'edit' | 'refresh' | 'owner_pairing' | 'none';
 }
+
+// Solver-neutral API contracts; older NN-only fixtures do not define
+// /api/runs/preflight. All actual endpoints use ErrorResponse.
+export interface ScientificConfiguration {
+  algorithm: 'nn' | 'ga' | 'sa';
+  parameters: Record<string, number>;
+  budget: Record<string, number | number[]>;
+  logical_search_ids: string[] | null;
+  implementations: (string | null)[];
+  distance_modes: DistanceMode[];
+  repetitions: number[];
+  solver_seed: string;
+  max_matrix_bytes: number;
+  record_history: boolean;
+  history_policy: Record<string, number> | null;
+}
+export interface ExecutionPreflightRequest extends RunContext {
+  instance_snapshot_id: string;
+  capabilities_revision: string;
+  configuration: ScientificConfiguration;
+}
+export interface ExecutionControlRequest extends JobControlRequest { confirm_stop_now: boolean; }
+export interface SnapshotRequest extends RunContext { instance_snapshot_id: string; }
+export interface ExecutionInfo extends RunContext {
+  local_runs_enabled: boolean;
+  limits: Record<string, number>;
+  output_root: OutputRoot | null;
+}
+export interface StoredInstance extends RunContext {
+  instance_snapshot_id: string;
+  content_sha256: string;
+  instance: InstanceDescriptor;
+  source: { kind: 'artifact' | 'generation'; sha256: string | null };
+}
+export interface ExecutionCapabilities extends ExecutionInfo {
+  capabilities_revision: string;
+  implementations: Record<string, unknown>[];
+  budget_scope: 'per-logical-invocation';
+  worker_processes: 1;
+}
+export interface ReviewedExecution extends ExecutionPreflightRequest {
+  preflight_id: string;
+  snapshot_sha256: string;
+  budget_scope: 'per-logical-invocation';
+  trial_count: number;
+  trials: {
+    search_id: string; requested_execution_id: string; implementation: string;
+    distance_mode: DistanceMode; repetition: number; trial_seed: string;
+    invocations: { kind: string; logical_id: string | null; seed: string }[];
+  }[];
+  estimated_matrix_bytes: number;
+  maximum_history_points: number;
+  estimated_output_bytes: number;
+  summed_search_allowance_s: number | null;
+  job_time_ceiling_s: number;
+  valid_for_s: number;
+  output_root: OutputRoot;
+}
+export interface JobRecord extends Omit<JobStatus, keyof RunContext | 'state'> {
+  state: JobState | 'recovering';
+  attempt_ids: string[];
+  result_revision: string | null;
+  failure_code: string | null;
+}
+export interface JobEnvelope extends RunContext { job: JobRecord; }
+export interface JobReview extends JobEnvelope { plan: Omit<ReviewedExecution, keyof RunContext>; }
+export interface JobSubmission extends JobEnvelope { deduplicated: boolean; }
+export interface JobsQueryRequest extends RunContext { limit: number; cursor: string | null; }
+export interface JobsPage extends RunContext {
+  queue_revision: string; items: JobRecord[]; next_cursor: string | null;
+}
+export interface JobPublicationRequest extends JobStatusRequest {
+  expected_revision: string; result_revision: string; instance_snapshot_id: string;
+  campaign_id: string; attempt_id: string;
+}
+export interface JobGeometryRequest extends JobPublicationRequest { geometry_revision: string; }
+export interface TrialPublicationRequest extends Context {
+  campaign_id: string; attempt_id: string; instance_handle: string; artifact_catalog_revision: string;
+}
+export interface TrialGeometryRequest extends TrialPublicationRequest { geometry_revision: string; }
+export interface WorkObservation {
+  nn_starts_completed: number | string; ga_generations_completed: number | string;
+  sa_proposals_evaluated: number | string; full_tour_evaluations: number | string;
+}
+export interface FinalObservation {
+  status: 'ok' | 'no_solution' | 'failed'; best_cost: number | null; verified_cost: number | null;
+  work: WorkObservation | null; termination_reason: string | null; best_logical_index: number | null;
+}
+export interface LogicalObservation {
+  logical_index: number; kind: string; logical_id: string | null; seed: string;
+  status: 'ok' | 'no_solution'; best_cost: number | null; verified_cost: number | null;
+  work: WorkObservation; termination_reason: string; search_time_s: number; history_points: number | null;
+}
+export interface VerifiedDetails {
+  row: TrialRow; campaign_id: string; attempt_id: string; search_id: string;
+  requested_execution_id: string; execution_id: string | null; instance: InstanceDescriptor;
+  snapshot_sha256: string; geometry_revision: string; solver_seed: string; trial_seed: string;
+  variant: string; parameters: Record<string, unknown>; budget: Record<string, unknown>;
+  budget_scope: 'per-logical-invocation' | 'legacy-nn-batch'; record_history: boolean;
+  history_policy: Record<string, unknown> | null; logical_search_ids: string[] | null;
+  logical_results: LogicalObservation[] | null; result: FinalObservation; timings: Record<string, number>;
+  error_phase: string | null; execution_kind: string; native_verified: boolean | null;
+}
+export interface VerifiedGeometry {
+  campaign_id: string; attempt_id: string; instance: InstanceDescriptor;
+  snapshot_sha256: string; geometry_revision: string;
+  coordinates: { encoding: 'f64-le-base64'; data: string };
+  tour: { encoding: 'u32-le-base64'; data: string } | null;
+}
+export interface JobPublicationContext extends RunContext {
+  job_id: string; job_revision: string; result_revision: string; instance_snapshot_id: string;
+}
+export interface JobDetailsResponse extends JobPublicationContext { details: VerifiedDetails; }
+export interface JobGeometryResponse extends JobPublicationContext { geometry: VerifiedGeometry; }
+export interface TrialPublicationContext extends Context { instance_handle: string; artifact_catalog_revision: string; }
+export interface TrialDetailsResponse extends TrialPublicationContext { details: VerifiedDetails; }
+export interface TrialGeometryResponse extends TrialPublicationContext { geometry: VerifiedGeometry; }
+
+export interface AnalysisSelection { attempt_ids: string[] | null; limit: number; cursor: string | null; }
+export interface ScalarAnalysisQuery extends AnalysisSelection { table: 'trials' | 'summary' | 'diagnostics'; }
+export interface ProgressAnalysisQuery extends AnalysisSelection { table: 'progress'; max_points: number; }
+export interface TargetAnalysisQuery extends AnalysisSelection {
+  table: 'targets'; instance_id: string; target_cost: number; max_points: number;
+}
+export interface ComparisonAnalysisQuery extends AnalysisSelection {
+  table: 'comparisons'; baseline_implementation: string; baseline_distance_mode: DistanceMode | null;
+  metric: 'search_time_s' | 'end_to_end_time_s';
+}
+export interface ReferenceAnalysisQuery extends AnalysisSelection {
+  table: 'references'; reference_handle: string; artifact_catalog_revision: string;
+}
+export interface FacetAnalysisQuery extends AnalysisSelection { table: 'facets'; field: Field; }
+export type AnalysisQuery = ScalarAnalysisQuery | ProgressAnalysisQuery | TargetAnalysisQuery | ComparisonAnalysisQuery | ReferenceAnalysisQuery | FacetAnalysisQuery;
+export interface DatasetAnalysisRequest extends Context { query: AnalysisQuery; }
+export interface JobAnalysisRequest extends JobStatusRequest { expected_revision: string; result_revision: string; query: AnalysisQuery; }
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+export interface AnalysisPage {
+  table: 'trials' | 'summary' | 'diagnostics' | 'progress' | 'targets' | 'comparisons' | 'references' | 'facets';
+  query_key: string; columns: string[]; items: Record<string, JsonValue>[]; total_rows: number; next_cursor: string | null;
+  history_coverage: { selected_attempts: number; recorded_attempts: number; missing_attempts: number; points: number };
+  reference: { artifact_handle: string; artifact_catalog_revision: string; sha256: string } | null;
+  clock: 'logical_and_concatenated_search' | 'first_observed_concatenated_search_crossing' | null;
+  validation: 'shared-records';
+}
+export interface DatasetAnalysisResponse extends Context, AnalysisPage {}
+export interface JobAnalysisResponse extends JobPublicationContext, AnalysisPage {}

@@ -245,6 +245,21 @@ class WorkspaceCatalog:
             manifest = source(manifest_handle, "json", MAX_MANIFEST_BYTES) if manifest_handle is not None else None
             return shards, manifest
 
+    def select_instance_source(self, handle, revision, *, max_bytes):
+        """Authorize one bounded JSON candidate without granting a raw path."""
+        with self._operation():
+            self._check_current()
+            if revision != self._revision:
+                raise _stale()
+            candidate = self._files.get(handle)
+            if candidate is None:
+                raise InterfaceError("artifact_not_found", "Selected JSON artifact is unavailable.", 404)
+            if candidate.kind != "json":
+                raise InterfaceError("invalid_artifact", "A JSON artifact is required.", 422)
+            if candidate.stamp[3] > max_bytes:
+                raise InterfaceError("artifact_too_large", "JSON artifact exceeds its byte limit.", 413)
+            return AuthorizedSource(self, handle, revision)
+
     def source_stamp(self, handle, revision):
         with self._operation(wait=True):
             self._check_current()

@@ -1,7 +1,8 @@
 """API v1 wire types, not runtime validators or authorization.
 
-Workspace/session/catalog, dataset lifecycle and trial queries implement a subset;
-facet/detail/geometry and local-run DTOs remain design-only.
+See docs/interface.md for implemented routes. Legacy preview DTOs remain for
+compatibility; solver-neutral execution/publication types below define the actual
+backend endpoints, not the older NN-only design fixtures.
 
 See docs/interface.md. Scientific validation remains in the shared Python APIs.
 All fields are required, including nullable fields. Wire seeds are decimal strings.
@@ -243,6 +244,11 @@ class ErrorResponse(TypedDict):
         "invalid_artifact", "dataset_not_ready", "stale_revision", "cursor_invalid",
         "snapshot_mismatch", "geometry_too_large", "internal_error", "catalog_busy",
         "catalog_limit_exceeded", "artifact_too_large", "request_too_large",
+        "dataset_not_found", "ingestion_busy", "dataset_limit_exceeded",
+        "execution_disabled", "execution_unavailable", "execution_busy", "resource_limit",
+        "snapshot_not_found", "snapshot_stale", "unsupported_execution", "invalid_plan",
+        "preflight_stale", "queue_full", "submission_conflict", "job_stale", "job_not_found",
+        "job_state_invalid", "queue_stale", "result_unavailable",
     ]
     message: str
     retryable: bool
@@ -414,3 +420,340 @@ class RunError(TypedDict):
                   "session_revoked", "owner_pairing_required", "internal_error"]
     message: str
     recovery: Literal["edit", "refresh", "owner_pairing", "none"]
+
+
+# Solver-neutral execution API. Legacy NN-only design DTOs above are retained
+# for old fixtures, not accepted as the /api/runs/preflight contract. All actual
+# HTTP routes use ErrorResponse, including execution errors.
+class ScientificConfiguration(TypedDict):
+    algorithm: Literal["nn", "ga", "sa"]
+    parameters: dict[str, int | float]
+    budget: dict[str, int | float | list[int]]
+    logical_search_ids: list[str] | None
+    implementations: list[str | None]
+    distance_modes: list[DistanceMode]
+    repetitions: list[int]
+    solver_seed: str
+    max_matrix_bytes: int
+    record_history: bool
+    history_policy: dict[str, int | float] | None
+
+
+class ExecutionPreflightRequest(RunContext):
+    instance_snapshot_id: str
+    capabilities_revision: str
+    configuration: ScientificConfiguration
+
+
+class ExecutionControlRequest(JobControlRequest):
+    confirm_stop_now: bool
+
+
+class SnapshotRequest(RunContext):
+    instance_snapshot_id: str
+
+
+class ExecutionInfo(RunContext):
+    local_runs_enabled: bool
+    limits: dict[str, int]  # ExecutionLimits: versioned, owner-set resource ceilings.
+    output_root: OutputRoot | None
+
+
+class SnapshotSource(TypedDict):
+    kind: Literal["artifact", "generation"]
+    sha256: str | None
+
+
+class StoredInstance(RunContext):
+    instance_snapshot_id: str
+    content_sha256: str
+    instance: InstanceDescriptor
+    source: SnapshotSource
+
+
+class ExecutionCapabilities(ExecutionInfo):
+    capabilities_revision: str
+    implementations: list[dict[str, object]]  # SolverSpec.description + default/availability.
+    budget_scope: Literal["per-logical-invocation"]
+    worker_processes: Literal[1]
+
+
+class ReviewedTrial(TypedDict):
+    search_id: str
+    requested_execution_id: str
+    implementation: str
+    distance_mode: DistanceMode
+    repetition: int
+    trial_seed: str
+    invocations: list[dict[str, str | None]]  # kind, logical_id, exact decimal seed.
+
+
+class ReviewedPlan(TypedDict):
+    instance_snapshot_id: str
+    capabilities_revision: str
+    configuration: ScientificConfiguration
+    preflight_id: str
+    snapshot_sha256: str
+    budget_scope: Literal["per-logical-invocation"]
+    trial_count: int
+    trials: list[ReviewedTrial]
+    estimated_matrix_bytes: int
+    maximum_history_points: int
+    estimated_output_bytes: int
+    summed_search_allowance_s: float | None
+    job_time_ceiling_s: int
+    valid_for_s: int
+    output_root: OutputRoot
+
+
+class ReviewedExecution(RunContext, ReviewedPlan):
+    pass
+
+
+class JobRecord(TypedDict):
+    job_id: str
+    revision: str
+    submission_key: str
+    preflight_id: str
+    instance_snapshot_id: str
+    campaign_id: str
+    state: Literal["queued", "held", "preparing", "running", "recovering", "stop_requested", "stopping",
+                   "completed", "failed", "cancelled", "interrupted"]
+    queue_position: int | None
+    stop_mode: Literal["after_trial", "now"] | None
+    planned_trials: int
+    recorded_trials: int
+    failed_trials: int
+    attempt_ids: list[str]
+    result_handle: str | None
+    result_revision: str | None
+    elapsed_time_s: float | None
+    failure_code: str | None
+
+
+class JobEnvelope(RunContext):
+    job: JobRecord
+
+
+class JobReview(JobEnvelope):
+    plan: ReviewedPlan
+
+
+class JobSubmission(JobEnvelope):
+    deduplicated: bool
+
+
+class JobsQueryRequest(RunContext):
+    limit: int
+    cursor: str | None
+
+
+class JobsPage(RunContext):
+    queue_revision: str
+    items: list[JobRecord]
+    next_cursor: str | None
+
+
+class JobPublicationRequest(JobStatusRequest):
+    expected_revision: str
+    result_revision: str
+    instance_snapshot_id: str
+    campaign_id: str
+    attempt_id: str
+
+
+class JobGeometryRequest(JobPublicationRequest):
+    geometry_revision: str
+
+
+class TrialPublicationRequest(Context):
+    campaign_id: str
+    attempt_id: str
+    instance_handle: str
+    artifact_catalog_revision: str
+
+
+class TrialGeometryRequest(TrialPublicationRequest):
+    geometry_revision: str
+
+
+class WorkObservation(TypedDict):
+    nn_starts_completed: int | str
+    ga_generations_completed: int | str
+    sa_proposals_evaluated: int | str
+    full_tour_evaluations: int | str
+
+
+class FinalObservation(TypedDict):
+    status: Literal["ok", "no_solution", "failed"]
+    best_cost: float | None
+    verified_cost: float | None
+    work: WorkObservation | None
+    termination_reason: str | None
+    best_logical_index: int | None
+
+
+class LogicalObservation(TypedDict):
+    logical_index: int
+    kind: str
+    logical_id: str | None
+    seed: str
+    status: Literal["ok", "no_solution"]
+    best_cost: float | None
+    verified_cost: float | None
+    work: WorkObservation
+    termination_reason: str
+    search_time_s: float
+    history_points: int | None
+
+
+class VerifiedDetails(TypedDict):
+    row: TrialRow
+    campaign_id: str
+    attempt_id: str
+    search_id: str
+    requested_execution_id: str
+    execution_id: str | None
+    instance: InstanceDescriptor
+    snapshot_sha256: str
+    geometry_revision: str
+    solver_seed: str
+    trial_seed: str
+    variant: str
+    parameters: dict[str, object]
+    budget: dict[str, object]
+    budget_scope: Literal["per-logical-invocation", "legacy-nn-batch"]
+    record_history: bool
+    history_policy: dict[str, object] | None
+    logical_search_ids: list[str] | None
+    logical_results: list[LogicalObservation] | None
+    result: FinalObservation
+    timings: dict[str, float]
+    error_phase: str | None
+    execution_kind: str
+    native_verified: bool | None
+
+
+class VerifiedGeometry(TypedDict):
+    campaign_id: str
+    attempt_id: str
+    instance: InstanceDescriptor
+    snapshot_sha256: str
+    geometry_revision: str
+    coordinates: Coordinates
+    tour: Tour | None
+
+
+class JobPublicationContext(RunContext):
+    job_id: str
+    job_revision: str
+    result_revision: str
+    instance_snapshot_id: str
+
+
+class JobDetailsResponse(JobPublicationContext):
+    details: VerifiedDetails
+
+
+class JobGeometryResponse(JobPublicationContext):
+    geometry: VerifiedGeometry
+
+
+class TrialPublicationContext(Context):
+    instance_handle: str
+    artifact_catalog_revision: str
+
+
+class TrialDetailsResponse(TrialPublicationContext):
+    details: VerifiedDetails
+
+
+class TrialGeometryResponse(TrialPublicationContext):
+    geometry: VerifiedGeometry
+
+
+class AnalysisSelection(TypedDict):
+    attempt_ids: list[str] | None
+    limit: int
+    cursor: str | None
+
+
+class ScalarAnalysisQuery(AnalysisSelection):
+    table: Literal["trials", "summary", "diagnostics"]
+
+
+class ProgressAnalysisQuery(AnalysisSelection):
+    table: Literal["progress"]
+    max_points: int
+
+
+class TargetAnalysisQuery(AnalysisSelection):
+    table: Literal["targets"]
+    instance_id: str
+    target_cost: float
+    max_points: int
+
+
+class ComparisonAnalysisQuery(AnalysisSelection):
+    table: Literal["comparisons"]
+    baseline_implementation: str
+    baseline_distance_mode: DistanceMode | None
+    metric: Literal["search_time_s", "end_to_end_time_s"]
+
+
+class ReferenceAnalysisQuery(AnalysisSelection):
+    table: Literal["references"]
+    reference_handle: str
+    artifact_catalog_revision: str
+
+
+class FacetAnalysisQuery(AnalysisSelection):
+    table: Literal["facets"]
+    field: Field
+
+
+AnalysisQuery = ScalarAnalysisQuery | ProgressAnalysisQuery | TargetAnalysisQuery | ComparisonAnalysisQuery | ReferenceAnalysisQuery | FacetAnalysisQuery
+
+
+class DatasetAnalysisRequest(Context):
+    query: AnalysisQuery
+
+
+class JobAnalysisRequest(JobStatusRequest):
+    expected_revision: str
+    result_revision: str
+    query: AnalysisQuery
+
+
+class HistoryCoverage(TypedDict):
+    selected_attempts: int
+    recorded_attempts: int
+    missing_attempts: int
+    points: int
+
+
+class ReferenceBinding(TypedDict):
+    artifact_handle: str
+    artifact_catalog_revision: str
+    sha256: str
+
+
+class AnalysisPage(TypedDict):
+    table: Literal["trials", "summary", "diagnostics", "progress", "targets", "comparisons", "references", "facets"]
+    query_key: str
+    columns: list[str]
+    items: list[dict[str, object]]  # JSON values; exact unsafe integers are decimal strings.
+    total_rows: int
+    next_cursor: str | None
+    history_coverage: HistoryCoverage
+    reference: ReferenceBinding | None
+    clock: Literal["logical_and_concatenated_search", "first_observed_concatenated_search_crossing"] | None
+    validation: Literal["shared-records"]
+
+
+class DatasetAnalysisResponse(Context, AnalysisPage):
+    pass
+
+
+class JobAnalysisResponse(JobPublicationContext, AnalysisPage):
+    pass
