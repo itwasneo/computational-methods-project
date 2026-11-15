@@ -18,7 +18,7 @@ from tsp_hpc.interface.queries import TrialQueries
 from tsp_hpc.interface.requests import (
     ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest, RunRequest,
     InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest, ExecutionPreflightRequest,
-    JobSubmitRequest, JobStatusRequest, JobsQueryRequest,
+    JobSubmitRequest, JobStatusRequest, JobsQueryRequest, ExecutionControlRequest, QueueContinueRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -305,6 +305,25 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
         with authorized_operation(request):
             context = run_context(request, body)
             return {**context, "job": jobs_for(request).status(body.job_id)}
+
+    @app.post("/api/jobs/review")
+    def job_review(body: JobStatusRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).review(body.job_id)}
+
+    @app.post("/api/jobs/control")
+    def job_control(body: ExecutionControlRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            job = jobs_for(request).control(body.job_id, body.expected_revision, body.action)
+            return {**context, "job": job}
+
+    @app.post("/api/queue/continue")
+    def queue_continue(body: QueueContinueRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).continue_queue(body.expected_queue_revision)}
 
     @app.post("/api/jobs/query")
     def jobs_query(body: JobsQueryRequest, request: Request):

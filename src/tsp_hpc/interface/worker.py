@@ -82,7 +82,7 @@ def main(argv=None):
                 control = decode(directory.read("control.json", 4096))
             except FileNotFoundError:
                 return
-            if control == {"stop_after_trial": True}:
+            if type(control) is dict and set(control) == {"stop_after_trial"} and control["stop_after_trial"] is True:
                 raise InterruptedError("owner requested trial-boundary stop")
             raise ValueError("invalid worker control")
 

@@ -21,7 +21,7 @@ from time import monotonic
 
 from tsp_hpc.interface.cursors import encode_cursor, decode_cursor
 from tsp_hpc.interface.errors import InterfaceError
-from tsp_hpc.interface.processes import WORKER_MODULE, exited, kill_verified, process_identity, recover_pidfd
+from tsp_hpc.interface.processes import WORKER_MODULE, exited, kill_verified, process_identity, recover_pidfd, valid_identity
 from tsp_hpc.interface.runtime import runtime_binding
 from tsp_hpc.interface.storage import decode, encode
 
@@ -30,7 +30,12 @@ TERMINAL = frozenset({"completed", "failed", "cancelled", "interrupted"})
 ACTIVE = frozenset({"preparing", "running", "recovering", "stop_requested", "stopping"})
 PUBLIC_FIELDS = ("job_id revision submission_key preflight_id instance_snapshot_id campaign_id state stop_mode "
                  "planned_trials recorded_trials failed_trials attempt_ids result_handle result_revision elapsed_time_s failure_code").split()
-PRIVATE_FIELDS = set(PUBLIC_FIELDS) | {"request_sha256", "directory_identity", "worker", "started"}
+PRIVATE_FIELDS = set(PUBLIC_FIELDS) | {"request_sha256", "directory_identity", "worker", "started", "wall_limit_s"}
+FAILURES = {"worker_failed", "preflight_stale", "snapshot_stale", "resource_limit", "launch_failed", "invalid_artifact", "worker_interrupted"}
+
+
+def _duration(value):
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
 
 def _hex(value, length=32):
@@ -64,24 +69,54 @@ class JobQueue:
         self._closed, self._fatal = False, False
         self._pidfd, self._process = None, None
         self._cursor_key = secrets.token_bytes(32)
+        self._lease_identity = None
         try:
-            state = decode(storage.read("queue.json", STATE_BYTES))
-            self._validate_state(state)
-            state["held"] = True  # Restart is not permission to run queued work.
-        except FileNotFoundError:
-            state = {"schema_version": 1, "revision": secrets.token_hex(16), "held": False,
-                     "active_job_id": None, "jobs": []}
-        except (ValueError, TypeError, KeyError, RecursionError):
-            raise InterfaceError("execution_unavailable", "Queue state is invalid; preserved evidence needs owner inspection.", 503) from None
+            state = self._load_state()
+        except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, InterfaceError):
+            raise InterfaceError("execution_unavailable", "Queue state/lease is invalid; preserved evidence needs owner inspection.", 503) from None
         self._commit(state)
         self._thread = threading.Thread(target=self._loop, name="tsp-local-queue", daemon=True)
         self._thread.start()
 
+    def _load_state(self):
+        try:
+            raw = self.storage.read("queue.json", STATE_BYTES)
+        except FileNotFoundError:
+            # Missing state with retained job directories is ambiguous, not a
+            # fresh root. Never forget accepted keys and admit duplicate work.
+            with self.storage.directory("jobs") as jobs:
+                if jobs.names(self.limits.max_jobs):
+                    raise ValueError("queue state missing with retained jobs")
+            lease = self._lease()
+            if lease is None:
+                raise ValueError("untracked live worker lease")
+            try:
+                info = os.fstat(lease)
+                self._lease_identity = [info.st_dev, info.st_ino]
+            finally:
+                os.close(lease)
+            return {"schema_version": 2, "revision": secrets.token_hex(16), "held": False,
+                    "active_job_id": None, "jobs": [], "lease_identity": self._lease_identity}
+        state = decode(raw)
+        self._validate_state(state)
+        self._lease_identity = state["lease_identity"]
+        self._check_lease()
+        state["held"] = True  # Restart is not permission to run queued work.
+        return state
+
+    def _check_lease(self):
+        import stat
+        info = os.stat("worker.lock", dir_fd=self.storage.fd, follow_symlinks=False)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or [info.st_dev, info.st_ino] != self._lease_identity:
+            raise InterfaceError("execution_unavailable", "Worker lease identity changed.", 503)
+
     def _validate_state(self, state):
-        if (type(state) is not dict or set(state) != {"schema_version", "revision", "held", "active_job_id", "jobs"}
-                or type(state["schema_version"]) is not int or state["schema_version"] != 1
+        if (type(state) is not dict or set(state) != {"schema_version", "revision", "held", "active_job_id", "jobs", "lease_identity"}
+                or type(state["schema_version"]) is not int or state["schema_version"] != 2
                 or type(state["held"]) is not bool or not _hex(state["revision"])
-                or type(state["jobs"]) is not list or len(state["jobs"]) > self.limits.max_jobs):
+                or type(state["jobs"]) is not list or len(state["jobs"]) > self.limits.max_jobs
+                or type(state["lease_identity"]) is not list or len(state["lease_identity"]) != 2
+                or any(type(n) is not int or n < 0 for n in state["lease_identity"])):
             raise ValueError("invalid queue")
         ids, keys, active = set(), set(), []
         for job in state["jobs"]:
@@ -95,6 +130,21 @@ class JobQueue:
                     or type(job["directory_identity"]) is not list or len(job["directory_identity"]) != 2
                     or any(type(n) is not int or n < 0 for n in job["directory_identity"])):
                 raise ValueError("invalid job metadata")
+            if (type(job["recorded_trials"]) is not int or type(job["failed_trials"]) is not int
+                    or not 0 <= job["failed_trials"] <= job["recorded_trials"] <= job["planned_trials"]
+                    or job["stop_mode"] not in (None, "after_trial", "now")
+                    or job["failure_code"] not in FAILURES | {None}
+                    or (job["elapsed_time_s"] is not None and not _duration(job["elapsed_time_s"]))
+                    or (job["started"] is not None and not _duration(job["started"]))
+                    or type(job["wall_limit_s"]) is not int or not 1 <= job["wall_limit_s"] <= 2**53 - 1
+                    or (job["worker"] is not None and not valid_identity(job["worker"]))
+                    or (job["result_handle"] is not None and job["result_handle"] != "result-" + job["job_id"])
+                    or (job["result_revision"] is not None and not _hex(job["result_revision"], 64))
+                    or (job["result_handle"] is None) != (job["result_revision"] is None)
+                    or (job["state"] in ACTIVE and job["started"] is None)
+                    or (job["state"] == "queued" and (job["started"] is not None or job["worker"] is not None
+                        or job["stop_mode"] is not None or job["recorded_trials"] or job["result_handle"] is not None))):
+                raise ValueError("invalid lifecycle metadata")
             self._progress({"attempt_ids": job["attempt_ids"], "counts": {
                 "completed": job["recorded_trials"] - job["failed_trials"], "failed": job["failed_trials"]}}, job)
             if job["state"] in ACTIVE:
@@ -116,6 +166,7 @@ class JobQueue:
         if self._closed or self._fatal:
             raise InterfaceError("execution_unavailable", "Queue unavailable; restart and reconcile preserved state.", 503)
         self.storage.check()
+        self._check_lease()
 
     def _find(self, identifier, state=None):
         for job in (self._state if state is None else state)["jobs"]:
@@ -216,20 +267,98 @@ class JobQueue:
                        state="queued", stop_mode=None, planned_trials=plan["public"]["trial_count"], recorded_trials=0, failed_trials=0,
                        attempt_ids=[], result_handle=None, result_revision=None, elapsed_time_s=None, failure_code=None,
                        request_sha256=hashlib.sha256(request).hexdigest(), directory_identity=[info.st_dev, info.st_ino],
-                       worker=None, started=None)
+                       worker=None, started=None, wall_limit_s=self.limits.max_job_seconds)
             state = deepcopy(self._state)
             state["jobs"].append(job)
             self._commit(state)  # Durable acceptance before acknowledge or dispatch.
             self._wake.set()
             return self._public(job), False
 
+    def request(self, job):
+        with self.directory(job) as directory:
+            raw = directory.read("request.json", STATE_BYTES)
+        if hashlib.sha256(raw).hexdigest() != job["request_sha256"]:
+            raise InterfaceError("invalid_artifact", "Immutable submission changed.", 422)
+        try:
+            value = decode(raw)
+            if (type(value) is not dict or value["schema_version"] != 1 or value["job_id"] != job["job_id"]
+                    or value["campaign_id"] != job["campaign_id"]
+                    or value["plan"]["public"]["preflight_id"] != job["preflight_id"]
+                    or value["plan"]["public"]["instance_snapshot_id"] != job["instance_snapshot_id"]):
+                raise ValueError
+            return value
+        except (ValueError, TypeError, KeyError, RecursionError):
+            raise InterfaceError("invalid_artifact", "Immutable submission is invalid.", 422) from None
+
+    def review(self, identifier):
+        with self._lock:
+            self._guard()
+            job = self._find(identifier)
+            value = {"job": self._public(job), "plan": self.request(job)["plan"]["public"]}
+            if len(encode(value)) > self.limits.max_response_bytes:
+                raise InterfaceError("resource_limit", "Accepted plan response exceeds its bound.", 413)
+            return value
+
+    def _apply_stop(self, job):
+        if job["stop_mode"] == "after_trial":
+            with self.directory(job) as directory:
+                try:
+                    control = decode(directory.read("control.json", 4096))
+                    if type(control) is not dict or set(control) != {"stop_after_trial"} or control["stop_after_trial"] is not True:
+                        raise ValueError("invalid worker control")
+                except FileNotFoundError:
+                    directory.replace("control.json", encode({"stop_after_trial": True}))
+        elif job["stop_mode"] == "now" and self._pidfd is not None:
+            kill_verified(self._pidfd)
+
+    def control(self, identifier, revision, action):
+        with self._lock:
+            self._guard()
+            job = self._find(identifier)
+            if identifier == self._state["active_job_id"] and self._pidfd is not None and exited(self._pidfd):
+                self._finish(job)
+                job = self._find(identifier)
+            if job["revision"] != revision:
+                raise InterfaceError("job_stale", "Job changed; inspect its current state before acting.", 409)
+            if action == "cancel_queued" and job["state"] == "queued":
+                self._change(identifier, state="cancelled")
+            elif job["state"] in ACTIVE and action in ("stop_after_trial", "stop_now") and job["failure_code"] is None:
+                mode = "now" if action == "stop_now" else "after_trial"
+                if job["stop_mode"] == "now" and mode != "now":
+                    raise InterfaceError("job_state_invalid", "An immediate stop cannot be downgraded.", 409)
+                if mode == "now" and self._pidfd is None:
+                    raise InterfaceError("job_state_invalid", "Worker ownership is not yet verified; inspect recovery state.", 409)
+                if job["stop_mode"] != mode:
+                    self._change(identifier, state="stopping" if mode == "now" else "stop_requested", stop_mode=mode)
+                self._apply_stop(self._find(identifier))
+            else:
+                raise InterfaceError("job_state_invalid", "Action does not apply to the current job state.", 409)
+            self._wake.set()
+            return self._public(self._find(identifier))
+
+    def continue_queue(self, revision):
+        with self._lock:
+            self._guard()
+            if revision != self._state["revision"]:
+                raise InterfaceError("queue_stale", "Queue changed; inspect it before enabling dispatch.", 409)
+            if self._state["held"]:
+                state = deepcopy(self._state)
+                state["held"] = False
+                self._commit(state)
+            self._wake.set()
+            return self.queue()
+
     def _lease(self):
-        fd = os.open("worker.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
-                     0o600, dir_fd=self.storage.fd)
+        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+        if self._lease_identity is None:
+            flags |= os.O_CREAT
+        fd = os.open("worker.lock", flags, 0o600, dir_fd=self.storage.fd)
         try:
             import stat
             info = os.fstat(fd)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            current = os.stat("worker.lock", dir_fd=self.storage.fd, follow_symlinks=False)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino)
+                    or (self._lease_identity is not None and [info.st_dev, info.st_ino] != self._lease_identity)):
                 raise InterfaceError("execution_unavailable", "Worker lease is invalid.", 503)
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -316,15 +445,26 @@ class JobQueue:
         from tsp_hpc.analysis import read_sources
         from tsp_hpc.experiments.manifests import Manifest
         changes = {"state": "failed", "failure_code": job["failure_code"] or "worker_failed"}
+        receipt_bad = False
         try:
             with self.directory(job) as directory:
                 try:
                     receipt = decode(directory.read("receipt.json", 65536))
                     progress = self._progress({key: receipt[key] for key in ("attempt_ids", "counts")}, job)
-                    if receipt["schema_version"] != 1 or receipt["job_id"] != job["job_id"] or receipt["state"] not in {"completed", "cancelled", "failed"}:
+                    required = {"schema_version", "job_id", "state", "failure_code", "phase", "attempt_ids", "counts", "elapsed_time_s"}
+                    if (not required <= receipt.keys() or receipt.keys() - required - {"error_type", "observed_runtime"}
+                            or type(receipt["schema_version"]) is not int or receipt["schema_version"] != 1
+                            or receipt["job_id"] != job["job_id"] or receipt["state"] not in {"completed", "cancelled", "failed"}
+                            or receipt["failure_code"] not in FAILURES | {None} or not _duration(receipt["elapsed_time_s"])
+                            or receipt["phase"] not in {"request", "runtime", "input", "campaign"}
+                            or (receipt["state"] != "failed" and receipt["failure_code"] is not None)):
                         raise ValueError("invalid receipt")
                 except FileNotFoundError:
                     receipt, progress = None, None
+                except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, InterfaceError):
+                    # A torn receipt (including a kill during publication) does
+                    # not erase independently readable scientific prefix lines.
+                    receipt, progress, receipt_bad = None, None, True
                 raw = directory.read("request.json", STATE_BYTES)
                 if hashlib.sha256(raw).hexdigest() != job["request_sha256"]:
                     raise ValueError("submission changed")
@@ -356,12 +496,16 @@ class JobQueue:
             elif receipt is not None and receipt["state"] == "cancelled" and not complete:
                 changes.update(state="cancelled", failure_code=None)
             elif receipt is not None and receipt["state"] == "failed":
-                changes.update(failure_code=receipt.get("failure_code", "worker_failed"))
+                changes.update(failure_code=receipt["failure_code"] or "worker_failed")
+            elif receipt is not None:
+                changes.update(failure_code="invalid_artifact")
             elif job["stop_mode"] == "now":
                 changes.update(state="cancelled", failure_code=None)
+            elif receipt_bad:
+                changes.update(failure_code="invalid_artifact")
             elif job["failure_code"] is None:
                 changes.update(state="interrupted", failure_code="worker_interrupted")
-        except (OSError, ValueError, TypeError, KeyError, InterfaceError):
+        except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, InterfaceError):
             changes.update(state="failed", failure_code="invalid_artifact")
         if self._process is not None and job["started"] is not None:
             changes["elapsed_time_s"] = max(0., monotonic() - job["started"])
@@ -376,6 +520,7 @@ class JobQueue:
     def _tick(self):
         with self._lock:
             self.storage.check()
+            self._check_lease()
             identifier = self._state["active_job_id"]
             if identifier is not None:
                 job = self._find(identifier)
@@ -385,8 +530,8 @@ class JobQueue:
                         try:
                             with self.directory(job) as directory:
                                 identity = decode(directory.read("worker.json", 4096))
-                        except FileNotFoundError:
-                            pass
+                        except (OSError, ValueError, TypeError, RecursionError, InterfaceError):
+                            identity = None  # Possibly a not-yet-published handshake; no unsafe signals.
                     self._pidfd = recover_pidfd(identity, identifier)
                     if self._pidfd is not None:
                         self._change(identifier, worker=identity)
@@ -397,15 +542,21 @@ class JobQueue:
                             os.close(lease)
                             self._finish(job)
                             return
-                        if job["state"] != "recovering":
-                            self._change(identifier, state="recovering")
+                        self._apply_stop(job)  # Replay durable intent, never a new campaign.
+                        if job["state"] != "recovering" or not self._state["held"]:
+                            state = deepcopy(self._state)
+                            self._find(identifier, state).update(state="recovering", revision=secrets.token_hex(16))
+                            state["held"] = True
+                            self._commit(state)
                         return  # Unknown live lease: hold, never signal or dispatch.
                 if exited(self._pidfd):
                     self._finish(job)
                     return
-                if job["started"] is not None and monotonic() - job["started"] >= self.limits.max_job_seconds:
+                self._apply_stop(job)
+                if job["started"] is not None and monotonic() - job["started"] >= min(job["wall_limit_s"], self.limits.max_job_seconds):
                     kill_verified(self._pidfd)
-                    self._change(identifier, state="stopping", failure_code="resource_limit")
+                    if job["state"] != "stopping" or job["failure_code"] != "resource_limit":
+                        self._change(identifier, state="stopping", failure_code="resource_limit")
                     return
                 try:
                     with self.directory(job) as directory:
@@ -418,7 +569,8 @@ class JobQueue:
                 except FileNotFoundError:
                     pass
                 if job["state"] in ("preparing", "recovering"):
-                    self._change(identifier, state="running")
+                    state = {None: "running", "after_trial": "stop_requested", "now": "stopping"}[job["stop_mode"]]
+                    self._change(identifier, state=state)
             elif not self._state["held"]:
                 job = next((job for job in self._state["jobs"] if job["state"] == "queued"), None)
                 if job is not None:
@@ -440,6 +592,8 @@ class JobQueue:
             self._wake.clear()
 
     def close(self):
+        if self._closed:
+            return
         self._stop.set(); self._wake.set()
         self._thread.join()
         with self._lock:

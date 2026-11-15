@@ -1,6 +1,8 @@
 """Linux process identity and pidfd operations; never signal a bare recovered PID."""
 
+import errno
 import os
+import re
 from pathlib import Path
 import select
 import signal
@@ -30,15 +32,25 @@ def process_identity(pid, job_id):
         return None
 
 
+def valid_identity(identity):
+    return (type(identity) is dict and set(identity) == {"pid", "start_ticks", "boot_id"}
+            and type(identity["pid"]) is int and identity["pid"] > 0
+            and type(identity["start_ticks"]) is int and identity["start_ticks"] >= 0
+            and type(identity["boot_id"]) is str
+            and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", identity["boot_id"]) is not None)
+
+
 def exited(fd):
     poll = select.poll()
     poll.register(fd, select.POLLIN)
-    return bool(poll.poll(0))
+    events = poll.poll(0)
+    if any(flags & (select.POLLNVAL | select.POLLERR) for _, flags in events):
+        raise OSError(errno.EBADF, "Invalid worker process handle")
+    return any(flags & select.POLLIN for _, flags in events)
 
 
 def recover_pidfd(identity, job_id):
-    if (type(identity) is not dict or set(identity) != {"pid", "start_ticks", "boot_id"}
-            or type(identity["pid"]) is not int or identity["pid"] <= 0):
+    if not valid_identity(identity):
         return None
     try:
         fd = os.pidfd_open(identity["pid"], 0)

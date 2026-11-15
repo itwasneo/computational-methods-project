@@ -487,7 +487,10 @@ class ReviewedTrial(TypedDict):
     invocations: list[dict[str, str | None]]  # kind, logical_id, exact decimal seed.
 
 
-class ReviewedExecution(ExecutionPreflightRequest):
+class ReviewedPlan(TypedDict):
+    instance_snapshot_id: str
+    capabilities_revision: str
+    configuration: ScientificConfiguration
     preflight_id: str
     snapshot_sha256: str
     budget_scope: Literal["per-logical-invocation"]
@@ -500,6 +503,10 @@ class ReviewedExecution(ExecutionPreflightRequest):
     job_time_ceiling_s: int
     valid_for_s: int
     output_root: OutputRoot
+
+
+class ReviewedExecution(RunContext, ReviewedPlan):
+    pass
 
 
 class JobRecord(TypedDict):
@@ -525,6 +532,10 @@ class JobRecord(TypedDict):
 
 class JobEnvelope(RunContext):
     job: JobRecord
+
+
+class JobReview(JobEnvelope):
+    plan: ReviewedPlan
 
 
 class JobSubmission(JobEnvelope):
