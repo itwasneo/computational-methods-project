@@ -225,7 +225,7 @@ assert prepared.metadata["matrix_bytes"] == 128
 
 The adapter requires the **same instance object** used in preparation, not just a matching ID. Reuse it for repeated solves; it retains no last-run solution, counters or RNG state. Requests use an ordered list of Python integer starts (not booleans or NumPy scalars) and an empty parameter dictionary. The [NN specification](algorithm-baselines.md#greedy-nearest-neighbour) owns start/tie rules, seed behavior and work accounting. Unsupported capabilities fail explicitly, not by changing the requested workload.
 
-The module-level `tsp_hpc.solvers.nn.solver.solve(instance, *, seed, budget, parameters, record_history=False)` is a convenience wrapper using on-demand distances and the default implementation. Its overall call includes setup; prefer the explicit adapter for setup accounting and reuse. Empty convenience work skips preparation/warm-up; an existing adapter's empty solve skips search/final validation and reports zero phase durations.
+The module-level `tsp_hpc.solvers.nn.solver.solve(instance, *, seed, budget, parameters, record_history=False, history_policy=None)` is a convenience wrapper using on-demand distances and the default implementation. Its overall call includes setup; prefer the explicit adapter for setup accounting and reuse. Empty convenience work skips preparation/warm-up; an existing adapter's empty solve skips search/final validation and reports zero phase durations.
 
 ### Implementation selection
 
@@ -278,7 +278,7 @@ NN kernels currently take coordinates, matrix, mode flag and ordered starts. Kee
 
 ## Timing and results
 
-The solver independently checks its selected native score/tour with `validate_solution()` and returns the recomputed reference cost. This **does not rerank candidates or redefine native tie rules**. [Shared result contracts](contracts.md#solver-results-and-progress) define owned tours, statuses and counters; constructing a result alone is not an objective certificate. NN emits `work_limit`, with history disabled (`None`). Errors remain exceptions, not `no_solution` or infinity.
+The solver independently checks its selected native score/tour with `validate_solution()` and returns the recomputed reference cost. This **does not rerank candidates or redefine native tie rules**. [Shared result contracts](contracts.md#solver-results-and-progress) define owned tours, statuses and counters; constructing a result alone is not an objective certificate. NN emits `work_limit` or `time_limit`. Add finite positive `time_limit_s` alongside `start_cities` to stop at complete-start checkpoints; a deadline before the first complete tour yields `no_solution`. Enable `record_history=True` and optionally `history_policy={"interval_s": 0.1, "max_points": 4096}` for immutable best-so-far observations. Instrumented execution calls the selected native kernel once per start and charges that overhead to search. Disabled history is `None`; enabled no-solution history is empty. See the [shared sampling policy](contracts.md#solver-results-and-progress). Errors, including exceeded history bounds, remain exceptions, not `no_solution` or infinity.
 
 | Observation | Included work |
 | --- | --- |

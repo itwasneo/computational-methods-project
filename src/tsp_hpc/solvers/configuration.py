@@ -77,14 +77,50 @@ def normalize_parameters(algorithm, value):
 
 def normalize_budget(algorithm, value, n_cities):
     name = {"nn": "start_cities", "ga": "max_generations", "sa": "max_proposals"}[algorithm]
-    item = _object(value, {name}, set(), "fixed-work budget")
-    if algorithm != "nn":
-        return {name: _integer(item[name], 0, name)}
-    if type(item[name]) is not list:
-        raise TypeError("start_cities must be a JSON array")
-    starts = [_integer(city, 0, "start city") for city in item[name]]
-    if any(city >= n_cities for city in starts):
-        raise ValueError("start city is out of range")
-    if len(set(starts)) != len(starts):
-        raise ValueError("start_cities contains duplicate logical IDs")
-    return {name: starts}
+    optional = {"time_limit_s"}
+    if algorithm == "sa":
+        optional.add("time_check_interval_proposals")
+    required = {name} if algorithm == "nn" else set()
+    item = _object(value, required, optional | ({name} - required), "budget")
+    if name not in item and "time_limit_s" not in item:
+        raise ValueError("at least one stopping limit is required")
+    result = {}
+    if name in item:
+        if algorithm != "nn":
+            result[name] = _integer(item[name], 0, name)
+        else:
+            if type(item[name]) is not list:
+                raise TypeError("start_cities must be a JSON array")
+            starts = [_integer(city, 0, "start city") for city in item[name]]
+            if any(city >= n_cities for city in starts):
+                raise ValueError("start city is out of range")
+            if len(set(starts)) != len(starts):
+                raise ValueError("start_cities contains duplicate logical IDs")
+            result[name] = starts
+    if "time_limit_s" in item:
+        seconds = _real(item["time_limit_s"], "time_limit_s")
+        if seconds <= 0:
+            raise ValueError("time_limit_s must be positive")
+        result["time_limit_s"] = seconds
+        if algorithm == "sa":
+            result["time_check_interval_proposals"] = _integer(
+                item.get("time_check_interval_proposals", 256), 1, "time_check_interval_proposals")
+    elif "time_check_interval_proposals" in item:
+        raise ValueError("time checkpoints require a time limit")
+    return result
+
+
+def normalize_history(record_history, policy=None):
+    """Resolved safe-checkpoint sampling; finite bounds, never silent truncation."""
+    if type(record_history) is not bool:
+        raise TypeError("record_history must be boolean")
+    if not record_history:
+        if policy is not None:
+            raise ValueError("history_policy requires record_history")
+        return None
+    item = {} if policy is None else _object(
+        policy, set(), {"interval_s", "max_points"}, "history_policy")
+    interval = _real(item.get("interval_s", 0.1), "history interval_s")
+    if interval < 0:
+        raise ValueError("history interval_s must be non-negative")
+    return {"interval_s": interval, "max_points": _integer(item.get("max_points", 4096), 2, "max_points")}

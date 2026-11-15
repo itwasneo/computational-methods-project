@@ -112,8 +112,12 @@ Only the two real NN implementations are registered by `default_registry()`.
 Adding an algorithm requires its adapter/registrations plus an explicit entry in
 that function; no filesystem or third-party plugin discovery occurs. Test-only
 registries are constructed separately, never advertised as real GA/SA solvers.
-The registry is the integration foundation; runner dispatch and timed/history
-support are separate follow-ups in the solver-readiness milestone.
+`SearchControl` implements shared deadline precedence and bounded observations;
+NN supports time/history directly using the same native kernels at complete-start
+checkpoints. Its history-disabled fixed-work path retains the original single
+kernel call. Instrumented execution includes per-start call/workspace overhead in
+search time. Generic runner dispatch and versioned persistence are follow-ups;
+the legacy runner explicitly rejects these new requests until upgraded.
 
 ## CI and review
 

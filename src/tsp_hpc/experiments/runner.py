@@ -93,6 +93,8 @@ def runtime_provenance() -> dict:
 
 def _execution(plan) -> dict:
     search, execution = plan.search, plan.execution
+    if search["record_history"] or "time_limit_s" in search["budget"]:
+        raise ValueError("timed/history runner records require the versioned runner extension")
     if search["algorithm"] != "nn":
         raise ValueError(f"runner does not support algorithm {search['algorithm']!r}")
     if execution["backend"] != "serial":
