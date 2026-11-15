@@ -5,12 +5,14 @@ progress history, solver persistence, or parallel execution are added implicitly
 """
 
 from dataclasses import dataclass, field
+from functools import partial
 from time import perf_counter
 from types import MappingProxyType
 
 import numpy as np
 
-from tsp_hpc.problem.data import TSPInstance, validate_city_index, validate_coordinates
+from tsp_hpc.problem.data import TSPInstance, validate_coordinates
+from tsp_hpc.solvers.configuration import normalize_budget, normalize_parameters
 from tsp_hpc.problem.distances import PreparedDistances, prepare_distances
 from tsp_hpc.solvers.nn.visited_scan import search_kernel as _search_kernel
 from tsp_hpc.solvers.nn.remaining_array import search_kernel as _remaining_array_kernel
@@ -24,6 +26,13 @@ _IMPLEMENTATIONS = MappingProxyType({
     "visited-scan-v1": _search_kernel,
     "remaining-array-v1": _remaining_array_kernel,
 })
+
+
+def solver_specs():
+    """Explicit adapter registrations; constructing them does not warm kernels."""
+    from tsp_hpc.solvers.registry import SolverSpec
+    return tuple(SolverSpec("nn", name, partial(NearestNeighbourSolver, implementation=name), "batch")
+                 for name in implementation_names())
 
 
 def implementation_names() -> tuple[str, ...]:
@@ -67,27 +76,9 @@ def _request(instance, seed, budget, parameters, record_history) -> np.ndarray:
         raise TypeError("record_history must be boolean")
     if record_history:
         raise ValueError("NN history recording is not implemented")
-    if type(parameters) is not dict:
-        raise TypeError("parameters must be a dictionary")
-    if parameters:
-        raise ValueError("nn-fixed-starts-v1 accepts no algorithm parameters")
-    if type(budget) is not dict:
-        raise TypeError("budget must be a dictionary")
-    if budget.keys() != {"start_cities"}:
-        raise ValueError("NN requires only budget.start_cities; time limits are not supported")
-    starts = budget["start_cities"]
-    if type(starts) is not list:
-        raise TypeError("start_cities must be an ordered list")
-    starts = starts.copy()
-    seen = set()
-    for city in starts:
-        if type(city) is not int:
-            raise TypeError("start cities must be Python integers, not booleans")
-        validate_city_index(city, instance.n_cities)
-        if city in seen:
-            raise ValueError("start_cities must contain distinct city IDs")
-        seen.add(city)
-    return np.array(starts, dtype=np.int64)
+    normalize_parameters("nn", parameters)
+    normalized = normalize_budget("nn", budget, instance.n_cities)
+    return np.array(normalized["start_cities"], dtype=np.int64)
 
 
 def _empty_result() -> SolverResult:
@@ -143,7 +134,10 @@ class NearestNeighbourSolver:
             "solver_warmup_time_s": self.solver_warmup_time_s,
         }
 
-    def solve(self, instance, *, seed, budget, parameters, record_history=False) -> SolverResult:
+    def solve(self, instance, *, seed, budget, parameters, record_history=False,
+              history_policy=None) -> SolverResult:
+        if history_policy is not None:
+            raise ValueError("NN history recording is not implemented")
         if not isinstance(instance, TSPInstance):
             raise TypeError("instance must be a TSPInstance")
         if instance is not self.prepared.instance:
