@@ -29,6 +29,7 @@ def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if len(args) != 5 or not re.fullmatch(r"[0-9a-f]{32}", args[0]) or not re.fullmatch(r"[0-9a-f]{64}", args[4]):
         return 2
+    os.umask(0o077)  # Compiler-created cache files/directories remain owner-only too.
     job_id, job_fd, lease_fd, cache_fd, expected_digest = args
     directory = Directory(int(job_fd))
     # Keep lease_fd open until actual process exit, including interpreter teardown.
@@ -48,7 +49,7 @@ def main(argv=None):
         if hashlib.sha256(raw).hexdigest() != expected_digest:
             raise ValueError("submission changed")
         request = decode(raw)
-        if (request["schema_version"] != 1 or request["job_id"] != job_id
+        if (type(request["schema_version"]) is not int or request["schema_version"] != 1 or request["job_id"] != job_id
                 or not re.fullmatch(r"[0-9a-f]{32}", request["campaign_id"])):
             raise ValueError("invalid submission")
         plan = request["plan"]

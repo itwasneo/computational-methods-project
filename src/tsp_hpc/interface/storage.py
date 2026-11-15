@@ -14,6 +14,9 @@ import secrets
 import stat
 
 from tsp_hpc.interface.errors import InterfaceError
+from tsp_hpc.interface.json_input import decode_json
+
+MAX_PRIVATE_ENTRIES = 32  # Includes retained torn atomic-state temporaries.
 
 
 def encode(value):
@@ -21,16 +24,7 @@ def encode(value):
 
 
 def decode(raw):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("duplicate state field")
-            result[key] = value
-        return result
-    def invalid(_):
-        raise ValueError("nonfinite state")
-    return json.loads(raw, object_pairs_hook=unique, parse_constant=invalid)
+    return decode_json(raw)
 
 
 def component(name):
@@ -138,6 +132,7 @@ class LocalStorage(Directory):
             self.identity = (info.st_dev, info.st_ino)
             if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
                 raise ValueError("private directory permissions")
+            self.names(MAX_PRIVATE_ENTRIES)
             self._lock_fd = os.open("controller.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
                                     0o600, dir_fd=self.fd)
             lock_info = os.fstat(self._lock_fd)
@@ -153,10 +148,14 @@ class LocalStorage(Directory):
             try:
                 owner = decode(self.read("owner.json", 4096))
             except FileNotFoundError:
+                if set(self.names(MAX_PRIVATE_ENTRIES)) - {"controller.lock"}:
+                    raise ValueError("owner identity missing with retained state")
                 owner = {"schema_version": 1, "workspace": expected, "storage_id": secrets.token_hex(16)}
                 self.write_new("owner.json", encode(owner))
             if (type(owner) is not dict or set(owner) != {"schema_version", "workspace", "storage_id"}
-                    or owner["schema_version"] != 1 or owner["workspace"] != expected
+                    or type(owner["schema_version"]) is not int or owner["schema_version"] != 1
+                    or type(owner["workspace"]) is not list or any(type(n) is not int for n in owner["workspace"])
+                    or owner["workspace"] != expected
                     or not re.fullmatch(r"[0-9a-f]{32}", owner["storage_id"])):
                 raise ValueError("state belongs to another workspace or schema")
             authority.root_id = owner["storage_id"]
@@ -169,12 +168,13 @@ class LocalStorage(Directory):
                         pass
         except BaseException as error:
             self.close()
-            if isinstance(error, (OSError, ValueError, TypeError)):
+            if isinstance(error, (OSError, ValueError, TypeError, RecursionError)):
                 raise InterfaceError("execution_unavailable", "Local state could not be opened safely.", 503) from None
             raise
 
     def check(self):
         self.authority.require()
+        self.names(MAX_PRIVATE_ENTRIES)
         info = os.stat(".tsp-local", dir_fd=self.authority.fd, follow_symlinks=False)
         if not stat.S_ISDIR(info.st_mode) or (info.st_dev, info.st_ino) != self.identity:
             raise InterfaceError("execution_unavailable", "Private execution directory changed.", 503)

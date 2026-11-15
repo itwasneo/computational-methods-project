@@ -14,9 +14,10 @@ This is the project-wide implementation-status summary; specifications describe 
 | --- | --- | --- |
 | Inputs and objective | Canonical data/validation, independent objective, seeded generators, saved artifacts and fixtures | TSPLIB import and production datasets |
 | Execution | Native-verified dense/on-demand distances and serial NN (`visited-scan-v1`, `remaining-array-v1`); explicit solver registry/conformance suite | GA/SA, multicore and optional accelerator backends |
-| Experiments | Manifests, logical RNG planning, registered serial runner, v3 logical results with v1/v2 reading, verified-wheel provenance and validated analysis tables/plots | Local campaign queue and production protocol; resume deferred |
+| Experiments | Manifests, logical RNG planning, registered serial runner, v3 logical results with v1/v2 reading, verified-wheel provenance and shared analysis tables/plots | Freeze the research tuning/evaluation campaign protocol; resume deferred |
 | Stopping and progress | Fixed-work/timed NN, bounded best-so-far histories, observed progress/target tables and phase timing; shared stopping helpers | GA/SA algorithm-specific checkpoints |
-| Tooling | Locked environment, tests/builds in CI; run/analyze CLI; local Results table wired to bounded ingestion/paged queries; separate synthetic viewer | Real-data geometry, installed frontend delivery, editing and job controls |
+| Local backend | Owner-opted immutable instances/preflight, durable serial jobs, cancellation/recovery, independently verified final geometry and bounded shared analysis/history; installed-process acceptance | Real GA/SA availability awaits teammate algorithms; multicore/remote/resume are separate |
+| Tooling | Locked environment, Python/frontend checks in CI; run/analyze/serve CLI; browser Results table and separate synthetic viewer | Browser geometry/charts/editor/job integration and installed frontend delivery |
 | Cluster deployment | ULHPC selected; local image build evidence in [draft PR #53](https://github.com/itwasneo/computational-methods-project/pull/53) | Finished-image and allocated-cluster runtime validation |
 
 Solver execution uses **unrounded Euclidean distances** on complete symmetric 2D instances. Rounded data/reference compatibility is retained, but is not an executable solver mode. See the [objective contract](docs/contracts.md#distance-conventions-and-representations) before choosing benchmark reference costs.
@@ -35,6 +36,24 @@ uv run --locked pytest -W error
 
 To run and save NN experiments, follow [Run a manifest](docs/usage.md#run-a-manifest), then [Analyze result shards](docs/usage.md#analyze-result-shards). Individual Python solver calls are covered in [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour). For installation groups, dependency updates and builds, see [development](docs/development.md).
 
+### Local serial API
+
+The optional service remains **read-only by default**. To enable owned serial NN
+jobs, choose two existing, disjoint directories and opt in at startup:
+
+```bash
+uv run --locked --extra interface tsp-hpc serve \
+  --workspace /path/to/read-workspace \
+  --enable-execution --execution-root /path/to/execution-output
+```
+
+Supply the pairing secret privately at the prompt. HTTP cannot enable execution,
+select arbitrary paths/commands or resume an interrupted search. Linux pidfds and
+enabled native JIT are required for owned workers. Restart holds queued work;
+reruns require fresh review and a new submission key. Native/API clients can use
+the implemented workflow today; the existing browser does not yet expose those
+controls. See [owner operation and API contracts](docs/interface.md#local-backend-usage-and-security).
+
 ## Documentation
 
 Each reference owns one kind of information. Update that reference rather than copying its rules or current status into other pages.
@@ -46,7 +65,7 @@ Each reference owns one kind of information. Update that reference rather than c
 | [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA variants, tie rules, operators, budgets, initialization accounting and stopping checkpoints |
 | [Manifests and reproducibility](docs/manifests.md) | Schema, implementation labels, scientific/execution identities and RNG ownership |
 | [Development](docs/development.md) | Environment, package layout, tests, CI and packaging |
-| [Optional local interface](docs/interface.md) | Browser setup, API/security boundaries and explicitly planned features |
+| [Optional local interface](docs/interface.md) | Owner operation, implemented API/security boundaries and remaining browser integration |
 | [HPC operations](docs/hpc-resources.md) | Owner-operated allocations, containers, placement, storage and deployment checks |
 
 The [saved input collection](examples/instances/README.md) contains tiny correctness examples, not a benchmark campaign. [Presentations](presentations/README.md) preserve the original proposal and a dated progress snapshot; they are not the current status reference.

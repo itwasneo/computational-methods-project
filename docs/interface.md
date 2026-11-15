@@ -7,7 +7,7 @@ The interface is a read-only-by-default companion to [run → analyze](usage.md)
 | Part | Implemented | Not implemented |
 | --- | --- | --- |
 | Svelte 5 / TypeScript / Vite | Pairing, workspace selection, ingestion status, paged real trial rows, server-side filters/sorting | Facet lists, charts, editor and job controls |
-| FastAPI / Pydantic / Uvicorn | Owner-only pairing/authority, immutable instances, capabilities/preflight, durable serial jobs/recovery, independently verified final geometry, bounded shared analysis/history | Full installed-process/security acceptance is being completed; multicore/remote/resume are outside this milestone |
+| FastAPI / Pydantic / Uvicorn | Owner-only pairing/authority, immutable instances, capabilities/preflight, durable serial jobs/recovery, independently verified final geometry, bounded shared analysis/history; installed-process/security acceptance | Production GA/SA await teammate algorithms; multicore/remote/resume are outside this milestone |
 | WebGL2 | Separate synthetic viewer preview | Real-result artifact binding |
 | Delivery | Guarded same-origin development proxy | Bundled frontend serving from the installed CLI |
 
@@ -110,8 +110,10 @@ executes a solver or supplies synthetic final tours.
 `ExecutionCapabilities`, including real registry entries, availability/reasons,
 resolved defaults, limits and a capabilities revision. Only NN is production
 available today. The local **process worker requires Linux pidfd support** for
-safe cancellation/recovery; this does not restrict the standalone scientific CLI.
-Disabled JIT is explicitly unavailable, never an interpreted fallback.
+safe cancellation/recovery and readable `/proc` ownership metadata; this does not
+restrict the standalone scientific CLI. Availability probes actual kernel permissions,
+not merely Python attribute names. Disabled JIT is explicitly unavailable, never an
+interpreted fallback.
 
 `POST /api/runs/preflight` takes `ExecutionPreflightRequest` and returns
 `ReviewedExecution`: effective configuration, ordered trial/logical identities and
@@ -167,7 +169,15 @@ not a shell or caller-selected module. Only its job/cache/lease descriptors are
 inherited. It rechecks the immutable request/input and reviewed code/compiler
 context, pins the reviewed CPU affinity and known serial library/compiler settings,
 and invokes the same `run_manifest` as the CLI. Search seeds/IDs do not depend on
-queue order. Native compilation caches are private and separated by runtime key.
+queue order. Native compilation caches are private and separated by runtime key. Compiler-created
+files/directories use an owner-only umask. Aggregate cache ceilings are 256 MiB of
+apparent/allocated regular-file bytes, 4,096 entries and 16 runtime contexts, with
+bounded no-follow traversal. They are checked before launch, every 250 ms while an
+identified worker is active, and after exit. Exceeding a ceiling stops owned work
+and blocks further launch; caches and scientific evidence are not silently deleted.
+These are observed ceilings, **not a filesystem quota**: transient overshoot between
+checks is possible; the OS per-file limit also applies. Use a new root or inspect
+retained cache/state offline when capacity is exhausted.
 
 A worker has address-space, CPU, per-file-size and core-dump resource limits; the
 controller also enforces the job wall-clock ceiling. Defaults are 4 GiB address
@@ -206,8 +216,10 @@ Closing a browser or revoking/re-pairing its session does not cancel owned work.
 Orderly backend shutdown holds pending work and stops an active worker as an
 **interruption**, not a completed campaign. After an abrupt backend death, a child
 can survive with its lease. Restart verifies boot identity, start ticks and the
-exact installed-worker/job marker before recovering a pidfd. It never sends a
-signal to an unverified or merely reused PID. Unverifiable live ownership is
+exact installed-worker/job marker and kernel executable identity (not just `argv[0]`)
+before recovering a pidfd. It never sends a signal to an unverified or merely reused
+PID. If pidfd acquisition fails immediately after launch, only the still-owned,
+unreaped direct `Popen` child is eligible for cleanup—never a reconstructed PID. Unverifiable live ownership is
 `recovering`; pending work stays held and immediate signalling is denied.
 
 Every restart holds dispatch. After inspection, an authorized client may call
@@ -229,7 +241,17 @@ Unsupported pre-release/unknown queue schemas and missing state with retained jo
 fail closed without migration, resetting keys or deleting evidence; retain the
 artifacts and use a new root or the compatible controller. Scientific JSONL
 versions remain governed by the shared backward-compatible reader. This private
-state protocol is not same-user tamper attestation.
+state protocol is not same-user tamper attestation. Missing owner metadata with
+retained state also fails closed: it cannot silently rebind the execution root to
+a different workspace. Retained torn atomic-state temporaries consume a 32-entry
+private-root limit (in addition to separate job/snapshot/cache bounds).
+
+A state-write failure can occur **after rename but before durable acknowledgement**.
+The controller then stops dispatch/owned work and rejects further mutations until
+restart; it must not overwrite uncertain disk admissions from older memory. Inspect
+and retry the original key/preflight after restart. A recovered admission returns
+the original job; a new key is a deliberate new campaign, not a generic error retry.
+Keep forensic evidence and choose a new root if stored state cannot be reconciled.
 
 ### Verified final results and canonical geometry
 
@@ -366,7 +388,7 @@ Backend requests must use exactly `http://127.0.0.1:<port>`; native clients shou
 
 The Vite proxy validates the **frontend** authority before rewriting Host/Origin for the fixed backend. Foreign requests are not converted into trusted requests. Development CORS is disabled; Vite filesystem access stays within the frontend.
 
-Request bodies are limited to **16 KiB**, including chunked bodies; Uvicorn concurrency is capped at **32**. Strict request models reject extra fields and scalar coercions. Responses carry no-store/no-sniff/frame-denial headers and sanitized errors. Catalog operations run in the HTTP worker pool under a nonblocking operation lock.
+Request bodies are limited to **16 KiB**, including chunked bodies; Uvicorn concurrency is capped at **32**. JSON must be UTF-8, finite and unambiguous: duplicate fields, nonfinite constants/overflow, malformed encodings, escaped unpaired surrogates and nesting beyond 64 levels are rejected before dispatch. Strict request models reject extra fields and inappropriate scalar coercions. Responses carry no-store/no-sniff/frame-denial headers and sanitized errors. Catalog operations run in the HTTP worker pool under a nonblocking operation lock.
 
 ### Workspace authority and limits
 
@@ -395,7 +417,15 @@ Input bounds fail before queuing; ingestion bounds produce `failed`/`dataset_lim
 
 Shared `read_sources`/`read_shards` validation owns the [malformed, incomplete, failed, duplicate and missing-execution policy](usage.md#validation-and-comparison-rules). Tables retain scalar metadata and lazy source locators, not every tour/plan. An expected manifest is necessary to identify wholly missing executions. `ready` means structural acceptance, potentially with exclusions—not independently authenticated objective costs or producer provenance.
 
-Publication is atomic. Revisions bind content SHA-256, manifest bytes, analysis/schema code, relevant dependency versions, limits and backend workspace/catalog context; this is cache invalidation, not verified build provenance. Status/query/lazy-read boundaries recheck sources. Observed changes, refresh and shutdown prevent obsolete publication; unrelated catalog changes conservatively invalidate too. Code changes require restart. Public diagnostics never echo raw exceptions, contents or private paths; full analysis diagnostics remain internal.
+Publication is atomic. Revisions bind content SHA-256, manifest bytes, analysis/schema code, relevant dependency versions, limits and backend workspace/catalog context; this is cache invalidation, not verified build provenance. Status/query/lazy-read boundaries recheck sources. Observed changes, refresh and shutdown prevent obsolete publication; unrelated catalog changes conservatively invalidate too. Code changes require restart. Public diagnostics never echo raw exceptions, contents or private paths; raw diagnostic records remain internal, while the analysis API pages their sanitized structured projections.
+
+The earlier **#75 refresh/submission race is prevented by serialized HTTP admission**:
+refresh plus dataset invalidation completes before a newly authorized submission can
+enter. A deterministic regression pauses between catalog refresh and invalidation;
+with the current admission lock the new dataset remains ready, while a fault-injected
+negative control without that lock reproduces the former unnecessary staleness.
+This is an explicit reassessment of the owner-deferred race, not an assumption that
+old implementation claims constituted acceptance.
 
 ## Read-only Results contract
 

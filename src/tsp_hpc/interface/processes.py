@@ -26,6 +26,9 @@ def process_identity(pid, job_id):
         expected = [b"-I", b"-B", b"-W", b"error", b"-m", WORKER_MODULE.encode(), job_id.encode("ascii")]
         if argv[1:8] != expected or os.path.realpath(os.fsdecode(argv[0])) != os.path.realpath(sys.executable):
             return None
+        actual, current = os.stat(root / "exe"), os.stat(sys.executable)
+        if (actual.st_dev, actual.st_ino) != (current.st_dev, current.st_ino):
+            return None  # argv[0] alone is not executable identity.
         boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
         return {"pid": pid, "start_ticks": start, "boot_id": boot}
     except (OSError, ValueError, IndexError, UnicodeError):
@@ -34,8 +37,8 @@ def process_identity(pid, job_id):
 
 def valid_identity(identity):
     return (type(identity) is dict and set(identity) == {"pid", "start_ticks", "boot_id"}
-            and type(identity["pid"]) is int and identity["pid"] > 0
-            and type(identity["start_ticks"]) is int and identity["start_ticks"] >= 0
+            and type(identity["pid"]) is int and 0 < identity["pid"] < 2**31
+            and type(identity["start_ticks"]) is int and 0 <= identity["start_ticks"] < 2**64
             and type(identity["boot_id"]) is str
             and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", identity["boot_id"]) is not None)
 
@@ -54,12 +57,16 @@ def recover_pidfd(identity, job_id):
         return None
     try:
         fd = os.pidfd_open(identity["pid"], 0)
-    except OSError:
+    except (OSError, OverflowError):
         return None
-    if exited(fd) or process_identity(identity["pid"], job_id) != identity:
+    try:
+        if not exited(fd) and process_identity(identity["pid"], job_id) == identity:
+            return fd
+    except BaseException:
         os.close(fd)
-        return None
-    return fd
+        raise
+    os.close(fd)
+    return None
 
 
 def kill_verified(fd):

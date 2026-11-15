@@ -1,4 +1,4 @@
-"""Optional local API foundation: session pairing and read-only candidate catalogs."""
+"""Owner-authorized local API; read-only by default, never a second science engine."""
 
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 import hashlib
@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException
 
 from tsp_hpc.interface.errors import InterfaceError
+from tsp_hpc.interface.json_input import decode_json
 from tsp_hpc.interface.workspace import WorkspaceCatalog
 from tsp_hpc.interface.queries import TrialQueries
 from tsp_hpc.interface.requests import (
@@ -115,7 +116,10 @@ class LocalBoundary:
             if key in headers and key in (b"host", b"origin", b"authorization", b"content-length", b"content-type", b"sec-fetch-site", b"x-request-id"):
                 duplicate = True
             headers[key] = value
-        supplied_id = headers.get(b"x-request-id", b"").decode("ascii", errors="ignore")
+        try:
+            supplied_id = headers.get(b"x-request-id", b"").decode("ascii", errors="strict")
+        except UnicodeError:
+            supplied_id = ""
         request_id = supplied_id if REQUEST_ID.fullmatch(supplied_id) else secrets.token_urlsafe(16)
         scope.setdefault("state", {})["request_id"] = request_id
 
@@ -165,6 +169,16 @@ class LocalBoundary:
                 raise InterfaceError("invalid_request", "Request body length mismatch.")
             if scope["method"] == "GET" and body:
                 raise InterfaceError("invalid_request", "GET requests must not have a body.")
+            if scope["method"] == "POST":
+                try:
+                    parsed = decode_json(body)
+                    if type(parsed) is not dict:
+                        raise ValueError("object required")
+                except (ValueError, TypeError, RecursionError):
+                    raise InterfaceError("invalid_request", "Request must be bounded, unambiguous finite UTF-8 JSON.") from None
+                supplied = parsed.get("request_id")
+                if type(supplied) is str and REQUEST_ID.fullmatch(supplied):
+                    scope["state"]["request_id"] = supplied
             consumed = False
 
             async def replay():

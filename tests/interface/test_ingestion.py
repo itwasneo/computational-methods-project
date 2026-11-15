@@ -105,6 +105,66 @@ def test_real_output_compact_metadata_lazy_authorized_details_and_unchanged_evid
     assert {path.name: path.read_bytes() for path in workspace.iterdir()} == before
 
 
+@pytest.mark.parametrize("serialized", [True, False], ids=["current-serialized-admission", "negative-control-without-lock"])
+def test_issue_75_refresh_admission_race_has_a_deterministic_negative_control(workspace, paired_session, monkeypatch, serialized):
+    from concurrent.futures import ThreadPoolExecutor
+    with paired_session(workspace) as (client, app, info, _, _):
+        context = {"api_version": 1, "request_id": "race", "workspace_id": info["workspace_id"]}
+        invalidation_waiting, release, admission_waiting, submitted = [threading.Event() for _ in range(4)]
+        original_operation, original_invalidate, original_submit = app.state.pairing.operation, app.state.datasets.invalidate, app.state.datasets.submit
+
+        @contextmanager
+        def operation(header):
+            if invalidation_waiting.is_set():
+                admission_waiting.set()
+            if serialized:
+                with original_operation(header):
+                    yield
+            else:
+                # Fault-injected removal of ONLY serialization reproduces the old
+                # interleaving; production still uses the original locked method.
+                assert app.state.pairing.authorized(header)
+                yield
+
+        def invalidate():
+            invalidation_waiting.set()  # Catalog revision is already refreshed.
+            assert release.wait(10)
+            original_invalidate()
+
+        def submit(*args, **kwargs):
+            result = original_submit(*args, **kwargs)
+            submitted.set()
+            return result
+
+        monkeypatch.setattr(app.state.pairing, "operation", operation)
+        monkeypatch.setattr(app.state.datasets, "invalidate", invalidate)
+        monkeypatch.setattr(app.state.datasets, "submit", submit)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            refresh = pool.submit(client.post, "/api/artifacts/refresh", json=context)
+            try:
+                assert invalidation_waiting.wait(10)
+                # Trusted test observation of the just-published handles. A current
+                # HTTP catalog query also waits behind the same admission lock.
+                catalog = app.state.catalog.page()
+                handle = next(item["artifact_handle"] for item in catalog["items"] if item["display_name"] == "runs.jsonl")
+                admission = pool.submit(client.post, "/api/datasets", json={**context, "artifact_catalog_revision": catalog["revision"],
+                                        "result_handles": [handle], "expected_manifest_handle": None})
+                assert admission_waiting.wait(10)
+                if serialized:
+                    assert not submitted.is_set()
+                else:
+                    assert submitted.wait(10)
+            finally:
+                release.set()
+            assert refresh.result(timeout=10).status_code == 200
+            accepted = admission.result(timeout=10)
+            assert accepted.status_code == 202
+        app.state.datasets._future.result(timeout=10)
+        response = client.post("/api/datasets/status", json={**context, "dataset_id": accepted.json()["dataset_id"]})
+        assert response.status_code == 200
+        assert response.json()["state"] == ("ready" if serialized else "stale")
+
+
 def test_http_trial_pages_match_real_shared_analysis_and_reject_stale_sources(workspace, campaign, paired_session, monkeypatch):
     from tsp_hpc.interface.contracts import TrialPage, TrialRow
 

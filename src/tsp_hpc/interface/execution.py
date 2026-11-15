@@ -29,6 +29,9 @@ class ExecutionLimits:
     max_history_points: int = 100_000
     max_analysis_rows: int = 10_000
     max_analysis_bytes: int = 128 * 1024 * 1024
+    max_cache_bytes: int = 256 * 1024 * 1024
+    max_cache_entries: int = 4096
+    max_cache_contexts: int = 16
     max_result_bytes: int = 64 * 1024 * 1024
     max_record_bytes: int = 4 * 1024 * 1024
     max_plan_bytes: int = 4 * 1024 * 1024

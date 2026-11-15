@@ -29,6 +29,27 @@ def code_identity():
     return digest.hexdigest()
 
 
+def process_handles_available():
+    """Check actual kernel/permission support without launching or signalling work."""
+    if platform.system() != "Linux" or not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        return False
+    fd = None
+    try:
+        fd = os.pidfd_open(os.getpid(), 0)
+        signal.pidfd_send_signal(fd, 0)  # Permission/existence probe; delivers no signal.
+        from tsp_hpc.interface.processes import valid_identity
+        with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as stream:
+            boot = stream.read(80).strip()
+        actual, current = os.stat("/proc/self/exe"), os.stat(sys.executable)
+        return ((actual.st_dev, actual.st_ino) == (current.st_dev, current.st_ino)
+                and valid_identity({"pid": os.getpid(), "start_ticks": 0, "boot_id": boot}))
+    except (OSError, ValueError):
+        return False
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def runtime_binding():
     from tsp_hpc.reproducibility.native import compiler_observation
     observation = compiler_observation()
@@ -52,4 +73,4 @@ def runtime_binding():
                 "affinity": affinity, "worker_environment": env}
     return {"runtime_key": hashlib.sha256(encode(identity)).hexdigest(), "code": identity["code"],
             "compiler": observation, "worker_environment": env, "affinity": affinity,
-            "platform_available": platform.system() == "Linux" and hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal")}
+            "platform_available": process_handles_available()}

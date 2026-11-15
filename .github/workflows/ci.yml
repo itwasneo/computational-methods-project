@@ -84,8 +84,17 @@ jobs:
           node-version: "24.14.0"
           package-manager-cache: false
 
-      - name: Check retained rendering primitives
+      # Keep the existing check name for branch-protection compatibility, but
+      # also guard the shared backend wire fixtures and existing interface code.
+      - name: Install pinned interface toolchain
+        run: |
+          npm install --global pnpm@10.32.1 --ignore-scripts
+          pnpm --dir frontend install --frozen-lockfile
+
+      - name: Check shared contracts and retained interface regressions
         run: |
           node --version
           for file in frontend/src/rendering/*.mjs; do node --check "$file"; done
-          node --test frontend/src/rendering/*.test.mjs
+          pnpm --dir frontend run check
+          pnpm --dir frontend run test
+          pnpm --dir frontend run build
