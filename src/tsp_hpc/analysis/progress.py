@@ -41,7 +41,9 @@ def _points(analysis, frame, max_points):
     if sum(int(value) for value in frame["history_points"]) > max_points:
         raise AnalysisLimitError("history points exceed the explicit analysis limit")
     count = 0
-    for row in frame.to_dict("records"):
+    columns = ["attempt_id", "group_id", "instance_id", "algorithm", "implementation", "usable", "history_recorded"]
+    for values in frame[columns].itertuples(index=False, name=None):
+        row = dict(zip(columns, values))
         if not row["history_recorded"]:
             continue
         record = analysis.trial(row["attempt_id"])  # Checks original source stamp/digest.
@@ -65,14 +67,22 @@ def _points(analysis, frame, max_points):
                 work[key] += value
 
 
+def iter_progress(analysis, *, attempt_ids=None, max_points=100_000):
+    """Stream the same genuine points under a hard TOTAL selection bound.
+
+    Callers may page the iterator without materializing a full history table.
+    Bounds and source checks are applied when consumed, never silently truncate.
+    """
+    return _points(analysis, _selection(analysis, attempt_ids, max_points), max_points)
+
+
 def progress_table(analysis, *, attempt_ids=None, max_points=100_000):
     """Preserve original logical observations, plus explicitly concatenated clocks.
 
     Unusable trial prefixes remain inspectable with usable=False. max_points is a
     hard total bound, not a request to truncate/downsample or change search data.
     """
-    frame = _selection(analysis, attempt_ids, max_points)
-    return pd.DataFrame(_points(analysis, frame, max_points), columns=PROGRESS_COLUMNS)
+    return pd.DataFrame(iter_progress(analysis, attempt_ids=attempt_ids, max_points=max_points), columns=PROGRESS_COLUMNS)
 
 
 def time_to_target(analysis, *, instance_id, target_cost, attempt_ids=None, max_points=100_000):
@@ -119,4 +129,7 @@ def time_to_target(analysis, *, instance_id, target_cost, attempt_ids=None, max_
                      "logical_index": None if hit is None else hit["logical_index"],
                      "logical_elapsed_s": None if hit is None else hit["elapsed_s"],
                      "observation_end_s": end, "reason": reason})
-    return pd.DataFrame(rows, columns=TARGET_COLUMNS)
+    result = pd.DataFrame(rows, columns=TARGET_COLUMNS)
+    # Logical indices remain exact integers even alongside missing crossings.
+    result["logical_index"] = pd.Series([row["logical_index"] for row in rows], dtype=object)
+    return result

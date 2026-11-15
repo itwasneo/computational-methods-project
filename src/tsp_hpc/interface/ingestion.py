@@ -32,7 +32,7 @@ RULE_FILES = (
     "solvers/results.py", "solvers/configuration.py", "solvers/validation.py", "analysis/progress.py",
     "interface/contracts.py", "interface/ingestion.py", "interface/workspace.py", "interface/queries.py",
     "interface/requests.py", "interface/cursors.py", "interface/results.py", "interface/wire.py",
-    "interface/snapshots.py", "interface/storage.py", "problem/instances.py", "problem/objective.py",
+    "interface/snapshots.py", "interface/storage.py", "interface/analysis_api.py", "problem/instances.py", "problem/objective.py",
 )
 
 

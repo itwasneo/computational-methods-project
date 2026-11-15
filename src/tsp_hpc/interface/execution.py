@@ -27,6 +27,8 @@ class ExecutionLimits:
     max_instance_bytes: int = 2 * 1024 * 1024
     max_matrix_bytes: int = 128 * 1024 * 1024
     max_history_points: int = 100_000
+    max_analysis_rows: int = 10_000
+    max_analysis_bytes: int = 128 * 1024 * 1024
     max_result_bytes: int = 64 * 1024 * 1024
     max_record_bytes: int = 4 * 1024 * 1024
     max_plan_bytes: int = 4 * 1024 * 1024

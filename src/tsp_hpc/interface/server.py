@@ -20,6 +20,7 @@ from tsp_hpc.interface.requests import (
     InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest, ExecutionPreflightRequest,
     JobSubmitRequest, JobStatusRequest, JobsQueryRequest, ExecutionControlRequest, QueueContinueRequest,
     JobPublicationRequest, JobGeometryRequest, TrialPublicationRequest, TrialGeometryRequest,
+    DatasetAnalysisRequest, JobAnalysisRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -229,6 +230,8 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
                 app.state.jobs = jobs
             from tsp_hpc.interface.results import ResultPublisher
             app.state.results = ResultPublisher(catalog, datasets, app.state.jobs, app.state.snapshots, execution.limits)
+            from tsp_hpc.interface.analysis_api import AnalysisQueries
+            app.state.analysis_queries = AnalysisQueries(catalog, datasets, app.state.results, execution.limits)
             yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -345,6 +348,13 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
             context = job_publication_context(request, body)
             return {**context, "geometry": request.app.state.results.job(body.model_dump(), geometry=True)}
 
+    @app.post("/api/jobs/analysis")
+    def job_analysis(body: JobAnalysisRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, "job_id": body.job_id, "job_revision": body.expected_revision,
+                    "result_revision": body.result_revision, **request.app.state.analysis_queries.job(body.model_dump())}
+
     @app.post("/api/jobs/query")
     def jobs_query(body: JobsQueryRequest, request: Request):
         with authorized_operation(request):
@@ -428,6 +438,13 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
         with authorized_operation(request):
             catalog_for(request, body)
             return request.app.state.trial_queries.page(body.model_dump())
+
+    @app.post("/api/analysis/query")
+    def analysis_query(body: DatasetAnalysisRequest, request: Request):
+        with authorized_operation(request):
+            catalog_for(request, body)
+            context = {key: getattr(body, key) for key in ("api_version", "request_id", "workspace_id", "dataset_id", "revision")}
+            return {**context, **request.app.state.analysis_queries.dataset(body.model_dump())}
 
     def trial_publication_context(request, body):
         catalog_for(request, body)

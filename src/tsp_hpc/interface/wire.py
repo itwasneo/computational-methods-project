@@ -18,7 +18,13 @@ def wire_value(value):
         return None
     if isinstance(value, np.generic):
         value = value.item()
-    if type(value) in (bool, str):
+    if type(value) is str:
+        try:
+            value.encode("utf-8")
+        except UnicodeError:
+            raise InterfaceError("invalid_artifact", "Observation text is not valid Unicode.", 422) from None
+        return value
+    if type(value) is bool:
         return value
     if type(value) is int:
         return value if -SAFE_INTEGER <= value <= SAFE_INTEGER else str(value)
@@ -31,5 +37,5 @@ def wire_value(value):
     if type(value) in (list, tuple):
         return [wire_value(item) for item in value]
     if type(value) is dict and all(type(key) is str for key in value):
-        return {key: wire_value(item) for key, item in value.items()}
+        return {wire_value(key): wire_value(item) for key, item in value.items()}
     raise InterfaceError("invalid_artifact", "Observation has an unsupported wire type.", 422)

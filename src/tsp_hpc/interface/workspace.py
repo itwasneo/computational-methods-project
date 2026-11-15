@@ -253,9 +253,9 @@ class WorkspaceCatalog:
                 raise _stale()
             candidate = self._files.get(handle)
             if candidate is None:
-                raise InterfaceError("artifact_not_found", "Selected instance is unavailable.", 404)
+                raise InterfaceError("artifact_not_found", "Selected JSON artifact is unavailable.", 404)
             if candidate.kind != "json":
-                raise InterfaceError("invalid_artifact", "An instance JSON artifact is required.", 422)
+                raise InterfaceError("invalid_artifact", "A JSON artifact is required.", 422)
             if candidate.stamp[3] > max_bytes:
                 raise InterfaceError("artifact_too_large", "Instance artifact exceeds its byte limit.", 413)
             return AuthorizedSource(self, handle, revision)
