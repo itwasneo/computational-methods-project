@@ -257,3 +257,9 @@ export interface ExecutionInfo extends RunContext {
   limits: Record<string, number>;
   output_root: OutputRoot | null;
 }
+export interface StoredInstance extends RunContext {
+  instance_snapshot_id: string;
+  content_sha256: string;
+  instance: InstanceDescriptor;
+  source: { kind: 'artifact' | 'generation'; sha256: string | null };
+}

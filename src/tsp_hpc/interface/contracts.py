@@ -456,3 +456,15 @@ class ExecutionInfo(RunContext):
     local_runs_enabled: bool
     limits: dict[str, int]  # ExecutionLimits: versioned, owner-set resource ceilings.
     output_root: OutputRoot | None
+
+
+class SnapshotSource(TypedDict):
+    kind: Literal["artifact", "generation"]
+    sha256: str | None
+
+
+class StoredInstance(RunContext):
+    instance_snapshot_id: str
+    content_sha256: str
+    instance: InstanceDescriptor
+    source: SnapshotSource

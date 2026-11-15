@@ -14,9 +14,9 @@ def paired_session():
     from tsp_hpc.interface.server import create_app
 
     @contextmanager
-    def open_session(root):
+    def open_session(root, **options):
         secret = secrets.token_urlsafe(32)
-        app = create_app(root, port=8000, bootstrap_secret=secret)
+        app = create_app(root, port=8000, bootstrap_secret=secret, **options)
         with TestClient(app, base_url="http://127.0.0.1:8000", raise_server_exceptions=False) as client:
             pairing = client.post("/api/session", json={"api_version": 1, "request_id": "pair", "secret": secret})
             assert pairing.status_code == 200
@@ -28,6 +28,16 @@ def paired_session():
         assert app.state.catalog._fd == -1
 
     return open_session
+
+
+@pytest.fixture
+def execution_session(tmp_path, paired_session):
+    workspace, output = tmp_path / "read", tmp_path / "output"
+    workspace.mkdir(); output.mkdir()
+    with paired_session(workspace, enable_execution=True, execution_root=output) as (client, app, ws, secret, token):
+        context = {"api_version": 1, "request_id": "run", "workspace_id": ws["workspace_id"],
+                   "session_id": app.state.pairing._session_id}
+        yield client, app, context, workspace, output
 
 
 @pytest.fixture

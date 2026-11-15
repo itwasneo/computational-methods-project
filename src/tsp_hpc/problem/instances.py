@@ -253,7 +253,18 @@ def load_instance(path: str | Path) -> InstanceRecord:
     This does not regenerate data, trust pickle, or import TSPLIB. Recorded
     generation provenance is not cryptographically authenticated.
     """
-    document = _object(_parse(Path(path).read_text(encoding="utf-8")),
+    return instance_from_json(Path(path).read_text(encoding="utf-8"))
+
+
+def instance_from_json(text: str, *, max_cities: int | None = None) -> InstanceRecord:
+    """Validate captured artifact content, optionally bounding cities before arrays.
+
+    Callers handling untrusted files must also bound bytes before decoding. This
+    is the same scientific loader as load_instance, without granting path access.
+    """
+    if max_cities is not None:
+        _integer(max_cities, 2, "max_cities")
+    document = _object(_parse(text),
                        {"schema_version", "instance", "coordinates", "provenance"}, "artifact")
     if type(document["schema_version"]) is not int or document["schema_version"] != 1:
         raise ValueError("unsupported artifact schema_version")
@@ -261,6 +272,8 @@ def load_instance(path: str | Path) -> InstanceRecord:
                          {"instance_id", "coordinate_checksum", "n_cities", "distance_kind", "instance_seed"},
                          "instance descriptor")
     _integer(descriptor["n_cities"], 2, "n_cities")
+    if max_cities is not None and descriptor["n_cities"] > max_cities:
+        raise ValueError("instance exceeds city limit")
     if descriptor["instance_seed"] is not None:
         validate_seed(descriptor["instance_seed"])
     rows = document["coordinates"]
