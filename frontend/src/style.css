@@ -89,9 +89,10 @@ button { border: 1px solid var(--control-border); border-radius: 3px; padding: 7
 button:hover { background: var(--hover); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 
-.table-region { overflow-x: auto; min-height: clamp(320px, 65vh, 720px); overflow-anchor: none; }
+.table-region { overflow: auto; min-height: min(320px, 70dvh); max-height: 70dvh; overflow-anchor: none; }
 table { table-layout: fixed; border-collapse: collapse; width: 100%; min-width: 1400px; text-align: left; white-space: nowrap; }
 th, td { padding: 12px; border-bottom: 1px solid var(--border); }
+thead { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: 0 1px var(--border); }
 th { font-size: 12px; background: var(--surface); vertical-align: top; }
 .column-heading { display: flex; align-items: center; gap: 6px; }
 th.numeric .column-heading { justify-content: flex-end; }

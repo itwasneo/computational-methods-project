@@ -144,6 +144,17 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         expect(attempt_button).to_have_text(attempt)
         expect(time_cell).to_have_text(raw_seconds)
         page.get_by_label('Full values and all columns').uncheck()
+        # Exercise both scroll axes; headers must stay pinned and column-aligned.
+        region = page.locator('[aria-label="Experiment analysis"] .table-region')
+        region.evaluate("e => { e.style.height = '120px'; e.style.width = '480px'; e.querySelector('table').style.minWidth = '960px'; }")
+        header = region.locator('thead')
+        top = header.bounding_box()['y']
+        region.evaluate('e => { e.scrollTop = e.scrollHeight; e.scrollLeft = 200; }')
+        page.wait_for_timeout(100)
+        assert region.evaluate('e => e.scrollTop > 0 && e.scrollLeft > 0')
+        assert abs(header.bounding_box()['y'] - top) <= 1
+        assert abs(region.locator('th').first.bounding_box()['x'] - region.locator('tbody td').first.bounding_box()['x']) <= 1
+        region.evaluate("e => { e.style.height = ''; e.style.width = ''; e.querySelector('table').style.minWidth = ''; e.scrollTop = 0; e.scrollLeft = 0; }")
         attempt_button.click()
         expect(page.get_by_role("heading", name="Verified final result")).to_be_visible()
         expect(page.get_by_label("Show tour")).to_be_checked()

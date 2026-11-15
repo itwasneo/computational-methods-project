@@ -196,7 +196,7 @@
   :global(.app-card input:not([type=checkbox])), :global(.app-card select) { display: block; max-width: 100%; padding: .4rem; }
   :global(.app-card pre) { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
   :global(.app-card fieldset) { border: 0; padding: 0; }
-  :global(.app-card .table-region) { min-height: 0; max-height: 32rem; overflow: auto; }
+  :global(.app-card .table-region) { min-height: 0; max-height: min(32rem, 70dvh); overflow: auto; }
   :global(.app-card table) { table-layout: auto; min-width: 100%; white-space: normal; }
   :global(.app-card td button) { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
   :global(.app-card td), :global(.app-card th) { padding: .5rem; text-align: left; border-bottom: 1px solid #8884; max-width: 30rem; overflow-wrap: anywhere; }

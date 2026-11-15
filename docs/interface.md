@@ -68,7 +68,8 @@ pidfds/procfs and enabled JIT. Numerical-only installations need no web dependen
    Charts show only the current page and never interpolate history. Page controls and
    JSON downloads state their scope; a page download is not a complete campaign archive.
 
-Tables abbreviate long IDs and display durations with at most two decimal places,
+Table headers stay visible while scrolling through rows; horizontal scrolling keeps
+headers aligned with their columns. Tables abbreviate long IDs and display durations with at most two decimal places,
 using ms, s, min or h. Hover for original values; **Full values and all columns** restores
 exact analysis values and field names. Saved-result expansion shows full IDs and seconds.
 Storage, downloads and server-side sorting remain unrounded; exact time filters still
