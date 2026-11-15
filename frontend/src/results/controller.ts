@@ -148,6 +148,15 @@ export class ResultsController {
     });
   }
 
+  attach() {
+    return this.#run('Loading workspace', async operation => {
+      const response = await this.#api.workspace(operation.signal);
+      this.#check(operation);
+      this.#set({ paired: true, workspace: response.workspace });
+      await this.#catalog(operation);
+    });
+  }
+
   async #catalog(operation: Operation) {
     const workspace = this.#workspace();
     const artifacts: Artifact[] = [];

@@ -13,6 +13,25 @@ const nullableText = (value: unknown) => value === null || isText(value);
 const nullableNumber = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value));
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
+async function boundedBytes(response: Response, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Missing response body');
+  const chunks: Uint8Array[] = []; let length = 0;
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const { value, done } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > 4 * 1024 * 1024) throw new Error('Response too large');
+      chunks.push(value);
+    }
+  } finally { await reader.cancel(); reader.releaseLock(); }
+  const bytes = new Uint8Array(length); let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes;
+}
+
 export class ApiError extends Error {
   code: string;
   constructor(code: string, message: string) {
@@ -77,6 +96,27 @@ export class ApiClient {
 
   clear() { this.#token = ''; }
 
+  operation<T>(path: string, body: object, validate: (data: unknown) => data is T, signal: AbortSignal): Promise<T> {
+    return this.#request(path, body, validate, signal);
+  }
+
+  async exportInstance(body: { workspace_id: string; session_id: string; instance_snapshot_id: string }, signal: AbortSignal): Promise<Blob> {
+    const request_id = crypto.randomUUID();
+    const response = await this.#fetch('/api/instances/export', { method: 'POST',
+      headers: { Authorization: `Bearer ${this.#token}`, 'Content-Type': 'application/json', 'X-Request-ID': request_id },
+      body: JSON.stringify({ ...body, api_version: 1, request_id }), signal,
+      cache: 'no-store', credentials: 'omit', redirect: 'error' });
+    const bytes = await boundedBytes(response, signal); signal.throwIfAborted();
+    if (!response.ok) {
+      if (response.status === 403) this.clear();
+      throw new ApiError('export_failed', 'Instance export failed; refresh the snapshot or reconnect.');
+    }
+    if (response.headers.get('x-request-id') !== request_id || !response.headers.get('content-type')?.startsWith('application/octet-stream')) {
+      throw new ApiError('invalid_response', 'Instance export response does not match the request.');
+    }
+    return new Blob([bytes], { type: 'application/json' }); // Never JSON-number-roundtrip artifact uint64 seeds.
+  }
+
   async #request<T>(path: string, body: object | null, validate: (data: unknown) => data is T, signal: AbortSignal): Promise<T> {
     const request_id = crypto.randomUUID();
     const headers: Record<string, string> = { 'X-Request-ID': request_id };
@@ -95,7 +135,7 @@ export class ApiClient {
     }
     let data: unknown;
     try {
-      data = await response.json();
+      data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await boundedBytes(response, signal)));
     } catch {
       throw new ApiError('invalid_response', 'The local API returned an invalid response.');
     }
@@ -108,7 +148,7 @@ export class ApiClient {
       throw new ApiError(isText(data.code) ? data.code : 'invalid_response',
         isText(data.message) ? data.message : 'The local API request failed.');
     }
-    for (const key of ['workspace_id', 'dataset_id', 'revision']) {
+    for (const key of ['workspace_id', 'session_id', 'dataset_id', 'revision']) {
       if (isObject(body) && key in body && data[key] !== body[key]) {
         throw new ApiError('invalid_response', 'The local API response has obsolete context.');
       }

@@ -1,52 +1,108 @@
 # Local interface
 
-The FastAPI service is a read-only-by-default companion to [run → analyze](usage.md).
-Python owns scientific validation, execution and statistics. The Svelte/TypeScript
-browser presents saved trial rows; its separate WebGL2 viewer uses synthetic data.
-The CLI serves the API, not frontend assets. Numerical installations need no web dependencies.
+The browser connects generation, configuration, native NN jobs, verified tours and
+shared analysis. Python owns scientific validation, execution and statistics; browser
+charts present server observations without computing new scientific summaries.
 
-## Browser local results
+## Start the application
 
-Use the [development environment](development.md). Start the backend from the repository root:
+Use Python 3.12, Node 24 and pnpm 10.32.1. From the checkout, install once:
 
 ```bash
 uv sync --locked --extra interface
-uv run --locked --extra interface tsp-hpc serve --workspace results --port 8000
+pnpm --dir frontend install --frozen-lockfile
 ```
 
-Choose a small, existing trusted workspace containing JSONL and optional instance,
-manifest or reference JSON files. Avoid roots containing large dependency trees.
-At the hidden prompt, supply a fresh random **43–128-character URL-safe secret**.
-Generate it privately; never put it in arguments, URLs, environment variables or logs.
-
-In another terminal:
+Start both local services with one command:
 
 ```bash
-pnpm --dir frontend install --frozen-lockfile
-pnpm --dir frontend run dev
+uv run --locked --extra interface python tools/local_app.py
 ```
 
-Open **http://127.0.0.1:5173**, pair with the secret, select a result shard and click
-**Load**. Select an expected manifest only when the file is actually a manifest,
-not an instance or reference document. The ports are fixed at 5173/8000; use
-`127.0.0.1`, not `localhost`. An occupied port fails rather than changing authority.
-`vite preview` is static-only and has no API proxy.
+This owner command explicitly enables serial jobs. It creates a read workspace at
+`data/generated/app-inputs` and a separate private execution root at
+`results/app-output`. Override them with `--workspace PATH --execution-root PATH`;
+roots must be disjoint. Put saved instances/references or CLI result shards in the read
+workspace, not inside the private execution state.
 
-- Tokens stay in memory. After a reload, type `pair` in the backend terminal and
-  supply a fresh secret, then reconnect in the browser. Switching views retains the session.
-- Previous/Next, exact-value filters and sorting query the **whole dataset** on the
-  server. Enter one value per line; blank filters are unrestricted. Nullable columns
-  offer **Include missing values**. Attempt expansion displays eligibility flags.
-- Selection/refresh discards old pages. Context checks reject late replies. Ready
-  datasets are rechecked every five seconds and on queries, not by a filesystem watcher.
-- The trial table does not display geometry. Use the verified-publication API below;
-  synthetic geometry is never a substitute for a missing real result.
+At the hidden prompt, supply a fresh random **43–128-character URL-safe secret** from
+a private password manager. Open **http://127.0.0.1:5173** and enter the same secret.
+Never place credentials in arguments, URLs, environment variables or logs. Ctrl-C
+stops both services, holding pending jobs and interrupting active work safely.
 
-The independent **Viewer preview** contains synthetic 128-city geometry. Drag/arrow
-keys pan, wheel/plus/minus zoom, and Fit/Home resets. Repeated coincident picks cycle
-city IDs; Escape exits fullscreen. Theme changes preserve geometry/camera; context
-loss offers Retry. Canonical float64 coordinates remain separate from float32 display
-buffers. Unsupported display edits fail atomically; WebGL2 is not a solver accelerator.
+The launcher uses the checkout's Vite development server on 5173 and API on 8000;
+occupied ports fail. Use `127.0.0.1`, not `localhost`. This is a local checkout app,
+not bundled frontend delivery from an installed wheel. Native jobs require Linux
+pidfds/procfs and enabled JIT. Numerical-only installations need no web dependencies.
+
+## Run and compare an experiment
+
+1. **Create or load:** choose uniform/clustered generation, city count, decimal uint64
+   seed and dimensions, then **Generate instance**. Alternatively select an authorized
+   instance JSON and **Load instance**. The backend creates an immutable snapshot;
+   **Download canonical instance** saves exact CLI-compatible bytes, including large seeds.
+2. **Configure:** select native NN implementations, dense/on-demand distance modes,
+   explicit ordered starts, repetitions and solver seed. Time limits/history are optional.
+   Defaults use 256 cities, eight starts, five repetitions and both modes: ten trials
+   for one implementation. The UI does not advertise test-only GA/SA adapters.
+3. **Review:** **Review experiment** validates the shared plan without running it.
+   Inspect resolved configuration, identities/seeds, estimates and job ceiling, then
+   **Run reviewed experiment**. Input edits invalidate review. No manifest editing or
+   copied ID/path binding is needed: the backend constructs the accepted manifest.
+4. **Monitor:** job counts/state refresh automatically. Selecting a terminal result
+   loads shared trial analysis, including distance mode, timings and eligibility.
+   Completion does not mean every trial succeeded; failed/incomplete evidence stays visible.
+5. **Compare:** select **Paired comparison**, baseline implementation/mode and timing
+   metric, then **Show analysis**. For distance comparisons, choose on-demand as the
+   baseline and end-to-end trial time to include matrix preparation. Ratio = baseline /
+   target; above one means the target was faster. Search-only timing excludes preparation.
+   Dirty/unknown source or incompatible work/context produces explicit rejection reasons.
+6. **Inspect:** click an attempt ID to fetch independently verified final coordinates
+   and tour. Pan/zoom/fit, toggle the tour or use the accessible coordinate/permutation
+   view. A failed/no-solution aggregate has no invented tour. Canonical float64 data stays
+   separate from display buffers; signed zero/order survive export.
+7. **Analyze:** summary, diagnostic, recorded-history, observed-target and reference-gap
+   tables call shared Python functions. Choose an authorized reference JSON for gaps.
+   Charts show only the current page and never interpolate history. Page controls and
+   JSON downloads state their scope; a page download is not a complete campaign archive.
+
+Timings on tiny instances are functional examples, not controlled performance evidence.
+Keep the checkout clean for eligible provenance-based comparisons. Time-budget runs
+measure quality under budget and cannot supply implementation-speed ratios. Reference
+kinds remain declarations; the interface does not prove optimality.
+
+### Controls and reconnects
+
+- Cancel queued work, request stopping after a trial, or explicitly confirm immediate
+  interruption. Stop intent is not terminal evidence until the backend verifies exit.
+- Disconnect/reload does not cancel jobs. Type `pair` in the owner terminal with a new
+  secret before reconnecting; switching tabs shares the same in-memory grant.
+- A lost submission acknowledgement offers **Retry original submission**, never an
+  automatic new campaign. Only non-secret preflight/key/root retry metadata is retained
+  in tab session storage when available; credentials remain memory-only. A retry for a
+  different output root is refused. Inspect existing jobs if storage was unavailable.
+- Every backend restart holds dispatch. Inspect jobs and use **Continue held queue**
+  explicitly. **Review fresh rerun** reloads the original snapshot/configuration for a
+  new review/key/campaign; it never appends or resumes an old search.
+- Errors pause automatic polling; use **Refresh jobs** after resolving the cause. A
+  stale review requires re-review, not repeated execution. Capacity exhaustion preserves
+  evidence; choose a new output root rather than deleting private state to reset keys.
+
+## Browser local results
+
+The **Saved results** tab shares pairing with Experiments. Select existing JSONL shards
+and optionally an actual expected manifest (not an instance/reference JSON), then **Load**.
+Whole-dataset filters/sorting and paged rows preserve incomplete/duplicate/usable flags.
+Refresh invalidates obsolete datasets; ready sources are checked every five seconds and
+on queries. This tab reads CLI shards; verified job tours are in Experiments.
+
+For read-only operation, run `tsp-hpc serve --workspace PATH --port 8000` without execution
+flags and start `pnpm --dir frontend run dev` separately. Pair in Experiments, then use
+Saved results. `vite preview` is static-only and has no API proxy.
+
+The separate **Viewer preview** is labelled synthetic and never substitutes for a real
+result. Shared viewer controls support pan/zoom/fit, coincident-city picking, fullscreen,
+theme changes and context-loss recovery.
 
 ## Local backend usage and security
 

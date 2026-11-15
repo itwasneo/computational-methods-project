@@ -24,6 +24,7 @@ tsp-hpc = "tsp_hpc.cli:main"
 dev = [
     "pytest>=9.2,<10",
     "httpx2>=2.16,<3",
+    "playwright>=1.64,<1.65",
     {include-group = "analysis"},
 ]
 analysis = [

@@ -14,7 +14,7 @@ not the Python patch release, OS, CPU or drivers; record the actual experiment r
 | Environment | Contents |
 | --- | --- |
 | Base runtime | NumPy and Numba |
-| `dev` (default group) | pytest, HTTP test client and `analysis` |
+| `dev` (default group) | pytest, HTTP test client, Playwright and `analysis` |
 | `analysis` group | pandas and Matplotlib |
 | `interface` extra | FastAPI, Pydantic, Uvicorn and pandas |
 | Frontend | Svelte/TypeScript/Vite; `frontend/pnpm-lock.yaml` pins resolutions |
@@ -48,6 +48,23 @@ Tests mirror packages under `tests/`; for example, select NN checks with
 kernels/caches, installed wheels, CLI reports, actual local workers and crash recovery.
 Frontend tests cover contracts, client/state, a real loopback Vite proxy and rendering
 primitives. No cluster account, GPU or browser measurement campaign is required.
+For real browser acceptance (free local ports 5173/8000 required):
+
+```bash
+uv run --locked python -m playwright install chromium
+uv run --locked --extra interface pytest frontend/acceptance -q -W error
+```
+
+These tests use Chromium, the guarded Vite proxy, a real backend and native workers;
+CI installs browser OS dependencies with `playwright install --with-deps chromium`.
+They cover generation, exact export, reviewed comparisons, lost acknowledgements,
+verified geometry/history, cancellation, restart-held dispatch and fresh reruns.
+They are functional browser tests, not browser-performance gates.
+
+`tools/interface_schema.py` generates `frontend/src/wire-schema.json` from Python DTOs
+for runtime response validation. Regenerate it after contract changes with
+`uv run --locked python tools/interface_schema.py`; a Python test rejects schema drift.
+
 Functional test timings are not performance evidence. Keep distinct unit, scientific
 conformance, fault-injection and installed-process coverage even when workflows overlap.
 
@@ -62,7 +79,8 @@ conformance, fault-injection and installed-process coverage even when workflows 
 | `experiments` | Manifest planning and serial execution |
 | `analysis` | Record validation, lazy sources, tables/comparisons and reports |
 | `interface` | Authority, snapshots, preflight, durable jobs/worker, publication/query adapters |
-| `frontend/src/results` | Read-only client, controller, filters and trial table |
+| `frontend/src/results` | Shared transport/session and read-only saved-results controller/table |
+| `frontend/src/experiments` | Instance/plan/job orchestration, verified geometry and shared analysis presentation |
 | `frontend/src/rendering` | Float64 model and WebGL2 display primitives |
 
 Keep initializers lightweight: root imports and CLI help/version must not load
@@ -162,7 +180,8 @@ not certification of an arbitrary release or container.
 [ci.yml](../.github/workflows/ci.yml) owns tool versions and commands. Its Python job
 runs the locked interface-enabled warnings-as-errors suite and distribution builds;
 its rendering-named job runs syntax checks, all frontend tests, Svelte/TypeScript checks
-and Vite build. Captured payloads compile against Python/TypeScript contracts.
+and Vite build. A separate browser-application job runs the real end-to-end acceptance
+suite. Captured payloads compile against Python/TypeScript contracts.
 
 Actions are commit-pinned with read-only permissions and no persisted checkout
 credentials or cluster secrets. CI caches dependencies, not `.venv` or native JIT

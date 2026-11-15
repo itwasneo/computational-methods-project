@@ -1,15 +1,21 @@
 <script lang="ts">
   import Results from './results/Results.svelte';
+  import Experiments from './experiments/Experiments.svelte';
   import FixturePreview from './FixturePreview.svelte';
   import { applyTheme, type Theme } from './theme';
+  import { ApiClient } from './results/client';
+  const api = new ApiClient();
+  let session = $state(0);
+  let disconnectVersion = $state(0);
 
-  let mode = $state<'live' | 'fixture'>('live');
+  let mode = $state<'experiments' | 'live' | 'fixture'>('experiments');
   let theme = $state<Theme>(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
   function toggleTheme() { theme = theme === 'light' ? 'dark' : 'light'; applyTheme(theme); }
 </script>
 
 <nav class="app-nav" aria-label="Results source">
-  <button aria-pressed={mode === 'live'} onclick={() => mode = 'live'}>Local results</button>
+  <button aria-pressed={mode === 'experiments'} onclick={() => mode = 'experiments'}>Experiments</button>
+  <button aria-pressed={mode === 'live'} onclick={() => mode = 'live'}>Saved results</button>
   <button aria-pressed={mode === 'fixture'} onclick={() => mode = 'fixture'}>Viewer preview</button>
   <button class="theme-toggle" onclick={toggleTheme}
     aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
@@ -25,5 +31,6 @@
   </button>
 </nav>
 <!-- Keep the paired session in memory when inspecting the separate fixture preview. -->
-<div hidden={mode !== 'live'}><Results /></div>
+<div hidden={mode !== 'experiments'}><Experiments {theme} {api} {disconnectVersion} onSession={connected => session = connected ? session + 1 : 0} /></div>
+<div hidden={mode !== 'live'}><Results {api} {session} onDisconnect={() => { session = 0; disconnectVersion++; }} /></div>
 {#if mode === 'fixture'}<FixturePreview {theme} />{/if}

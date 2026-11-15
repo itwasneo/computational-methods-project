@@ -73,7 +73,7 @@
       <button disabled={!viewer || !!error} aria-label="Zoom in" onclick={() => viewer?.zoom(1.2)}>+</button>
       <button disabled={!viewer || !!error} aria-label="Zoom out" onclick={() => viewer?.zoom(1 / 1.2)}>−</button>
       {#if inspection.route}
-        <label><input type="checkbox" bind:checked={showTour} onchange={() => viewer?.tour(showTour)} /> Fixture tour</label>
+        <label><input type="checkbox" bind:checked={showTour} onchange={() => viewer?.tour(showTour)} /> Show tour</label>
       {/if}
       <button
         class="fullscreen-button"

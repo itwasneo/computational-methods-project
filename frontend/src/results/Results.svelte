@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { initialState, ResultsController } from './controller';
   import { columns, filterValues } from './fields';
-  import { PAIRING_PATTERN } from './client';
+  import { PAIRING_PATTERN, ApiClient } from './client';
+  let { api = new ApiClient(), session = 0, onDisconnect }: { api?: ApiClient; session?: number; onDisconnect?: () => void } = $props();
   import { PAGE_DEFAULT, SHARDS_MAX, type Field, type Sort } from '../contracts';
 
   let view = $state(initialState());
-  const controller = new ResultsController(state => view = state);
+  const controller = new ResultsController(state => view = state, untrack(() => api));
+  $effect(() => { if (session) void controller.attach(); else if (onDisconnect) controller.disconnect(); });
   onDestroy(() => controller.dispose());
   let secret = $state('');
   let selected = $state<string[]>([]);
@@ -67,8 +69,10 @@
 
 <main>
   <h1>Local experiment results</h1>
-  <p class="notice">Read-only results from your selected workspace. No solver execution or real-data geometry yet.</p>
-  {#if !view.paired}
+  <p class="notice">Read-only saved results. Use Experiments to generate inputs, run jobs and inspect verified tours.</p>
+  {#if !view.paired && onDisconnect}
+    <p>Connect in the Experiments tab to browse this workspace.</p>
+  {:else if !view.paired}
     <form class="connection-panel" onsubmit={connect}>
       <p>Start the local backend on port 8000, then enter the random secret supplied at its startup or owner re-pairing prompt.</p>
       <label>Session pairing secret
@@ -83,7 +87,7 @@
       <div class="source-actions">
         <strong>Workspace: {view.workspace?.display_name ?? 'Loading'}</strong>
         <button disabled={!!view.busy} onclick={refresh}>Refresh catalog</button>
-        <button onclick={() => { controller.disconnect(); selected = []; manifest = ''; secret = ''; }}>Disconnect</button>
+        <button onclick={() => { controller.disconnect(); onDisconnect?.(); selected = []; manifest = ''; secret = ''; }}>Disconnect</button>
       </div>
       <fieldset disabled={!!view.busy || !view.catalogRevision}>
         <legend>Result shards (1–{SHARDS_MAX})</legend>

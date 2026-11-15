@@ -5,6 +5,23 @@ Use the [development environment](development.md) and run commands from the repo
 root. [Contracts](contracts.md) define the scientific rules; [manifests](manifests.md)
 define configuration and identity. The [local API](interface.md) delegates to this same pipeline.
 
+## Interactive experiments
+
+For generation → configuration → execution → analysis without writing JSON, use the
+[browser application](interface.md#start-the-application). It creates immutable inputs
+and the accepted manifest through the shared backend, exposes job controls and displays
+verified tours, comparisons and recorded histories.
+
+The CLI workflow below is for scripted campaigns. The first example uses two files
+already supplied in the checkout: `examples/instances/square.json` contains city
+coordinates and provenance; `examples/manifests/nn-fixed-work.json` describes the
+experiments. Neither needs downloading or generation. The manifest references the
+instance ID; `--instance ID=PATH` tells this machine where to load the matching artifact.
+The ID is stored at `instance.instance_id` in the artifact and is generated from the
+ordered coordinate checksum, city count and objective—not its filename. For your own
+scripted inputs, use [instance generation](#instances-and-artifacts) and construct the
+manifest's instance entry from `record.descriptor`, rather than copying hashes manually.
+
 ## Run a manifest
 
 ```bash
