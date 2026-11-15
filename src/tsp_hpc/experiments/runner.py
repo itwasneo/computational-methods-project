@@ -11,6 +11,7 @@ from dataclasses import replace
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 from time import perf_counter
 from uuid import uuid4
@@ -212,7 +213,8 @@ def _trial(plan, execution, spec, capability_error, bindings, provenance, campai
 
 def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path],
                  output_path: str | Path, max_matrix_bytes: int = DEFAULT_MAX_MATRIX_BYTES,
-                 registry: SolverRegistry | None = None) -> dict:
+                 registry: SolverRegistry | None = None, campaign_id: str | None = None,
+                 checkpoint=None, on_trial=None) -> dict:
     """Execute plans in order and return the persisted campaign summary.
 
     Bind artifact paths explicitly by manifest instance ID. Each trial reloads,
@@ -224,8 +226,16 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
     The final summary measures API entry through all trial writes, excluding its
     own serialization/write, CLI parsing and process startup/imports. An absent
     summary signals an interrupted/failed campaign, not resumable completion.
+    Trusted orchestration may provide a campaign UUID and callbacks: checkpoint
+    runs before each trial; on_trial receives an attempt ID and detached counts
+    after its record is durable. Callback errors abort without a completed footer.
+    No solver checkpoint/resume or alternate scientific execution path is added.
     """
     campaign_start = perf_counter()
+    if campaign_id is not None and (type(campaign_id) is not str or not re.fullmatch(r"[0-9a-f]{32}", campaign_id)):
+        raise ValueError("campaign_id must be a lowercase 32-character UUID hex identity")
+    if any(callback is not None and not callable(callback) for callback in (checkpoint, on_trial)):
+        raise TypeError("campaign callbacks must be callable")
     registry = default_registry() if registry is None else registry
     if not isinstance(registry, SolverRegistry):
         raise TypeError("registry must be a SolverRegistry")
@@ -259,7 +269,7 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
             seen.add(identity)
         resolved.append((plan, execution, error, spec))
     provenance = runtime_provenance()
-    campaign_id = uuid4().hex
+    campaign_id = uuid4().hex if campaign_id is None else campaign_id
     counts = {"completed": 0, "failed": 0}
     persistence_time = 0.0
     trial_timings = []
@@ -268,6 +278,8 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
     with output.open("x", encoding="utf-8") as stream:
         setup_time = perf_counter() - campaign_start
         for plan, execution, error, spec in resolved:
+            if checkpoint is not None:
+                checkpoint()
             trial_start = perf_counter()
             record = _trial(plan, execution, spec, error, bindings, provenance, campaign_id, max_matrix_bytes)
             write_start = perf_counter()
@@ -278,6 +290,8 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
                                   "persistence_time_s": write_end - write_start,
                                   "end_to_end_time_s": write_end - trial_start})
             counts[record["outcome"]] += 1
+            if on_trial is not None:
+                on_trial(record["attempt_id"], dict(counts))
         summary = {
             "schema_version": 3, "record_type": "campaign_summary", "campaign_id": campaign_id,
             "counts": counts, "planned_trials": len(resolved), "trial_timings": trial_timings,

@@ -76,6 +76,14 @@ class PreflightStore:
             record, _, snapshot = self.snapshots.read(snapshot_id)
             config = configuration.model_dump()
             algorithm, budget = config["algorithm"], config["budget"]
+            try:
+                implementations = [self.registry.resolve(algorithm, implementation=name,
+                    distance_kind=record.instance.distance_kind, timed="time_limit_s" in budget,
+                    record_history=config["record_history"]).implementation for name in config["implementations"]]
+            except (ValueError, TypeError):
+                raise InterfaceError("unsupported_execution", "Algorithm, implementation, objective or recording is unavailable.", 422) from None
+            if len(set(implementations)) != len(implementations):
+                raise InterfaceError("invalid_plan", "Default and explicit implementation choices duplicate an execution.", 422)
             logical = budget["start_cities"] if algorithm == "nn" else config["logical_search_ids"]
             invocations = 1 if algorithm == "nn" else len(logical)
             count = len(config["repetitions"]) * len(config["implementations"]) * len(config["distance_modes"])
@@ -108,16 +116,9 @@ class PreflightStore:
                     per_call = min(per_call, budget["max_proposals"] + 1)
                 points = count * invocations * per_call
             output_estimate = count * (32768 + len(encode(record.provenance)) + invocations * record.instance.n_cities * 24) + points * 512
-            if points > self.limits.max_history_points or output_estimate > self.limits.max_result_bytes:
+            if (points > self.limits.max_history_points or output_estimate > self.limits.max_result_bytes
+                    or output_estimate // count > self.limits.max_record_bytes):
                 raise InterfaceError("resource_limit", "Plan exceeds history/output limits; reduce work or recording bounds.", 413)
-            try:
-                implementations = [self.registry.resolve(algorithm, implementation=name,
-                    distance_kind=record.instance.distance_kind, timed=allowance is not None,
-                    record_history=config["record_history"]).implementation for name in config["implementations"]]
-            except (ValueError, TypeError):
-                raise InterfaceError("unsupported_execution", "Algorithm, implementation, objective or recording is unavailable.", 422) from None
-            if len(set(implementations)) != len(implementations):
-                raise InterfaceError("invalid_plan", "Default and explicit implementation choices duplicate an execution.", 422)
             config["implementations"] = implementations
             experiment = {key: config[key] for key in ("algorithm", "parameters", "budget", "repetitions", "record_history")}
             experiment.update(instance_id=record.instance.instance_id, solver_seed=int(config["solver_seed"]))
@@ -149,7 +150,10 @@ class PreflightStore:
                 raise InterfaceError("resource_limit", "Reviewed plan response exceeds its bound.", 413)
             internal = {"public": payload, "manifest": manifest.to_dict(), "runtime": runtime,
                         "session_id": session_id, "limits": asdict(self.limits)}
-            self._plans[identifier] = ReviewedPlan(encode(internal), self._clock() + self.limits.preflight_seconds)
+            encoded = encode(internal)
+            if len(encoded) + 256 > min(self.limits.max_plan_bytes, 4 * 1024 * 1024):
+                raise InterfaceError("resource_limit", "Private submission exceeds its byte bound.", 413)
+            self._plans[identifier] = ReviewedPlan(encoded, self._clock() + self.limits.preflight_seconds)
             return payload
 
     def validate(self, identifier, session_id):
