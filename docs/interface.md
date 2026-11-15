@@ -141,6 +141,9 @@ later environment edits. These bindings are observations, not machine attestatio
 | --- | --- |
 | `POST /api/jobs/submit` | `JobSubmitRequest` / `JobSubmission` (202, including deduplicated retries) |
 | `POST /api/jobs/status` | `JobStatusRequest` / `JobEnvelope` |
+| `POST /api/jobs/review` | `JobStatusRequest` / `JobReview` (original accepted public plan, not a new preflight) |
+| `POST /api/jobs/control` | `ExecutionControlRequest` / `JobEnvelope` |
+| `POST /api/queue/continue` | `QueueContinueRequest` / `QueueStatus` |
 | `POST /api/jobs/query` | `JobsQueryRequest` / `JobsPage` |
 | `POST /api/queue/status` | `RunContext` / `QueueStatus` |
 
@@ -180,6 +183,53 @@ appear only after verified worker exit and shared source/manifest validation;
 independent final-tour authentication is a separate publication boundary. PIDs,
 internal paths, raw plans and records are not job response fields. Paging cursors
 are bound to the current queue revision and cannot silently restart pagination.
+
+### Cancellation, recovery and fresh reruns
+
+Controls name a job and its current `expected_revision`. A stale state requires a
+refresh, not an implicit repeated side effect. `cancel_queued` removes only pending
+work (including held jobs); `stop_after_trial` persists a request for the next
+trial boundary the child observes. It does **not** interrupt or invent a partial
+logical search/trial. Repeated current-revision graceful requests are idempotent.
+`stop_now` additionally requires `confirm_stop_now: true` and signals only the
+verified owned process handle. A requested stop cannot be downgraded.
+
+`stop_requested` and `stopping` are not terminal evidence. A terminal state requires
+observed pidfd exit, or reconciliation against the original persistent worker
+lease when no identified child survives. Receipt/prefix/footer disagreements are
+explicit failures; a torn operational receipt does not erase valid scientific
+records. A completion already recorded before a racing stop remains completion.
+The solver's own `time_limit` is still a normal scientific termination, not job
+cancellation. The external job wall/CPU/file/address-space ceiling is separate.
+
+Closing a browser or revoking/re-pairing its session does not cancel owned work.
+Orderly backend shutdown holds pending work and stops an active worker as an
+**interruption**, not a completed campaign. After an abrupt backend death, a child
+can survive with its lease. Restart verifies boot identity, start ticks and the
+exact installed-worker/job marker before recovering a pidfd. It never sends a
+signal to an unverified or merely reused PID. Unverifiable live ownership is
+`recovering`; pending work stays held and immediate signalling is denied.
+
+Every restart holds dispatch. After inspection, an authorized client may call
+`/api/queue/continue` with the current queue revision; queued immutable inputs and
+runtime/resource bindings are rechecked before launch. No interrupted/failed job
+is retried or continued. Job controls affect one campaign; other pending campaigns
+can follow it when dispatch remains enabled, so cancel unwanted pending work too.
+
+For a deliberate **whole-campaign rerun**, obtain the original public configuration
+from `/api/jobs/review`, review it against the current capabilities and original
+snapshot with `/api/runs/preflight`, then submit a **new submission key**. This
+creates fresh campaign/attempt IDs and exclusive output files, while scientific
+IDs/seeds can remain identical. There is no append, resume, checkpoint continuation
+or implicit latest-successful-attempt selection. Old submission keys remain retries
+of their original jobs, including cancelled/failed jobs.
+
+Private queue format v2 records the worker-lease identity and original wall ceiling.
+Unsupported pre-release/unknown queue schemas and missing state with retained jobs
+fail closed without migration, resetting keys or deleting evidence; retain the
+artifacts and use a new root or the compatible controller. Scientific JSONL
+versions remain governed by the shared backward-compatible reader. This private
+state protocol is not same-user tamper attestation.
 
 ### Session and HTTP boundary
 

@@ -143,6 +143,7 @@ class LocalStorage(Directory):
             lock_info = os.fstat(self._lock_fd)
             if not stat.S_ISREG(lock_info.st_mode) or lock_info.st_nlink != 1:
                 raise ValueError("invalid controller lock")
+            self._lock_identity = (lock_info.st_dev, lock_info.st_ino)
             try:
                 fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -177,6 +178,9 @@ class LocalStorage(Directory):
         info = os.stat(".tsp-local", dir_fd=self.authority.fd, follow_symlinks=False)
         if not stat.S_ISDIR(info.st_mode) or (info.st_dev, info.st_ino) != self.identity:
             raise InterfaceError("execution_unavailable", "Private execution directory changed.", 503)
+        lock = os.stat("controller.lock", dir_fd=self.fd, follow_symlinks=False)
+        if not stat.S_ISREG(lock.st_mode) or lock.st_nlink != 1 or (lock.st_dev, lock.st_ino) != self._lock_identity:
+            raise InterfaceError("execution_unavailable", "Controller lock identity changed.", 503)
 
     def close(self):
         if self._lock_fd >= 0:

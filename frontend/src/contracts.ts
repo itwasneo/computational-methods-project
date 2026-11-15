@@ -294,6 +294,7 @@ export interface JobRecord extends Omit<JobStatus, keyof RunContext | 'state'> {
   failure_code: string | null;
 }
 export interface JobEnvelope extends RunContext { job: JobRecord; }
+export interface JobReview extends JobEnvelope { plan: Omit<ReviewedExecution, keyof RunContext>; }
 export interface JobSubmission extends JobEnvelope { deduplicated: boolean; }
 export interface JobsQueryRequest extends RunContext { limit: number; cursor: string | null; }
 export interface JobsPage extends RunContext {
