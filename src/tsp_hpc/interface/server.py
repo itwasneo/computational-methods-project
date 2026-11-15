@@ -17,7 +17,7 @@ from tsp_hpc.interface.workspace import WorkspaceCatalog
 from tsp_hpc.interface.queries import TrialQueries
 from tsp_hpc.interface.requests import (
     ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest, RunRequest,
-    InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest,
+    InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest, ExecutionPreflightRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -210,6 +210,8 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
                 storage = LocalStorage(execution, catalog._root)
                 app.state.storage = storage
                 app.state.snapshots = SnapshotStore(storage)
+            from tsp_hpc.interface.planning import PreflightStore
+            app.state.preflights = PreflightStore(execution, app.state.snapshots)
             datasets = DatasetStore(catalog)
             app.state.datasets = datasets
             app.state.trial_queries = TrialQueries(datasets)
@@ -273,6 +275,20 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
         with authorized_operation(request):
             context = run_context(request, body)
             return {**context, **request.app.state.execution.describe()}
+
+    @app.post("/api/runs/capabilities")
+    def run_capabilities(body: RunRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **request.app.state.preflights.capabilities()}
+
+    @app.post("/api/runs/preflight")
+    def run_preflight(body: ExecutionPreflightRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            plan = request.app.state.preflights.preflight(body.instance_snapshot_id, body.configuration,
+                                                         body.capabilities_revision, body.session_id)
+            return {**context, **plan}
 
     def snapshots_for(request):
         request.app.state.execution.require()

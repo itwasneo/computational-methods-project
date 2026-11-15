@@ -104,6 +104,37 @@ integers). API descriptor seeds remain decimal strings. Read-only mode creates n
 state and cannot load/generate/export execution snapshots. None of these routes
 executes a solver or supplies synthetic final tours.
 
+### Capabilities and non-executing preflight
+
+`POST /api/runs/capabilities` takes `RunContext` and returns
+`ExecutionCapabilities`, including real registry entries, availability/reasons,
+resolved defaults, limits and a capabilities revision. Only NN is production
+available today. The local **process worker requires Linux pidfd support** for
+safe cancellation/recovery; this does not restrict the standalone scientific CLI.
+Disabled JIT is explicitly unavailable, never an interpreted fallback.
+
+`POST /api/runs/preflight` takes `ExecutionPreflightRequest` and returns
+`ReviewedExecution`: effective configuration, ordered trial/logical identities and
+exact string seeds, snapshot checksum, explicit per-invocation budget scope,
+conservative memory/output/history estimates and an expiring review identity.
+NN has one ordered batch; GA/SA have independent populations/chains. Summed search
+allowances are not a campaign wall-clock guarantee: setup/compilation/validation
+also consume the separate job ceiling. Matrix estimates are not total RSS.
+
+Preflight loads the immutable canonical snapshot but does not generate data,
+prepare distances, warm/execute solvers, launch a worker or write result files.
+Cardinalities, plan/response bytes, matrix/population estimates, recording bounds
+and total time allowances are checked before manifest expansion. Scientific
+normalization, registry resolution and logical RNG planning are the CLI's shared
+APIs. Default/explicit aliases that duplicate an execution are rejected.
+
+By default at most 64 plans remain valid for 900 seconds. Plans bind the current
+session, output root, snapshot, code/dependency/compiler context and resource
+policy. Restart, re-pairing, expiration or observed changes require fresh review;
+code changes require backend restart, not use of stale imported modules. Known
+compiler settings are resolved for the child process rather than reinterpreting
+later environment edits. These bindings are observations, not machine attestation.
+
 ### Session and HTTP boundary
 
 Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.

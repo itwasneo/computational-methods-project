@@ -468,3 +468,35 @@ class StoredInstance(RunContext):
     content_sha256: str
     instance: InstanceDescriptor
     source: SnapshotSource
+
+
+class ExecutionCapabilities(ExecutionInfo):
+    capabilities_revision: str
+    implementations: list[dict[str, object]]  # SolverSpec.description + default/availability.
+    budget_scope: Literal["per-logical-invocation"]
+    worker_processes: Literal[1]
+
+
+class ReviewedTrial(TypedDict):
+    search_id: str
+    requested_execution_id: str
+    implementation: str
+    distance_mode: DistanceMode
+    repetition: int
+    trial_seed: str
+    invocations: list[dict[str, str | None]]  # kind, logical_id, exact decimal seed.
+
+
+class ReviewedExecution(ExecutionPreflightRequest):
+    preflight_id: str
+    snapshot_sha256: str
+    budget_scope: Literal["per-logical-invocation"]
+    trial_count: int
+    trials: list[ReviewedTrial]
+    estimated_matrix_bytes: int
+    maximum_history_points: int
+    estimated_output_bytes: int
+    summed_search_allowance_s: float | None
+    job_time_ceiling_s: int
+    valid_for_s: int
+    output_root: OutputRoot

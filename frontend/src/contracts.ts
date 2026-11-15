@@ -263,3 +263,27 @@ export interface StoredInstance extends RunContext {
   instance: InstanceDescriptor;
   source: { kind: 'artifact' | 'generation'; sha256: string | null };
 }
+export interface ExecutionCapabilities extends ExecutionInfo {
+  capabilities_revision: string;
+  implementations: Record<string, unknown>[];
+  budget_scope: 'per-logical-invocation';
+  worker_processes: 1;
+}
+export interface ReviewedExecution extends ExecutionPreflightRequest {
+  preflight_id: string;
+  snapshot_sha256: string;
+  budget_scope: 'per-logical-invocation';
+  trial_count: number;
+  trials: {
+    search_id: string; requested_execution_id: string; implementation: string;
+    distance_mode: DistanceMode; repetition: number; trial_seed: string;
+    invocations: { kind: string; logical_id: string | null; seed: string }[];
+  }[];
+  estimated_matrix_bytes: number;
+  maximum_history_points: number;
+  estimated_output_bytes: number;
+  summed_search_allowance_s: number | null;
+  job_time_ceiling_s: number;
+  valid_for_s: number;
+  output_root: OutputRoot;
+}
