@@ -1,13 +1,13 @@
 # Optional local interface
 
-The interface is a read-only companion to [run → analyze](usage.md), not a second scientific engine. Python owns validation and statistics. **Browser benchmarks, profiling campaigns and numerical browser-performance gates remain withdrawn**, not certified as passed.
+The interface is a read-only-by-default companion to [run → analyze](usage.md), not a second scientific engine. Python owns validation and statistics. **Browser benchmarks, profiling campaigns and numerical browser-performance gates remain withdrawn**, not certified as passed.
 
 ## Current boundary and selected stack
 
 | Part | Implemented | Not implemented |
 | --- | --- | --- |
 | Svelte 5 / TypeScript / Vite | Pairing, workspace selection, ingestion status, paged real trial rows, server-side filters/sorting | Facet lists, charts, editor and job controls |
-| FastAPI / Pydantic / Uvicorn | Session and owner-terminal re-pairing, authorized catalog, bounded ingestion and scalar trial queries | Instance/tour authentication, details/geometry endpoints, solver jobs |
+| FastAPI / Pydantic / Uvicorn | Session and owner-terminal re-pairing, authorized catalog, bounded ingestion/scalar queries, opt-in immutable instance snapshots | Tour binding, details/geometry endpoints, solver jobs |
 | WebGL2 | Separate synthetic viewer preview | Real-result artifact binding |
 | Delivery | Guarded same-origin development proxy | Bundled frontend serving from the installed CLI |
 
@@ -72,6 +72,38 @@ Stop-now requests require `confirm_stop_now: true` and an expected job revision.
 All actual routes use the same `ErrorResponse`/`retryable` envelope; the older
 `RunError` recovery DTO remains a design fixture only. No new UI is implemented.
 
+### Immutable instances and canonical export
+
+With execution explicitly enabled, the backend creates private `.tsp-local` state
+inside the chosen output root (mode 0700, private files, no-follow access). A
+controller lock excludes another backend using that root. State is bound to the
+original read-workspace directory identity; it cannot be silently reused for a
+different workspace. Internal paths never become HTTP authority.
+
+| Route | Request / response |
+| --- | --- |
+| `POST /api/instances/load` | `InstanceLoadRequest` / `StoredInstance` (201) |
+| `POST /api/instances/generate` | `InstanceGenerateRequest` / `StoredInstance` (201) |
+| `POST /api/instances/snapshot` | `SnapshotRequest` / `StoredInstance` |
+| `POST /api/instances/export` | `SnapshotRequest` / canonical `instance.json` attachment |
+
+Loading captures an authorized current catalog candidate using the shared loader;
+generation uses the existing Python uniform/clustered generators and private RNG.
+Limits apply before large allocation: by default 4096 cities, 2 MiB per artifact,
+64 snapshots. Snapshots retain exact coordinates, signed zero, seeds, objective,
+checksums and provenance, using exclusive files and last-step metadata publication.
+Identical generation can share scientific identity, never a snapshot handle.
+Original source changes do not change an already captured immutable snapshot.
+Changes to stored snapshot bytes/metadata fail closed. Partial creation is retained
+as evidence and consumes capacity, not published as a successful snapshot.
+
+Exports are bounded binary attachments of the validated canonical CLI artifact,
+not arbitrary file downloads. Save the bytes and use `load_instance`; do not parse
+and re-serialize them through JavaScript Number (artifact seeds are uint64 JSON
+integers). API descriptor seeds remain decimal strings. Read-only mode creates no
+state and cannot load/generate/export execution snapshots. None of these routes
+executes a solver or supplies synthetic final tours.
+
 ### Session and HTTP boundary
 
 Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.
@@ -93,7 +125,7 @@ Request bodies are limited to **16 KiB**, including chunked bodies; Uvicorn conc
 The owner selects a trusted POSIX root at startup. Its open directory descriptor anchors no-follow descendant reads; changing roots requires restart.
 
 - Only regular `.json`/`.jsonl` candidates are listed; hidden entries, symlinks, special files and unsupported suffixes are excluded. Candidate names are escaped display labels, not paths or authority. Embedded artifact paths confer no access.
-- Handles are opaque and backend/workspace-bound, not credentials; re-pairing does not replace them. No uploads, writes, arbitrary paths, downloads or raw-file endpoints exist. Ingestion reopens known handles with no-follow/nonblocking flags and verifies identity before/after reads.
+- Handles are opaque and backend/workspace-bound, not credentials; re-pairing does not replace them. The read workspace permits no uploads, writes, arbitrary paths or raw-file endpoints. Opt-in execution snapshots have the separate bounded canonical export described above. Ingestion reopens known handles with no-follow/nonblocking flags and verifies identity before/after reads.
 - Catalog scans allow **10,000 entries / 16 directory levels**; exceeding either publishes no partial catalog. Device/inode/mode/size/mtime/ctime and directory changes invalidate metadata. Refresh rotates revision, handles and signed cursors even without file changes.
 
 Catalog revisions are not content validation. Choosing a root authorizes its regular files, including owner-created hard links. Hostile same-user writers, filesystem owners/mounts, arbitrary directory-renaming races and metadata forgery between syscalls are outside the threat model; keep untrusted writers out of the root.

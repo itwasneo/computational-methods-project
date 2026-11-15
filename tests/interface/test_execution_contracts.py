@@ -114,4 +114,5 @@ def test_http_authority_info_is_bound_to_current_session_and_not_browser_elevate
         app.state.pairing.rearm(secrets.token_urlsafe(32))
         assert client.post("/api/execution", json=body).status_code == 403
     assert app.state.execution.fd == -1
-    assert not list(output.iterdir())  # Authority inspection has no execution side effects.
+    if not enabled:
+        assert not list(output.iterdir())  # Default/read-only never creates execution state.

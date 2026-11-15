@@ -9,7 +9,7 @@ import threading
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException
 
 from tsp_hpc.interface.errors import InterfaceError
@@ -17,6 +17,7 @@ from tsp_hpc.interface.workspace import WorkspaceCatalog
 from tsp_hpc.interface.queries import TrialQueries
 from tsp_hpc.interface.requests import (
     ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest, RunRequest,
+    InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -195,13 +196,20 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
     async def lifespan(app):
         from tsp_hpc.interface.ingestion import DatasetStore
         from tsp_hpc.interface.execution import ExecutionAuthority
-        catalog = datasets = execution = None
+        catalog = datasets = execution = storage = None
         try:
             catalog = WorkspaceCatalog(workspace)
             catalog.refresh()
             app.state.catalog = catalog
             execution = ExecutionAuthority(workspace, enabled=enable_execution, output_root=execution_root, limits=execution_limits)
             app.state.execution = execution
+            app.state.snapshots = None
+            if execution.enabled:
+                from tsp_hpc.interface.storage import LocalStorage
+                from tsp_hpc.interface.snapshots import SnapshotStore
+                storage = LocalStorage(execution, catalog._root)
+                app.state.storage = storage
+                app.state.snapshots = SnapshotStore(storage)
             datasets = DatasetStore(catalog)
             app.state.datasets = datasets
             app.state.trial_queries = TrialQueries(datasets)
@@ -211,6 +219,8 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
                 if datasets is not None:
                     datasets.close()
             finally:
+                if storage is not None:
+                    storage.close()
                 if execution is not None:
                     execution.close()
                 if catalog is not None:
@@ -263,6 +273,37 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
         with authorized_operation(request):
             context = run_context(request, body)
             return {**context, **request.app.state.execution.describe()}
+
+    def snapshots_for(request):
+        request.app.state.execution.require()
+        return request.app.state.snapshots
+
+    @app.post("/api/instances/load", status_code=201)
+    def instance_load(body: InstanceLoadRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            snapshot = snapshots_for(request).load(request.app.state.catalog, body.artifact_handle, body.artifact_revision)
+            return {**context, **snapshot}
+
+    @app.post("/api/instances/generate", status_code=201)
+    def instance_generate(body: InstanceGenerateRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **snapshots_for(request).generate(body.generation.model_dump())}
+
+    @app.post("/api/instances/snapshot")
+    def instance_snapshot(body: SnapshotRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **snapshots_for(request).describe(body.instance_snapshot_id)}
+
+    @app.post("/api/instances/export")
+    def instance_export(body: SnapshotRequest, request: Request):
+        with authorized_operation(request):
+            run_context(request, body)
+            raw = snapshots_for(request).export(body.instance_snapshot_id)
+            return Response(raw, media_type="application/octet-stream", headers={
+                "Content-Disposition": 'attachment; filename="instance.json"', "X-Request-ID": body.request_id})
 
     @app.get("/api/workspace")
     def workspace_info(request: Request):
