@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AnalysisQuery, DistanceMode, JobAnalysisResponse } from '../contracts';
   import { selection } from './controller';
+  import { cellText, columnLabel, exactTitle } from '../display';
   let { page, busy, instanceId, implementations, references, analyze, inspect }:
     { page: JobAnalysisResponse; busy: boolean; instanceId: string; implementations: string[];
       references: { artifact_handle: string; display_name: string; revision: string }[];
@@ -93,9 +94,9 @@
     </svg><figcaption>Recorded observations on this page only; no connecting lines or interpolation. Exact values and attempt IDs are in the table.</figcaption></figure>
   {/if}
   <div class="source-actions"><strong>{page.table}: {page.total_rows} rows · displaying {page.items.length}</strong>
-    <label><input type="checkbox" bind:checked={full} /> All columns</label><button onclick={download}>Download this page (JSON)</button>
+    <label><input type="checkbox" bind:checked={full} /> Full values and all columns</label><button onclick={download}>Download this page (JSON)</button>
   </div>
-  <div class="table-region"><table><thead><tr>{#each columns as column}<th>{column}</th>{/each}</tr></thead><tbody>
-    {#each page.items as row}<tr>{#each columns as column}<td>{#if column === 'attempt_id' && typeof row[column] === 'string'}<button disabled={busy} onclick={() => inspect(String(row[column]))}>{String(row[column])}</button>{:else}{text(row[column])}{/if}</td>{/each}</tr>{:else}<tr><td colspan={columns.length || 1}>No rows for this selection.</td></tr>{/each}
+  <div class="table-region"><table><thead><tr>{#each columns as column}<th title={column}>{full ? column : columnLabel(column)}</th>{/each}</tr></thead><tbody>
+    {#each page.items as row}<tr>{#each columns as column}<td title={exactTitle(column, row[column])}>{#if column === 'attempt_id' && typeof row[column] === 'string'}<button aria-label={String(row[column])} disabled={busy} onclick={() => inspect(String(row[column]))}>{full ? text(row[column]) : cellText(column, row[column])}</button>{:else}{full ? text(row[column]) : cellText(column, row[column])}{/if}</td>{/each}</tr>{:else}<tr><td colspan={columns.length || 1}>No rows for this selection.</td></tr>{/each}
   </tbody></table></div>
 </section>

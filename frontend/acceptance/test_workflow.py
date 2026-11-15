@@ -135,7 +135,16 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         assert {r["effective_execution"]["distance_mode"] for r in trials} == {"dense", "on_demand"}
         assert len({r["result"]["best_cost"] for r in trials}) == 1
         attempt = trials[0]["attempt_id"]
-        page.get_by_role("button", name=attempt, exact=True).click()
+        attempt_button = page.get_by_role('button', name=attempt, exact=True)
+        expect(attempt_button).to_have_text(f'{attempt[:8]}…{attempt[-6:]}')
+        time_cell = attempt_button.locator('xpath=ancestor::tr').locator('td[title^="search_time_s:"]')
+        raw_seconds = time_cell.get_attribute('title').split(': ', 1)[1].removesuffix(' s')
+        assert time_cell.inner_text().endswith((' ms', ' s', ' min', ' h'))
+        page.get_by_label('Full values and all columns').check()
+        expect(attempt_button).to_have_text(attempt)
+        expect(time_cell).to_have_text(raw_seconds)
+        page.get_by_label('Full values and all columns').uncheck()
+        attempt_button.click()
         expect(page.get_by_role("heading", name="Verified final result")).to_be_visible()
         expect(page.get_by_label("Show tour")).to_be_checked()
         expect(page.get_by_role("region", name="Instance inspection")).to_be_visible()

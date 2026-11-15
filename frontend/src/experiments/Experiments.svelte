@@ -3,6 +3,7 @@
   import { ApiClient } from '../results/client';
   import { ExperimentController, initialState, terminal, shouldPoll } from './controller';
   import { decodeGeometry } from './geometry';
+  import { compactId } from '../display';
   import Analysis from './Analysis.svelte';
   import InstanceInspection from '../InstanceInspection.svelte';
   import type { Theme } from '../theme';
@@ -145,7 +146,7 @@
         {#if view.queue?.dispatch === 'held'}<button disabled={!!view.busy} onclick={() => controller.continueQueue()}>Continue held queue</button>{/if}</div>
         <p>Disconnecting does not cancel work. Restart holds dispatch. Completed campaigns may contain failed trials; inspect the counts.</p>
         <div class="table-region"><table><thead><tr><th>Job</th><th>State</th><th>Recorded / planned</th><th>Failed</th></tr></thead><tbody>
-          {#each view.jobs as job}<tr><td><button disabled={!!view.busy} aria-pressed={view.selected?.job_id === job.job_id} onclick={() => { stopConfirmed = false; void controller.select(job); }}>{job.job_id}</button></td><td>{job.state}</td><td>{job.recorded_trials} / {job.planned_trials}</td><td>{job.failed_trials}</td></tr>{:else}<tr><td colspan="4">No submitted experiments.</td></tr>{/each}
+          {#each view.jobs as job}<tr><td><button title={job.job_id} aria-label={job.job_id} disabled={!!view.busy} aria-pressed={view.selected?.job_id === job.job_id} onclick={() => { stopConfirmed = false; void controller.select(job); }}>{compactId(job.job_id)}</button></td><td>{job.state}</td><td>{job.recorded_trials} / {job.planned_trials}</td><td>{job.failed_trials}</td></tr>{:else}<tr><td colspan="4">No submitted experiments.</td></tr>{/each}
         </tbody></table></div>
         {#if view.selected}<h3>Selected job: {view.selected.state}</h3>
           {#if view.selected.failure_code}<p role="alert">Operational failure: {view.selected.failure_code}. Valid recorded evidence may still be available.</p>{/if}

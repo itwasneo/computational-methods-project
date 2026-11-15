@@ -81,6 +81,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .candidate-list { max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
 .source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0; }
 .error-panel { border-color: var(--danger); }
+.live-table { table-layout: auto; min-width: 0; }
 .live-table td { white-space: normal; overflow-wrap: anywhere; }
 .live-table .filter-panel { max-height: min(360px, calc(100dvh - 16px)); }
 button, input[type="checkbox"] { cursor: pointer; }
