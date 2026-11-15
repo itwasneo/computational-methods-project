@@ -300,3 +300,49 @@ export interface JobsQueryRequest extends RunContext { limit: number; cursor: st
 export interface JobsPage extends RunContext {
   queue_revision: string; items: JobRecord[]; next_cursor: string | null;
 }
+export interface JobPublicationRequest extends JobStatusRequest {
+  expected_revision: string; result_revision: string; instance_snapshot_id: string;
+  campaign_id: string; attempt_id: string;
+}
+export interface JobGeometryRequest extends JobPublicationRequest { geometry_revision: string; }
+export interface TrialPublicationRequest extends Context {
+  campaign_id: string; attempt_id: string; instance_handle: string; artifact_catalog_revision: string;
+}
+export interface TrialGeometryRequest extends TrialPublicationRequest { geometry_revision: string; }
+export interface WorkObservation {
+  nn_starts_completed: number | string; ga_generations_completed: number | string;
+  sa_proposals_evaluated: number | string; full_tour_evaluations: number | string;
+}
+export interface FinalObservation {
+  status: 'ok' | 'no_solution' | 'failed'; best_cost: number | null; verified_cost: number | null;
+  work: WorkObservation | null; termination_reason: string | null; best_logical_index: number | null;
+}
+export interface LogicalObservation {
+  logical_index: number; kind: string; logical_id: string | null; seed: string;
+  status: 'ok' | 'no_solution'; best_cost: number | null; verified_cost: number | null;
+  work: WorkObservation; termination_reason: string; search_time_s: number; history_points: number | null;
+}
+export interface VerifiedDetails {
+  row: TrialRow; campaign_id: string; attempt_id: string; search_id: string;
+  requested_execution_id: string; execution_id: string | null; instance: InstanceDescriptor;
+  snapshot_sha256: string; geometry_revision: string; solver_seed: string; trial_seed: string;
+  variant: string; parameters: Record<string, unknown>; budget: Record<string, unknown>;
+  budget_scope: 'per-logical-invocation' | 'legacy-nn-batch'; record_history: boolean;
+  history_policy: Record<string, unknown> | null; logical_search_ids: string[] | null;
+  logical_results: LogicalObservation[] | null; result: FinalObservation; timings: Record<string, number>;
+  error_phase: string | null; execution_kind: string; native_verified: boolean | null;
+}
+export interface VerifiedGeometry {
+  campaign_id: string; attempt_id: string; instance: InstanceDescriptor;
+  snapshot_sha256: string; geometry_revision: string;
+  coordinates: { encoding: 'f64-le-base64'; data: string };
+  tour: { encoding: 'u32-le-base64'; data: string } | null;
+}
+export interface JobPublicationContext extends RunContext {
+  job_id: string; job_revision: string; result_revision: string; instance_snapshot_id: string;
+}
+export interface JobDetailsResponse extends JobPublicationContext { details: VerifiedDetails; }
+export interface JobGeometryResponse extends JobPublicationContext { geometry: VerifiedGeometry; }
+export interface TrialPublicationContext extends Context { instance_handle: string; artifact_catalog_revision: string; }
+export interface TrialDetailsResponse extends TrialPublicationContext { details: VerifiedDetails; }
+export interface TrialGeometryResponse extends TrialPublicationContext { geometry: VerifiedGeometry; }

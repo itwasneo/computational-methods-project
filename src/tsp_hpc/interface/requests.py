@@ -270,3 +270,27 @@ class SnapshotRequest(RunRequest):
 class JobsQueryRequest(RunRequest):
     limit: StrictInt = Field(ge=1, le=PAGE_MAX)
     cursor: StrictStr | None = Field(max_length=512)
+
+
+class JobPublicationRequest(JobStatusRequest):
+    expected_revision: OpaqueId
+    result_revision: OpaqueId
+    instance_snapshot_id: OpaqueId
+    campaign_id: OpaqueId
+    attempt_id: OpaqueId
+
+
+class JobGeometryRequest(JobPublicationRequest):
+    geometry_revision: OpaqueId
+
+
+class TrialPublicationRequest(DatasetStatusRequest):
+    revision: OpaqueId
+    campaign_id: OpaqueId
+    attempt_id: OpaqueId
+    instance_handle: OpaqueId
+    artifact_catalog_revision: OpaqueId
+
+
+class TrialGeometryRequest(TrialPublicationRequest):
+    geometry_revision: OpaqueId

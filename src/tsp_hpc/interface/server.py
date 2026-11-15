@@ -19,6 +19,7 @@ from tsp_hpc.interface.requests import (
     ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest, RunRequest,
     InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest, ExecutionPreflightRequest,
     JobSubmitRequest, JobStatusRequest, JobsQueryRequest, ExecutionControlRequest, QueueContinueRequest,
+    JobPublicationRequest, JobGeometryRequest, TrialPublicationRequest, TrialGeometryRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -226,6 +227,8 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
                 jobs = JobQueue(storage, app.state.snapshots, app.state.preflights)
                 cleanup.callback(jobs.close)  # Hold/stop jobs before waiting for ingestion shutdown.
                 app.state.jobs = jobs
+            from tsp_hpc.interface.results import ResultPublisher
+            app.state.results = ResultPublisher(catalog, datasets, app.state.jobs, app.state.snapshots, execution.limits)
             yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -325,6 +328,23 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
             context = run_context(request, body)
             return {**context, **jobs_for(request).continue_queue(body.expected_queue_revision)}
 
+    def job_publication_context(request, body):
+        context = run_context(request, body)
+        return {**context, "job_id": body.job_id, "job_revision": body.expected_revision,
+                "result_revision": body.result_revision, "instance_snapshot_id": body.instance_snapshot_id}
+
+    @app.post("/api/jobs/result")
+    def job_result(body: JobPublicationRequest, request: Request):
+        with authorized_operation(request):
+            context = job_publication_context(request, body)
+            return {**context, "details": request.app.state.results.job(body.model_dump())}
+
+    @app.post("/api/jobs/geometry")
+    def job_geometry(body: JobGeometryRequest, request: Request):
+        with authorized_operation(request):
+            context = job_publication_context(request, body)
+            return {**context, "geometry": request.app.state.results.job(body.model_dump(), geometry=True)}
+
     @app.post("/api/jobs/query")
     def jobs_query(body: JobsQueryRequest, request: Request):
         with authorized_operation(request):
@@ -408,5 +428,22 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
         with authorized_operation(request):
             catalog_for(request, body)
             return request.app.state.trial_queries.page(body.model_dump())
+
+    def trial_publication_context(request, body):
+        catalog_for(request, body)
+        return {key: getattr(body, key) for key in ("api_version", "request_id", "workspace_id", "dataset_id", "revision",
+                                                   "instance_handle", "artifact_catalog_revision")}
+
+    @app.post("/api/trials/details")
+    def trial_details(body: TrialPublicationRequest, request: Request):
+        with authorized_operation(request):
+            context = trial_publication_context(request, body)
+            return {**context, "details": request.app.state.results.trial(body.model_dump())}
+
+    @app.post("/api/trials/geometry")
+    def trial_geometry(body: TrialGeometryRequest, request: Request):
+        with authorized_operation(request):
+            context = trial_publication_context(request, body)
+            return {**context, "geometry": request.app.state.results.trial(body.model_dump(), geometry=True)}
 
     return app

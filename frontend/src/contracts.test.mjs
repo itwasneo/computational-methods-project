@@ -10,6 +10,7 @@ import { PAGE_DEFAULT, PAGE_MAX, GEOMETRY_BYTES_MAX } from './contracts.ts';
 
 const wire = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/read-only-v1.json', import.meta.url), 'utf8'));
 const runs = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/local-runs-v1.json', import.meta.url), 'utf8'));
+const backend = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/backend-v1.json', import.meta.url), 'utf8'));
 
 // Compile the shared JSON as literal assignments: a cast would hide contract drift.
 test('shared wire examples satisfy the TypeScript design types', () => {
@@ -28,6 +29,13 @@ test('shared wire examples satisfy the TypeScript design types', () => {
     for (const [name, entry] of Object.entries(runs.examples)) {
       source.push(`const run_${name}: C.${entry.type} = ${JSON.stringify(entry.value)};`);
     }
+    for (const [name, entry] of Object.entries(backend.examples)) {
+      source.push(`const backend_${name}: C.${entry.type} = ${JSON.stringify(entry.value)};`);
+    }
+    source.push('// @ts-expect-error verified result seeds remain strings even when small',
+      'const badVerifiedSeed: C.VerifiedDetails = {...backend_result.details, trial_seed: 42};',
+      '// @ts-expect-error geometry has no caller-selected record paths',
+      'const badGeometryPath: C.JobGeometryRequest = {...backend_geometry_request, path: "outside.json"};');
     source.push('// @ts-expect-error local-run seeds must also stay strings',
       'const badRunSeed: C.CampaignConfiguration = {...run_preflight.configuration, solver_seed: 42};',
       '// @ts-expect-error arbitrary process IDs confer no control authority',
