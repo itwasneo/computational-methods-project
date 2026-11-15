@@ -243,6 +243,11 @@ class ErrorResponse(TypedDict):
         "invalid_artifact", "dataset_not_ready", "stale_revision", "cursor_invalid",
         "snapshot_mismatch", "geometry_too_large", "internal_error", "catalog_busy",
         "catalog_limit_exceeded", "artifact_too_large", "request_too_large",
+        "dataset_not_found", "ingestion_busy", "dataset_limit_exceeded",
+        "execution_disabled", "execution_unavailable", "execution_busy", "resource_limit",
+        "snapshot_not_found", "snapshot_stale", "unsupported_execution", "invalid_plan",
+        "preflight_stale", "queue_full", "submission_conflict", "job_stale", "job_not_found",
+        "job_state_invalid", "queue_stale", "result_unavailable",
     ]
     message: str
     retryable: bool
@@ -414,3 +419,40 @@ class RunError(TypedDict):
                   "session_revoked", "owner_pairing_required", "internal_error"]
     message: str
     recovery: Literal["edit", "refresh", "owner_pairing", "none"]
+
+
+# Solver-neutral execution API. Legacy NN-only design DTOs above are retained
+# for old fixtures, not accepted as the /api/runs/preflight contract. All actual
+# HTTP routes use ErrorResponse, including execution errors.
+class ScientificConfiguration(TypedDict):
+    algorithm: Literal["nn", "ga", "sa"]
+    parameters: dict[str, int | float]
+    budget: dict[str, int | float | list[int]]
+    logical_search_ids: list[str] | None
+    implementations: list[str | None]
+    distance_modes: list[DistanceMode]
+    repetitions: list[int]
+    solver_seed: str
+    max_matrix_bytes: int
+    record_history: bool
+    history_policy: dict[str, int | float] | None
+
+
+class ExecutionPreflightRequest(RunContext):
+    instance_snapshot_id: str
+    capabilities_revision: str
+    configuration: ScientificConfiguration
+
+
+class ExecutionControlRequest(JobControlRequest):
+    confirm_stop_now: bool
+
+
+class SnapshotRequest(RunContext):
+    instance_snapshot_id: str
+
+
+class ExecutionInfo(RunContext):
+    local_runs_enabled: bool
+    limits: dict[str, int]  # ExecutionLimits: versioned, owner-set resource ceilings.
+    output_root: OutputRoot | None

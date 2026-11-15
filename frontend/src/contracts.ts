@@ -153,7 +153,12 @@ export interface ErrorResponse {
   code: 'invalid_request' | 'unauthorized' | 'workspace_unavailable' | 'artifact_not_found' |
     'invalid_artifact' | 'dataset_not_ready' | 'stale_revision' | 'cursor_invalid' |
     'snapshot_mismatch' | 'geometry_too_large' | 'internal_error' | 'catalog_busy' |
-    'catalog_limit_exceeded' | 'artifact_too_large' | 'request_too_large';
+    'catalog_limit_exceeded' | 'artifact_too_large' | 'request_too_large' |
+    'dataset_not_found' | 'ingestion_busy' | 'dataset_limit_exceeded' |
+    'execution_disabled' | 'execution_unavailable' | 'execution_busy' | 'resource_limit' |
+    'snapshot_not_found' | 'snapshot_stale' | 'unsupported_execution' | 'invalid_plan' |
+    'preflight_stale' | 'queue_full' | 'submission_conflict' | 'job_stale' | 'job_not_found' |
+    'job_state_invalid' | 'queue_stale' | 'result_unavailable';
   message: string;
   retryable: boolean;
 }
@@ -223,4 +228,32 @@ export interface RunError {
   code: 'invalid_request' | 'execution_disabled' | 'snapshot_stale' | 'preflight_stale' | 'queue_full' |
     'submission_conflict' | 'job_stale' | 'job_not_found' | 'session_revoked' | 'owner_pairing_required' | 'internal_error';
   message: string; recovery: 'edit' | 'refresh' | 'owner_pairing' | 'none';
+}
+
+// Solver-neutral API contracts; older NN-only fixtures do not define
+// /api/runs/preflight. All actual endpoints use ErrorResponse.
+export interface ScientificConfiguration {
+  algorithm: 'nn' | 'ga' | 'sa';
+  parameters: Record<string, number>;
+  budget: Record<string, number | number[]>;
+  logical_search_ids: string[] | null;
+  implementations: (string | null)[];
+  distance_modes: DistanceMode[];
+  repetitions: number[];
+  solver_seed: string;
+  max_matrix_bytes: number;
+  record_history: boolean;
+  history_policy: Record<string, number> | null;
+}
+export interface ExecutionPreflightRequest extends RunContext {
+  instance_snapshot_id: string;
+  capabilities_revision: string;
+  configuration: ScientificConfiguration;
+}
+export interface ExecutionControlRequest extends JobControlRequest { confirm_stop_now: boolean; }
+export interface SnapshotRequest extends RunContext { instance_snapshot_id: string; }
+export interface ExecutionInfo extends RunContext {
+  local_runs_enabled: boolean;
+  limits: Record<string, number>;
+  output_root: OutputRoot | null;
 }
