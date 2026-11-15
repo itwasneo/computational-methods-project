@@ -123,6 +123,42 @@ Runtime observations are sampled at campaign start and include package/compiler-
 
 The shard has one writer, exclusive creation, and a flush/`fsync` after each line. Serialization finishes before writing, but I/O failure or interruption can still leave a partial last line. Failed writes abort; completed prefixes are retained. A missing summary marks an incomplete campaign. This is not transactional storage, automatic retry or resume support; do not append to or silently reuse an incomplete shard.
 
+### Native execution and compiler observations
+
+Current v3 writers add `runtime.compiler` (observation schema 1) and a paired
+`native_execution` field. The former records resolved Numba configuration—not
+just environment strings—including JIT enablement, bounds checks, optimization
+(`max` is distinguished from `3`), loop/SLP vectorization, AVX, debug information
+and CPU targeting policy, plus LLVM host-CPU observations. The numerical
+configuration and declared execution kind participate in comparison context, not
+scientific IDs or RNG derivation.
+
+Native distance preparation and solver warm-up reject `NUMBA_DISABLE_JIT` with
+`NativeExecutionError`; no interpreted fallback is accepted under a native label.
+After warm-up the runner verifies the adapter's selected CPU dispatchers have
+nopython signatures and `fastmath=False` / `parallel=False`, recording qualified
+names, signatures and relevant declared target options. `native_execution`
+separates `required` from `verified`; failed warm-up does not claim verification,
+and cannot supply accepted logical results. Scalar `execution_kind` is the
+**declared requirement** (`native-required`, `non-native`, or an unobserved state);
+`native_verified` records the actual check. Verification failures remain in the
+same workload denominator as successful trials, rather than changing configuration.
+An empty standalone NN convenience request still skips all native work; runner
+campaigns follow full setup policy even for empty workloads.
+
+The compiler/native pair is an additive v3 observation: pre-extension v3 and
+v1/v2 remain readable as `legacy-unobserved`, without retroactive attestation or
+rewriting their old context/group IDs. Known and missing/different observations
+do not pair. Matching legacy contexts retain their historical observational
+meaning; they do not establish that a run was nopython-compiled.
+
+Use trusted dependencies and JIT caches. Keep compiler configuration fixed for a
+process and use a separate clean `NUMBA_CACHE_DIR` for changed source, compiler,
+CPU-target or optimization settings. Current settings and dispatcher signatures
+are observations, not proof of cached machine-code origin, absence of embedded
+Python/object-mode regions, hardware identity or performance. Nondefault compiler
+settings may produce cache/compiler warnings; validation does not suppress them.
+
 ## Build provenance
 
 The runner writes **envelope v3** trials and campaign summaries, retaining v2 build evidence and adding logical outcomes. Updated readers accept v1/v2 without reinterpreting their source claims; v1 runtime/group identities and unknown/dirty exclusions remain unchanged. One campaign cannot mix envelope versions. Older readers reject newer envelopes explicitly. Manifest, instance, reference, report and HTTP schema versions do not change. Report `analysis_runtime` also gains build evidence; CSV tables gain the provenance columns described below.

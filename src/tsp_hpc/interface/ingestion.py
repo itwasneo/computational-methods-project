@@ -28,7 +28,8 @@ if TYPE_CHECKING:
 
 RULE_FILES = (
     "analysis/__init__.py", "analysis/core.py", "analysis/sources.py", "analysis/validation.py", "experiments/manifests.py", "problem/data.py",
-    "reproducibility/identity.py", "reproducibility/random_streams.py", "reproducibility/build.py", "solvers/results.py",
+    "reproducibility/identity.py", "reproducibility/random_streams.py", "reproducibility/build.py", "reproducibility/native.py",
+    "solvers/results.py", "solvers/configuration.py", "solvers/validation.py", "analysis/progress.py",
     "interface/contracts.py", "interface/ingestion.py", "interface/workspace.py", "interface/queries.py",
     "interface/requests.py", "interface/cursors.py",
 )

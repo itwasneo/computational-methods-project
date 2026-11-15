@@ -135,6 +135,12 @@ An adapter factory accepts `PreparedDistances`, validates its supported objectiv
 and warms only the selected kernels with synthetic state. `metadata` is a detached
 `{**prepared.metadata, algorithm, variant, backend="serial", implementation,
 solver_warmup_time_s}` dictionary checked by `validate_adapter_metadata`.
+Native adapters must also expose `native_dispatchers`: a nonempty tuple of the
+actually selected, warmed Numba CPU dispatchers. The runner and conformance
+helper verify nopython signatures and serial/strict-math options; do not expose a
+baseline alias while executing a different callable. `native=False` is an explicit
+non-native declaration for test adapters or separately identified code, never an
+interpreted fallback under a native baseline label.
 `solve` accepts the complete [shared signature](contracts.md#logical-solver-interface).
 Use `normalize_parameters`, `normalize_budget`, `normalize_history` and
 `validate_seed` at the direct Python boundary too; registry callers are not the
