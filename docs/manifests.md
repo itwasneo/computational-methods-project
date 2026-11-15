@@ -87,7 +87,7 @@ Parameter defaults/ranges and work semantics are defined in the [algorithm speci
 
 Zero-work plans are not dropped. For GA/SA the work field may be omitted when a finite positive `time_limit_s` is supplied. Timed SA additionally resolves integer `time_check_interval_proposals >= 1` (default `256`); it is rejected without a time limit. NN always retains an explicit finite start list. Time limits apply once per NN batch or once per independent population/chain, not to the whole campaign.
 
-The additive time/history extension leaves all previously valid fixed-work normalization and IDs unchanged; disabled history omits `history_policy`. Older readers reject these newly supported requests rather than interpreting them as fixed work. Enabled policy defaults and all supplied limits enter search identity, but not RNG derivation. See [sampling and stopping](contracts.md#solver-results-and-progress). The registered runner persists these requests using envelope v3. Production execution currently registers NN only; GA/SA planning does not advertise unimplemented algorithms. Other variants and extra parameters remain errors.
+Time/history normalization preserves fixed-work IDs; disabled history omits `history_policy`. Readers without time/history support must reject those requests rather than interpreting them as fixed work. Enabled policy defaults and all supplied limits enter search identity, but not RNG derivation. See [sampling and stopping](contracts.md#solver-results-and-progress). The registered runner persists these requests using envelope v3. Planning validates scientific configurations independently of runtime availability; execution must resolve a registered implementation. Other variants and extra parameters remain errors.
 
 ### Execution configurations
 
@@ -108,7 +108,7 @@ Schema acceptance is not a runtime capability guarantee: labels need not be inst
 
 Resources require a non-blank `profile` label, with positive integer `workers` and `threads_per_worker`, each defaulting to one. Serial execution requires both counts to be one. A multicore request may use one worker/thread as a scaling baseline. No request may increase the number of logical searches implicitly.
 
-A profile is an opaque deployment label, ideally versioned when its meaning changes. It does not prove hardware availability or authorize an allocation. Execution provenance must record observed resources and disclose unknown limits; the [runner envelope](usage.md#jsonl-records-and-timing-boundaries) specifies current observations and their limits. MPI/GPU backends and arbitrary resource fields are not supported in v1.
+A profile is an opaque deployment label, ideally versioned when its meaning changes. It does not prove hardware availability or authorize an allocation. Execution provenance must record observed resources and disclose unknown limits; the [runner envelope](usage.md#jsonl-records-and-timing-boundaries) specifies observations and their limits. MPI/GPU backends and arbitrary resource fields are not supported in v1.
 
 ## Identity rules
 
@@ -160,7 +160,7 @@ The instance-reference ID includes logical instance ID, coordinate checksum, siz
 | SA chain | `("chain", chain_id)` |
 | Independent GA population | `("population", population_id)` |
 
-The experiment's `solver_seed` is the user-supplied root, `trial_seed` is an intermediate namespace seed, and each logical search's `stream.seed` is its effective seed. Future GA/SA calls must receive the logical population/chain seed, not the root or intermediate seed. NN can receive the trial seed with its complete ordered start list; it does not use randomness.
+The experiment's `solver_seed` is the user-supplied root, `trial_seed` is an intermediate namespace seed, and each logical search's `stream.seed` is its effective seed. GA/SA calls receive the logical population/chain seed, not the root or intermediate seed. NN can receive the trial seed with its complete ordered start list; it does not use randomness.
 
 For GA's parallel operator stream assignments, derive from the **population stream's seed** using `("initialization", slot)` and `("offspring", generation, slot)`; generation numbering starts at one. This prevents offspring scheduling order from selecting the random stream. A distinct `"warmup"` role separates warm-up from measured streams. The generic `"island"` role can reserve future island streams, but does not enable an island algorithm or MPI execution.
 

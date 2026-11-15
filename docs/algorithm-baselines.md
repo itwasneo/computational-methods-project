@@ -1,6 +1,6 @@
 # Initial algorithm variants and stopping semantics
 
-This is the scientific specification for the NN, GA and SA baseline variants, complementing the [shared contracts](contracts.md). It includes the planned time-budget extension; consult the [README](../README.md#current-capabilities) for executable capabilities. These are reproducible starting rules, not tuned or finalized campaign settings.
+Scientific rules for the NN, GA and SA baseline variants, complementing the [shared contracts](contracts.md). These define search semantics, not runtime availability or tuned campaign settings.
 
 ## Common decisions
 
@@ -126,9 +126,9 @@ Initialization is part of measured search and is charged to `full_tour_evaluatio
 
 For independent chains or populations, specify logical IDs, seeds, and per-search budgets before scheduling. Changing worker count must not multiply those budgets, add chains, or change the cooling schedule.
 
-### Time-budget extension
+### Time budgets
 
-This planned extension adds optional `budget.time_limit_s`, a finite positive duration. GA and SA may then omit their work-limit field for time-only runs, or provide both limits. NN always has a finite start list, even in a timed run; finishing it early is a work-limit termination, not permission to repeat starts. No variant may run without a stopping limit.
+Optional `budget.time_limit_s` is a finite positive duration. GA and SA may omit their work-limit field for time-only runs, or provide both limits. NN always has a finite start list, even in a timed run; finishing it early is a work-limit termination, not permission to repeat starts. No variant may run without a stopping limit.
 
 Start the monotonic search clock immediately before initializing solver working state. Include initialization, numerical checks, and progress instrumentation. Exclude input loading, distance preprocessing, and JIT warm-up. Final verification and persistence must still appear in end-to-end measurements; they do not make the stopping limit a hard job deadline.
 
