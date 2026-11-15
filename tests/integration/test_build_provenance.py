@@ -173,6 +173,33 @@ def test_installed_payload_verification(built, installed, tmp_path, monkeypatch,
         assert result["build"]["status"] == ("unavailable" if fault == "missing" else "invalid")
 
 
+def test_installed_timed_history_cli_and_native_observations(installed, tmp_path):
+    python, _ = installed
+    manifest = ROOT / "examples/manifests/nn-timed-history.json"
+    artifact = ROOT / "examples/instances/square.json"
+    identifier = json.loads(manifest.read_text())["instances"][0]["instance_id"]
+    shard, report = tmp_path / "timed.jsonl", tmp_path / "timed-report"
+    command(str(python), "-I", "-m", "tsp_hpc", "run", str(manifest), "--instance", f"{identifier}={artifact}",
+            "--output", str(shard), cwd=tmp_path)
+    trial, summary = [json.loads(line) for line in shard.read_text().splitlines()]
+    assert summary["counts"] == {"completed": 1, "failed": 0}
+    assert trial["native_execution"]["verified"] is True
+    assert trial["runtime"]["compiler"]["config"]["disable_jit"] is False
+    history = trial["logical_results"][0]["result"]["history"]
+    assert history is not None
+    # A real deadline is not a guarantee of identical work, even on tiny inputs.
+    if trial["result"]["status"] == "ok":
+        assert history[-1]["best_cost"] == trial["result"]["best_cost"] == 4
+    else:
+        assert history == []
+    command(str(python), "-I", "-m", "tsp_hpc", "analyze", str(shard), "--output", str(report),
+            "--target", f"{identifier}=4", cwd=tmp_path)
+    assert (report / "progress.csv").exists()
+    target, = list(csv.DictReader(StringIO((report / "time-to-target.csv").read_text())))
+    assert target["eligible"] == "True"
+    assert target["reached"] == str(trial["result"]["status"] == "ok")
+
+
 def test_installed_cli_run_and_analysis_with_and_without_evidence(built, installed, tmp_path):
     python, site = installed
     manifest = ROOT / "examples/manifests/nn-fixed-work.json"
@@ -183,7 +210,7 @@ def test_installed_cli_run_and_analysis_with_and_without_evidence(built, install
         command(str(python), "-I", "-m", "tsp_hpc", "run", str(manifest),
                 "--instance", f"{instance_id}={artifact}", "--output", str(shard), cwd=built[0])
         rows = [json.loads(line) for line in shard.read_text().splitlines()]
-        assert len(rows) == 5 and all(row["schema_version"] == 2 for row in rows)
+        assert len(rows) == 5 and all(row["schema_version"] == 3 for row in rows)
         for row in rows[:-1]:
             assert row["result"]["best_cost"] == 4
             if verified:

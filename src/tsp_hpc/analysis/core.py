@@ -1,4 +1,4 @@
-"""Compact result ingestion and conservative fixed-work tables/comparisons.
+"""Compact result ingestion, budget-aware tables and conservative comparisons.
 
 Record validation lives in validation.py. Tours/plans are discarded after
 validation; source locators support verified lazy detail access.
@@ -24,9 +24,11 @@ from tsp_hpc.reproducibility.identity import canonical_json
 MAX_RECORD_BYTES = 64 * 1024 * 1024
 TRIAL_COLUMNS = ("attempt_id campaign_id requested_execution_id execution_id search_id workload_id group_id "
                  "runtime_context_id instance_id coordinate_checksum distance_kind n_cities algorithm variant "
-                 "repetition parameters_json solver_seed budget_name budget_count trial_seed implementation "
+                 "repetition parameters_json solver_seed budget_name budget_count budget_summary_json budget_mode time_limit_s "
+                 "time_overshoot_s logical_search_count completed_logical_searches history_recorded history_policy_json "
+                 "history_points termination_reason logical_work_id trial_seed implementation "
                  "distance_mode backend profile workers threads_per_worker max_matrix_bytes setup_policy "
-                 "source_revision source_dirty source_method build_status build_id outcome status best_cost tour_digest work_json error_phase error_type").split() + list(METRICS) + ["shard", "campaign_complete", "duplicate_execution", "usable"]
+                 "source_revision source_dirty source_method build_status build_id execution_kind native_verified outcome status best_cost tour_digest work_json error_phase error_type").split() + list(METRICS) + ["shard", "campaign_complete", "duplicate_execution", "usable"]
 
 
 class AnalysisLimitError(ValueError):
@@ -126,7 +128,7 @@ def read_sources(inputs: Iterable[ShardSource], *, expected_manifest: Manifest |
                         diagnostics.append({"code": "unterminated_tail", "path": str(path), "line": line})
                         break
                     record = decode_record(raw)
-                    if type(record) is not dict or type(record.get("schema_version")) is not int or record["schema_version"] not in (1, 2):
+                    if type(record) is not dict or type(record.get("schema_version")) is not int or record["schema_version"] not in (1, 2, 3):
                         raise ValueError("unsupported runner envelope schema")
                     if envelope_version is not None and record["schema_version"] != envelope_version:
                         raise ValueError("mixed runner envelope schemas in one campaign")
@@ -172,9 +174,13 @@ def read_sources(inputs: Iterable[ShardSource], *, expected_manifest: Manifest |
             row["campaign_complete"] = footer
         rows.extend(local)
     check()
-    frame = pd.DataFrame(rows) if rows else pd.DataFrame(columns=TRIAL_COLUMNS)
+    # Nullable work counts must not round through float64 when time-only rows
+    # coexist with large exact integer budgets. Other scalar inference is unchanged.
+    frame = (pd.DataFrame({key: pd.Series([row[key] for row in rows],
+                                         dtype=object if key == "budget_count" else None)
+                           for key in rows[0]}) if rows else pd.DataFrame(columns=TRIAL_COLUMNS))
     if not frame.empty:
-        for metric in ("best_cost", *METRICS):
+        for metric in ("best_cost", "time_overshoot_s", *METRICS):
             frame[metric] = pd.to_numeric(frame[metric])
         config_ids = frame["execution_id"].fillna(frame["requested_execution_id"])
         frame["duplicate_execution"] = config_ids.duplicated(keep=False)
@@ -203,9 +209,10 @@ def summary_table(analysis: Analysis) -> pd.DataFrame:
     frame = analysis.trials
     labels = ["instance_id", "n_cities", "algorithm", "variant", "implementation", "distance_mode",
               "backend", "profile", "workers", "threads_per_worker", "setup_policy", "max_matrix_bytes",
-              "parameters_json", "solver_seed", "budget_name", "budget_count", "source_revision", "source_dirty",
-              "source_method", "build_status", "build_id", "runtime_context_id", "workload_id"]
-    metrics = ["best_cost", *METRICS]
+              "parameters_json", "solver_seed", "budget_name", "budget_count", "budget_summary_json", "budget_mode",
+              "time_limit_s", "logical_search_count", "history_recorded", "history_policy_json", "source_revision", "source_dirty",
+              "source_method", "build_status", "build_id", "execution_kind", "runtime_context_id", "workload_id"]
+    metrics = ["best_cost", "time_overshoot_s", *METRICS]
     if frame.empty:
         columns = ["group_id", *labels, "attempt_count", "failed_count", "no_solution_count",
                    "incomplete_count", "duplicate_count", "usable_count"]
@@ -264,7 +271,7 @@ def paired_comparisons(analysis: Analysis, *, baseline_implementation: str,
     records = frame[["attempt_id", "group_id", "implementation", "distance_mode", "search_id", "usable",
                      "source_revision", "source_dirty", "runtime_context_id", "profile", "backend", "workers",
                      "threads_per_worker", "setup_policy", "max_matrix_bytes", "work_json", "tour_digest",
-                     "best_cost", metric]].to_dict("records")
+                     "best_cost", "budget_mode", "logical_work_id", metric]].to_dict("records")
     bases = {}
     for row in records:
         if row["implementation"] == baseline_implementation:
@@ -281,12 +288,14 @@ def paired_comparisons(analysis: Analysis, *, baseline_implementation: str,
             reason = "missing_or_ambiguous_baseline"
         elif not row["usable"] or not base["usable"]:
             reason = "unsuccessful_incomplete_or_duplicate_attempt"
+        elif row["budget_mode"] != "work" or base["budget_mode"] != "work":
+            reason = "time_limited_quality_run"
         elif not row["source_revision"] or row["source_dirty"] is not False or base["source_dirty"] is not False:
             reason = "unknown_or_dirty_source"
         elif any(row[key] != base[key] for key in ("runtime_context_id", "profile", "backend", "workers",
                                                      "threads_per_worker", "setup_policy", "max_matrix_bytes")):
             reason = "incompatible_execution_context"
-        elif row["work_json"] != base["work_json"] or row["tour_digest"] != base["tour_digest"] or abs(row["best_cost"] - base["best_cost"]) > 1e-12 + 1e-10 * abs(base["best_cost"]):
+        elif row["logical_work_id"] != base["logical_work_id"] or row["work_json"] != base["work_json"] or row["tour_digest"] != base["tour_digest"] or abs(row["best_cost"] - base["best_cost"]) > 1e-12 + 1e-10 * abs(base["best_cost"]):
             reason = "different_returned_work_or_solution"
         elif not math.isfinite(row[metric]) or not math.isfinite(base[metric]) or min(row[metric], base[metric]) <= 0:
             reason = "missing_or_zero_duration"

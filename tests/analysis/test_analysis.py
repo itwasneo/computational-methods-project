@@ -42,6 +42,16 @@ def example(tmp_path_factory):
     shard = directory / "runs.jsonl"
     run_manifest(manifest, instance_paths={record.instance.instance_id: artifact}, output_path=shard)
     original = [json.loads(line) for line in shard.read_text().splitlines()]
+    # Preserve this established suite as legacy-v2 compatibility coverage. New
+    # v3 logical envelopes have their own corruption/aggregation tests.
+    for item in original:
+        item["schema_version"] = 2
+        if item["record_type"] == "trial":
+            item.pop("budget_scope")
+            item.pop("logical_results")
+            item.pop("native_execution")
+            item["runtime"].pop("compiler")
+            item["result"].pop("best_logical_index")
     # Synthetic durations/provenance for exact arithmetic assertions, not a benchmark.
     for trial, receipt in zip(original[:-1], original[-1]["trial_timings"]):
         trial["runtime"]["source"] = {"revision": "a" * 40, "dirty": False}
@@ -107,7 +117,7 @@ def test_omitted_implementation_uses_recorded_resolution_not_current_default(tmp
                                   "effective_type", "provenance", "tour", "work", "cost", "summary_count", "receipt", "summary_duration", "adapter"])
 def test_corrupt_complete_records_are_not_accepted(tmp_path, rows, fault):
     trial, summary = rows[0], rows[-1]
-    if fault == "version": trial["schema_version"] = 3
+    if fault == "version": trial["schema_version"] = 4
     elif fault == "version_bool": trial["schema_version"] = True
     elif fault == "requested_id": trial["requested_plan"]["search_id"] = "search-v1-" + "0" * 64
     elif fault == "effective_id": trial["execution_id"] = "execution-v1-" + "0" * 64

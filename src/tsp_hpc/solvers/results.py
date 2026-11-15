@@ -41,13 +41,58 @@ def _nonnegative_real(value: object, name: str) -> float:
     return result
 
 
+@dataclass(frozen=True)
+class ProgressPoint:
+    """One observed complete incumbent at a safe search checkpoint."""
+
+    elapsed_s: float
+    work: WorkCounters
+    best_cost: float
+
+    def __post_init__(self):
+        if not isinstance(self.work, WorkCounters):
+            raise TypeError("progress work must be WorkCounters")
+        for name in ("elapsed_s", "best_cost"):
+            object.__setattr__(self, name, _nonnegative_real(getattr(self, name), name))
+
+    def to_dict(self):
+        return {"elapsed_s": self.elapsed_s, "work": self.work.to_dict(), "best_cost": self.best_cost}
+
+
+def validate_history(history, work, cost, elapsed):
+    if history is None:
+        return
+    if type(history) is not tuple or any(not isinstance(point, ProgressPoint) for point in history):
+        raise ValueError("history must be an immutable tuple of ProgressPoint")
+    if cost is None:
+        if history:
+            raise ValueError("no solution cannot have incumbent history")
+        return
+    if not history:
+        raise ValueError("enabled solution history requires a terminal observation")
+    previous = None
+    for point in history:
+        if point.elapsed_s > elapsed + 1e-9:
+            raise ValueError("history exceeds search timing")
+        if any(value > work.to_dict()[key] for key, value in point.work.to_dict().items()):
+            raise ValueError("history exceeds completed work")
+        if previous is not None:
+            if point.elapsed_s < previous.elapsed_s or any(
+                value < previous.work.to_dict()[key] for key, value in point.work.to_dict().items()
+            ) or point.best_cost > previous.best_cost + 1e-12 + 1e-10 * abs(previous.best_cost):
+                raise ValueError("history is not monotonic")
+        previous = point
+    if history[-1].work != work or abs(history[-1].best_cost - cost) > 1e-12 + 1e-10 * abs(cost):
+        raise ValueError("terminal history disagrees with result")
+
+
 @dataclass(frozen=True, eq=False)
 class SolverResult:
     """Owned, structurally validated result, not an objective certificate.
 
     Solvers validate against the actual instance before returning this record.
     Timings are phase observations, not stopping limits or an end-to-end envelope.
-    History is currently disabled; no mutable search buffers are retained.
+    History contains immutable safe-checkpoint observations, not mutable buffers.
     """
 
     status: str
@@ -55,7 +100,7 @@ class SolverResult:
     best_cost: float | None
     work: WorkCounters
     termination_reason: str
-    history: None = None
+    history: tuple[ProgressPoint, ...] | None = None
     search_time_s: float = 0.0
     validation_time_s: float = 0.0
 
@@ -68,8 +113,6 @@ class SolverResult:
             raise ValueError("unsupported termination reason")
         if not isinstance(self.work, WorkCounters):
             raise TypeError("work must be WorkCounters")
-        if self.history is not None:
-            raise ValueError("history recording is not implemented")
         for name in ("search_time_s", "validation_time_s"):
             object.__setattr__(self, name, _nonnegative_real(getattr(self, name), name))
         if self.status == "no_solution":
@@ -77,11 +120,13 @@ class SolverResult:
                 raise ValueError("no_solution requires null tour and cost")
             if any(self.work.to_dict().values()):
                 raise ValueError("no_solution cannot report completed search work")
+            validate_history(self.history, self.work, None, self.search_time_s)
             return
         if type(self.best_tour) is not np.ndarray:
             raise TypeError("ok requires a canonical NumPy tour")
         validate_tour(self.best_tour, self.best_tour.size)
         cost = _nonnegative_real(self.best_cost, "best_cost")
+        validate_history(self.history, self.work, cost, self.search_time_s)
         tour = self.best_tour.copy(order="C")
         tour.flags.writeable = False
         object.__setattr__(self, "best_tour", tour)

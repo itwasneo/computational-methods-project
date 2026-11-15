@@ -1,4 +1,4 @@
-"""Runner-v1/v2 record validation and scalar projection, independent of table storage.
+"""Runner-v1/v2/v3 validation and scalar projection, independent of table storage.
 
 Rebuild plans through the shared manifest rules; check recorded structure and
 identities, not objective costs without original instance artifacts.
@@ -16,7 +16,9 @@ from tsp_hpc.experiments.manifests import Manifest
 from tsp_hpc.problem.data import validate_tour
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.reproducibility.build import validate_observation, validate_source
+from tsp_hpc.reproducibility.native import validate_compiler_observation, validate_native_observation
 from tsp_hpc.solvers.results import WorkCounters
+from tsp_hpc.solvers.validation import aggregate_results, decode_result, validate_nested_duration as _less_equal
 
 TRIAL_FIELDS = set("schema_version record_type campaign_id attempt_id started_at requested_plan effective_execution execution_id runtime input setup_policy max_matrix_bytes adapter outcome result error timings".split())
 PHASES = set("input_time_s distance_preparation_wall_time_s distance_warmup_time_s preprocessing_time_s solver_warmup_time_s solve_wall_time_s search_time_s solver_validation_time_s runner_validation_time_s pre_persistence_time_s failed_phase_time_s".split())
@@ -88,7 +90,10 @@ def decode_record(raw):
 
 
 def _plan(record):
+    require_fields(record, {"schema_version", "search_id", "execution_id", "trial_seed", "search", "execution", "logical_searches"})
     search = record["search"]
+    if type(search) is not dict or type(search.get("instance")) is not dict:
+        raise ValueError("requested search and instance must be JSON objects")
     experiment = {key: value for key, value in search.items()
                   if key not in ("instance", "repetition", "seed_scheme", "bit_generator")}
     experiment.update(instance_id=search["instance"]["instance_id"],
@@ -103,12 +108,15 @@ def _plan(record):
 def _runtime(runtime, schema_version):
     fields = {"versions", "source", "platform", "machine", "processor", "cpu_count",
               "memory", "runner_workers", "solver_threads", "cpu_affinity", "environment"}
-    require_fields(runtime, fields | ({"build"} if schema_version == 2 else set()))
+    require_fields(runtime, fields | ({"build"} if schema_version >= 2 else set()),
+                   {"compiler"} if schema_version == 3 else set())
+    if "compiler" in runtime:
+        validate_compiler_observation(runtime["compiler"])
     require_fields(runtime["versions"], {"python", "tsp_hpc", "numpy", "numba", "llvmlite"})
     for value in runtime["versions"].values():
         require_text(value)
     validate_source(runtime["source"])
-    if schema_version == 2:
+    if schema_version >= 2:
         validate_observation(runtime["build"], runtime["source"], runtime["versions"]["tsp_hpc"])
     for key in ("platform", "machine", "processor"):
         if type(runtime[key]) is not str:
@@ -135,17 +143,29 @@ def _runtime(runtime, schema_version):
     return stable_id("analysis-runtime", context)
 
 
+def _native_execution(record):
+    observed = "compiler" in record["runtime"]
+    if observed != ("native_execution" in record):
+        raise ValueError("compiler and native-execution observations must appear together")
+    if not observed:
+        return "legacy-unobserved", None
+    native = record["native_execution"]
+    if native is None:
+        if record["outcome"] == "completed" or record["logical_results"]:
+            raise ValueError("accepted results require an execution-mode observation")
+        return "not-verified", False
+    validate_native_observation(native)
+    if native["required"] and not native["verified"] and (record["outcome"] == "completed" or record["logical_results"]):
+        raise ValueError("native accepted results lack dispatcher verification")
+    if native["verified"] and record["runtime"]["compiler"]["config"]["disable_jit"]:
+        raise ValueError("verified native execution contradicts disabled JIT")
+    return ("native-required" if native["required"] else "non-native"), native["verified"]
+
+
 def _timings(values, allowed, required=()):
     require_fields(values, set(required), set(allowed) - set(required))
     for value in values.values():
         require_number(value)
-
-
-def _less_equal(left, right):
-    if not math.isfinite(left) or not math.isfinite(right) or (
-        left > right and not math.isclose(left, right, rel_tol=1e-10, abs_tol=1e-9)
-    ):
-        raise ValueError("inconsistent nested timing durations")
 
 
 def _execution(record, search, requested, search_id):
@@ -163,7 +183,7 @@ def _execution(record, search, requested, search_id):
             raise ValueError("effective execution changes the requested configuration")
         if record["execution_id"] != stable_id("execution", {"search_id": search_id, "execution": effective}):
             raise ValueError("effective execution identity mismatch")
-        if search["algorithm"] != "nn" or effective["backend"] != "serial" or search["instance"]["distance_kind"] != "euclidean_2d":
+        if (record["schema_version"] < 3 and search["algorithm"] != "nn") or effective["backend"] != "serial" or search["instance"]["distance_kind"] != "euclidean_2d":
             raise ValueError("unsupported effective runner capability")
     elif record["execution_id"] is not None:
         raise ValueError("unresolved execution must have null identity")
@@ -228,6 +248,8 @@ def _result(result, search):
     require_fields(result, {"status", "best_tour", "best_cost", "work", "termination_reason", "history"})
     require_fields(result["work"], set(WorkCounters().to_dict()))
     work = WorkCounters(**result["work"]).to_dict()
+    if search["record_history"] or "time_limit_s" in search["budget"]:
+        raise ValueError("legacy envelopes support only fixed-work NN without history")
     count = len(search["budget"]["start_cities"])
     if work != WorkCounters(nn_starts_completed=count, full_tour_evaluations=count).to_dict():
         raise ValueError("NN work counters disagree with fixed workload")
@@ -254,7 +276,7 @@ def _failed(record, effective):
     if record["result"] is not None:
         raise ValueError("failed trial cannot carry an accepted result")
     error = record["error"]
-    require_fields(error, {"phase", "type", "message", "reported_work"})
+    require_fields(error, {"phase", "type", "message", "reported_work"} | ({"logical_index"} if record["schema_version"] == 3 else set()))
     if error["phase"] not in ("capability", "input", "distance_preparation", "solver_warmup", "solve", "validation"):
         raise ValueError("unknown failure phase")
     if (effective is None) != (error["phase"] == "capability"):
@@ -268,9 +290,63 @@ def _failed(record, effective):
     require_number(record["timings"]["failed_phase_time_s"])
 
 
+def _logical_results(record, plan):
+    if record["budget_scope"] != "per-logical-invocation":
+        raise ValueError("unsupported budget scope")
+    entries, invocations = record["logical_results"], plan.invocations()
+    if type(entries) is not list or len(entries) > len(invocations):
+        raise ValueError("invalid logical-result sequence")
+    completed = record["outcome"] == "completed"
+    if completed and len(entries) != len(invocations):
+        raise ValueError("completed trial is missing logical results")
+    results = []
+    keys = {"solve_wall_time_s", "search_time_s", "solver_validation_time_s", "runner_validation_time_s"}
+    for entry, expected in zip(entries, invocations):
+        require_fields(entry, {*expected, "result", "timings"})
+        if canonical_json({key: entry[key] for key in expected}) != canonical_json(expected):
+            raise ValueError("logical result order/seed disagrees with plan")
+        times = entry["timings"]
+        _timings(times, keys, keys)
+        _less_equal(times["search_time_s"] + times["solver_validation_time_s"], times["solve_wall_time_s"])
+        results.append(decode_result(entry["result"], plan.search, search_time_s=times["search_time_s"],
+                                     validation_time_s=times["solver_validation_time_s"]))
+    for key in keys:
+        total = math.fsum(entry["timings"][key] for entry in entries)
+        if not math.isclose(total, record["timings"].get(key, 0.), rel_tol=1e-10, abs_tol=1e-9):
+            raise ValueError("logical timing total disagrees with trial")
+    if not completed:
+        error = record["error"]
+        index = error["logical_index"]
+        if error["phase"] in ("solve", "validation"):
+            if index is None:
+                if len(entries) != len(invocations):
+                    raise ValueError("missing failed logical index")
+            elif type(index) is not int or index != len(entries) or not 0 <= index < len(invocations):
+                raise ValueError("failed logical index is not the next invocation")
+        elif index is not None or entries:
+            raise ValueError("setup failure cannot contain logical results")
+        return None
+    expected = aggregate_results(results)
+    value = record["result"]
+    require_fields(value, expected)
+    require_fields(value["work"], WorkCounters().to_dict())
+    WorkCounters(**value["work"])
+    if value["best_logical_index"] is not None and type(value["best_logical_index"]) is not int:
+        raise ValueError("best logical index must be integer or null")
+    tour = value["best_tour"]
+    if tour is not None and (type(tour) is not list or any(type(city) is not int for city in tour)):
+        raise ValueError("invalid aggregate tour")
+    normalized = {**value, "best_cost": None if value["best_cost"] is None else require_number(value["best_cost"])}
+    if canonical_json(normalized) != canonical_json(expected):
+        raise ValueError("aggregate result disagrees with logical-order reduction")
+    digest = None if tour is None else hashlib.sha256(np.array(tour, dtype="<i8").tobytes()).hexdigest()
+    return expected["work"], expected["best_cost"], digest, expected["status"]
+
+
 def trial_row(record):
     """Validate one trial and project only the analysis table's scalar metadata."""
-    require_fields(record, TRIAL_FIELDS)
+    require_fields(record, TRIAL_FIELDS | ({"budget_scope", "logical_results"} if record["schema_version"] == 3 else set()),
+                   {"native_execution"} if record["schema_version"] == 3 else set())
     require_uuid(record["campaign_id"])
     require_uuid(record["attempt_id"])
     if datetime.fromisoformat(record["started_at"]).utcoffset() is None:
@@ -282,6 +358,9 @@ def trial_row(record):
         raise ValueError("unsupported setup policy")
     _count(record["max_matrix_bytes"])
     context = _runtime(record["runtime"], record["schema_version"])
+    execution_kind, native_verified = _native_execution(record)
+    if execution_kind != "legacy-unobserved":
+        context = stable_id("analysis-runtime-mode", {"runtime": context, "execution_kind": execution_kind})
     require_fields(record["input"], {"path"}, {"descriptor", "provenance"})
     if record["input"]["path"] is not None:
         require_text(record["input"]["path"])
@@ -291,9 +370,12 @@ def trial_row(record):
     work, cost, tour_digest, status = None, None, None, None
     if record["outcome"] == "completed":
         _completed(record, search, effective)
-        work, cost, tour_digest, status = _result(record["result"], search)
+        work, cost, tour_digest, status = (_logical_results(record, plan) if record["schema_version"] == 3
+                                           else _result(record["result"], search))
     elif record["outcome"] == "failed":
         _failed(record, effective)
+        if record["schema_version"] == 3:
+            _logical_results(record, plan)
     else:
         raise ValueError("unknown outcome")
     config = effective or requested
@@ -303,6 +385,22 @@ def trial_row(record):
     method = build["method"] if build else "legacy-source"
     build_status = build["status"] if build else "reported"
     build_identity = (build["identity"] or {}) if build else {}
+    budget = search["budget"]
+    work_name = {"nn": "start_cities", "ga": "max_generations", "sa": "max_proposals"}[search["algorithm"]]
+    work_count = (len(budget[work_name]) if search["algorithm"] == "nn" else budget.get(work_name))
+    time_limit = budget.get("time_limit_s")
+    budget_summary = ({**{key: value for key, value in budget.items() if key != "start_cities"},
+                       "start_count": work_count} if search["algorithm"] == "nn" else budget)
+    entries = record.get("logical_results", [])
+    logical_work = None
+    if work is not None:
+        logical_work = ([{key: entry[key] for key in ("kind", "logical_id")} |
+                         {key: entry["result"][key] for key in ("work", "status", "termination_reason")}
+                         for entry in entries] if record["schema_version"] == 3 else
+                        [{"kind": "batch", "logical_id": None, "work": work, "status": status,
+                          "termination_reason": record["result"]["termination_reason"]}])
+    overshoot = None if time_limit is None or work is None else math.fsum(
+        max(0., entry["timings"]["search_time_s"] - time_limit) for entry in entries)
     group = {"workload": workload, "execution": config, "runtime": context,
              "setup_policy": record["setup_policy"], "max_matrix_bytes": record["max_matrix_bytes"],
              "unverified_source_campaign": None if source["revision"] and source["dirty"] is False else record["campaign_id"]}
@@ -315,15 +413,25 @@ def trial_row(record):
         "distance_kind": search["instance"]["distance_kind"], "n_cities": search["instance"]["n_cities"],
         "algorithm": search["algorithm"], "variant": search["variant"], "repetition": search["repetition"],
         "parameters_json": canonical_json(search["parameters"]), "solver_seed": str(search["solver_seed"]),
-        "budget_name": next(iter(search["budget"])),
-        "budget_count": len(search["budget"]["start_cities"]) if search["algorithm"] == "nn" else next(iter(search["budget"].values())),
+        "budget_name": work_name if work_name in budget else None, "budget_count": work_count,
+        "budget_summary_json": canonical_json(budget_summary),
+        "budget_mode": "work" if time_limit is None else "time" if work_count is None else "work_and_time",
+        "time_limit_s": time_limit, "time_overshoot_s": overshoot,
+        "logical_search_count": len(plan.invocations()),
+        "completed_logical_searches": len(entries) if record["schema_version"] == 3 else int(work is not None),
+        "history_recorded": search["record_history"],
+        "history_policy_json": None if not search["record_history"] else canonical_json(search["history_policy"]),
+        "history_points": sum(len(entry["result"]["history"] or []) for entry in entries),
+        "termination_reason": None if work is None else record["result"]["termination_reason"],
+        "logical_work_id": None if logical_work is None else stable_id("logical-work", logical_work),
         "trial_seed": str(plan.trial_seed), "implementation": config.get("implementation"),
         "distance_mode": config["distance_mode"], "backend": config["backend"],
         "profile": config["resources"]["profile"], "workers": config["resources"]["workers"],
         "threads_per_worker": config["resources"]["threads_per_worker"], "max_matrix_bytes": record["max_matrix_bytes"],
         "setup_policy": record["setup_policy"], "source_revision": record["runtime"]["source"]["revision"],
         "source_dirty": record["runtime"]["source"]["dirty"], "source_method": method,
-        "build_status": build_status, "build_id": build_identity.get("build_id"),
+        "build_status": build_status, "build_id": build_identity.get("build_id"), "execution_kind": execution_kind,
+        "native_verified": native_verified,
         "outcome": record["outcome"], "status": status,
         "best_cost": cost, "tour_digest": tour_digest,
         "work_json": None if work is None else canonical_json(work),

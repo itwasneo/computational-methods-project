@@ -10,7 +10,7 @@ from tsp_hpc.reproducibility.random_streams import BIT_GENERATOR, SEED_SCHEME, R
 
 from tsp_hpc.solvers.configuration import (
     VARIANTS as _VARIANTS, normalize_parameters as _parameters,
-    normalize_budget as _budget,
+    normalize_budget as _budget, normalize_history,
 )
 
 
@@ -96,7 +96,7 @@ def _execution(value: object) -> dict:
 
 def _experiment(value: object, instances: dict[str, dict]) -> dict:
     item = _object(value, {"instance_id", "algorithm", "budget", "solver_seed", "repetitions", "executions"},
-                   {"variant", "parameters", "logical_search_ids", "record_history"}, "experiment")
+                   {"variant", "parameters", "logical_search_ids", "record_history", "history_policy"}, "experiment")
     identifier = _text(item["instance_id"], "instance_id")
     if identifier not in instances:
         raise ValueError(f"unknown instance_id: {identifier!r}")
@@ -110,17 +110,16 @@ def _experiment(value: object, instances: dict[str, dict]) -> dict:
     repetitions = [_integer(rep, 0, "repetition") for rep in _list(item["repetitions"], "repetitions")]
     _unique(repetitions, "repetitions")
     history = item.get("record_history", False)
-    if type(history) is not bool:
-        raise TypeError("record_history must be boolean")
-    if history:
-        raise ValueError("history is not supported until the time/history extension")
+    policy = normalize_history(history, item.get("history_policy"))
     result = dict(
         instance_id=identifier, algorithm=algorithm, variant=variant,
         parameters=_parameters(algorithm, item.get("parameters", {})),
         budget=_budget(algorithm, item["budget"], instances[identifier]["n_cities"]),
-        solver_seed=item["solver_seed"], repetitions=repetitions, record_history=False,
+        solver_seed=item["solver_seed"], repetitions=repetitions, record_history=history,
         executions=[_execution(entry) for entry in _list(item["executions"], "executions")],
     )
+    if policy is not None:
+        result["history_policy"] = policy
     if algorithm == "nn":
         if "logical_search_ids" in item:
             raise ValueError("NN logical searches are defined by budget.start_cities")
@@ -184,6 +183,13 @@ class TrialPlan:
     def execution(self) -> dict:
         """Return a detached snapshot of the requested execution configuration."""
         return json.loads(self._execution_json)
+
+    def invocations(self) -> tuple[dict, ...]:
+        """Serial adapter calls: one NN batch, or the ordered independent searches."""
+        if self.search["algorithm"] == "nn":
+            return ({"kind": "batch", "logical_id": None, "seed": self.trial_seed},)
+        return tuple({"kind": item.kind, "logical_id": item.logical_id, "seed": item.stream.seed}
+                     for item in self.logical_searches)
 
     def stream(self, role: str, *logical_ids: str | int) -> RandomStream:
         """Plan another role-specific stream, e.g. warm-up or a future island."""

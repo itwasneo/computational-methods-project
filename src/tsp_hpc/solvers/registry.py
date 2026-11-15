@@ -8,6 +8,7 @@ never installed through filename discovery or advertised as production solvers.
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
+import math
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol
 
@@ -20,6 +21,9 @@ if TYPE_CHECKING:
 
 
 class SolverAdapter(Protocol):
+    @property
+    def native_dispatchers(self) -> tuple[object, ...]: ...
+
     @property
     def metadata(self) -> dict: ...
 
@@ -107,6 +111,22 @@ class SolverRegistry:
     def capabilities(self):
         return [{**spec.description(), "default": self._defaults[spec.algorithm] == spec.implementation}
                 for spec in self._entries.values()]
+
+
+def validate_adapter_metadata(solver, prepared, spec):
+    """Validate the adapter boundary without importing numerical code on import."""
+    from tsp_hpc.reproducibility.identity import canonical_json
+    metadata = solver.metadata
+    expected = {**prepared.metadata, "algorithm": spec.algorithm, "variant": spec.variant,
+                "implementation": spec.implementation, "backend": "serial"}
+    if type(metadata) is not dict or metadata.keys() != expected.keys() | {"solver_warmup_time_s"}:
+        raise ValueError("adapter must report the shared preparation/warm-up metadata")
+    if canonical_json({key: metadata[key] for key in expected}) != canonical_json(expected):
+        raise ValueError("adapter metadata disagrees with its registration/preparation")
+    duration = metadata["solver_warmup_time_s"]
+    if type(duration) not in (int, float) or not math.isfinite(duration) or duration < 0:
+        raise ValueError("invalid adapter warm-up duration")
+    return dict(metadata)
 
 
 @lru_cache(maxsize=1)

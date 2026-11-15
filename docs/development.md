@@ -112,8 +112,92 @@ Only the two real NN implementations are registered by `default_registry()`.
 Adding an algorithm requires its adapter/registrations plus an explicit entry in
 that function; no filesystem or third-party plugin discovery occurs. Test-only
 registries are constructed separately, never advertised as real GA/SA solvers.
-The registry is the integration foundation; runner dispatch and timed/history
-support are separate follow-ups in the solver-readiness milestone.
+`SearchControl` implements shared deadline precedence and bounded observations;
+NN supports time/history directly using the same native kernels at complete-start
+checkpoints. Its history-disabled fixed-work path retains the original single
+kernel call. Instrumented execution includes per-start call/workspace overhead in
+search time. The serial runner dispatches registered factories and persists envelope-v3 logical
+outcomes. `TrialPlan.invocations()` supplies one NN batch or ordered independent
+population/chain seeds. Shared result validation covers all three agreed variants
+without importing their implementations. Tests inject clearly named, non-native
+scripted adapters to exercise GA/SA-shaped accounting—not scientific solvers.
+Production capabilities continue to advertise only real NN.
+
+### Algorithm-author handoff and conformance
+
+Algorithm authors own their solver/operator package, its adapter and explicit
+registration, and algorithm-specific tests. They do **not** edit the runner,
+result codec, analysis or future transport to make an algorithm executable.
+The service/queue milestone is separate; its current NN-only design DTOs are not
+an alternative solver integration contract.
+
+An adapter factory accepts `PreparedDistances`, validates its supported objective,
+and warms only the selected kernels with synthetic state. `metadata` is a detached
+`{**prepared.metadata, algorithm, variant, backend="serial", implementation,
+solver_warmup_time_s}` dictionary checked by `validate_adapter_metadata`.
+Native adapters must also expose `native_dispatchers`: a nonempty tuple of the
+actually selected, warmed Numba CPU dispatchers. The runner and conformance
+helper verify nopython signatures and serial/strict-math options; do not expose a
+baseline alias while executing a different callable. `native=False` is an explicit
+non-native declaration for test adapters or separately identified code, never an
+interpreted fallback under a native baseline label.
+`solve` accepts the complete [shared signature](contracts.md#logical-solver-interface).
+Use `normalize_parameters`, `normalize_budget`, `normalize_history` and
+`validate_seed` at the direct Python boundary too; registry callers are not the
+only callers. Check instance/preparation binding before entering kernels.
+
+Create `SearchControl` immediately before initialization, then fresh logical RNG
+state from the supplied seed. Preserve RNG, cooling/population and numerical-check
+state across safe checkpoints, but never across invocations. Return owned
+`SolverResult` snapshots and actual counters; use the independent objective for
+final verification. Recording must not consume randomness. A template registration
+inside the completed algorithm package is:
+
+```python
+# Structural example only: GASolver is the teammate's actual implementation.
+from tsp_hpc.solvers.registry import SolverSpec
+
+
+def solver_specs():
+    return (SolverSpec("ga", "ga-serial-v1", GASolver, "independent",
+                       supports_time=True, supports_history=True),)
+```
+
+Add that package's registrations and explicit default in `default_registry()`.
+Do not discover modules dynamically, opportunistically hide import errors, or
+register placeholders. `TrialPlan.invocations()` owns the three agreed logical
+units. Budget/checkpoint changes remain scientific inputs, not resource knobs.
+
+The reusable `tsp_hpc.solvers.conformance.check_adapter` has no pytest dependency:
+
+```python
+from tsp_hpc.problem.instances import fixture
+from tsp_hpc.solvers.registry import default_registry
+from tsp_hpc.solvers.conformance import check_adapter
+
+spec = default_registry().resolve("nn", implementation="remaining-array-v1")
+result = check_adapter(spec, fixture("square").instance, seed=2**63 + 7,
+                       budget={"start_cities": [2, 0]}, distance_mode="dense")
+```
+
+It bounds inputs to 64 cities, checks immutable inputs/results/configuration,
+Python/NumPy global RNG ownership, shared work/stopping/history rules, independent
+objective validation and nested timings. Fixed work is replayed after an
+intervening different-seed invocation and with history toggled. Timed runs are
+validated without assuming identical wall-clock-dependent work.
+
+`tests/solvers/test_conformance.py` automatically parametrizes **all production
+registrations**, both distance modes, every canonical tiny fixture, zero work,
+small/combined deadlines and invalid direct calls. Its pipeline test reaches real
+JSONL ingestion and history projection. `tests/experiments/test_generic_runner.py`
+adds test-only GA/SA-shaped multi-search, seed, tie and failure cases. Those scripts
+are not algorithms, production capabilities, or scientific acceptance evidence.
+
+Run the full warnings-as-errors suite. The common checks are not proofs of native
+RNG ownership, operator correctness or heuristic optimality: GA still needs OX,
+tournament, mutation, elitism and initialization tests; SA still needs reversal,
+acceptance, cooling, rejection, drift and checkpoint-state tests. PR #50's Smart
+interface/swap variant does not meet the agreed SA contract merely by rebasing.
 
 ## CI and review
 

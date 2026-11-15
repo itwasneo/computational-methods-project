@@ -1,6 +1,6 @@
 # Experiment manifests, identities, and random streams
 
-This reference owns the fixed-work CPU schema, identity encoding and logical RNG protocol. `Manifest` validates and plans; it does not generate inputs, execute solvers, allocate resources or persist benchmark results. See the [usage guide](usage.md) for data and solver APIs.
+This reference owns the CPU search schema, identity encoding and logical RNG protocol. `Manifest` validates and plans; it does not generate inputs, execute solvers, allocate resources or persist benchmark results. See the [usage guide](usage.md) for data and solver APIs.
 
 ## API and example
 
@@ -69,22 +69,25 @@ For new generated data, use `make_instance_id()` when constructing the instance,
 | `algorithm` | Required: `nn`, `ga`, or `sa` |
 | `variant` | Optional; resolves to that algorithm's agreed v1 variant; alternatives are rejected |
 | `parameters` | Optional object; resolves every parameter default from the [baseline specification](algorithm-baselines.md) |
-| `budget` | Required, explicit algorithm-specific fixed-work limit |
+| `budget` | Required: explicit work, finite positive `time_limit_s`, or both; NN always requires `start_cities` |
 | `solver_seed` | Required root seed, a Python integer in `[0, 2**64)` |
 | `repetitions` | Required non-empty list of distinct, non-negative integer repetition IDs, not a count |
 | `logical_search_ids` | GA/SA only: ordered distinct non-blank strings; defaults to `["0"]` |
-| `record_history` | Optional; only `false` is supported in v1 |
+| `record_history` | Optional boolean, default `false` |
+| `history_policy` | Optional only with recording enabled; resolves `interval_s: 0.1`, `max_points: 4096` |
 | `executions` | Required non-empty list of requested execution configurations |
 
 Parameter defaults/ranges and work semantics are defined in the [algorithm specifications](algorithm-baselines.md), not redefined by the schema. Work budgets must be explicit; development presets are not implicit budget defaults.
 
-| Algorithm | Required budget | Logical search unit |
+| Algorithm | Work budget (NN always required) | Logical search unit |
 | --- | --- | --- |
 | NN | `start_cities`: ordered distinct in-range Python integer IDs; empty allowed | A start; parameters must be empty and `logical_search_ids` is rejected |
 | GA | `max_generations >= 0` | An independent population, not a migrating island |
 | SA | `max_proposals >= 0` per chain | An independent chain |
 
-Zero-work plans are not dropped. Time limits, history requests, other variants and extra parameters are rejected rather than ignored.
+Zero-work plans are not dropped. For GA/SA the work field may be omitted when a finite positive `time_limit_s` is supplied. Timed SA additionally resolves integer `time_check_interval_proposals >= 1` (default `256`); it is rejected without a time limit. NN always retains an explicit finite start list. Time limits apply once per NN batch or once per independent population/chain, not to the whole campaign.
+
+The additive time/history extension leaves all previously valid fixed-work normalization and IDs unchanged; disabled history omits `history_policy`. Older readers reject these newly supported requests rather than interpreting them as fixed work. Enabled policy defaults and all supplied limits enter search identity, but not RNG derivation. See [sampling and stopping](contracts.md#solver-results-and-progress). The registered runner persists these requests using envelope v3. Production execution currently registers NN only; GA/SA planning does not advertise unimplemented algorithms. Other variants and extra parameters remain errors.
 
 ### Execution configurations
 

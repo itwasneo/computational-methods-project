@@ -14,6 +14,7 @@ import numpy as np
 
 from tsp_hpc.problem.data import TSPInstance, validate_city_index, validate_coordinates, validate_tour
 from tsp_hpc.problem.objective import NumericalError
+from tsp_hpc.reproducibility.native import require_native_runtime, verify_dispatchers
 
 DEFAULT_MAX_MATRIX_BYTES = 256 * 1024 * 1024
 
@@ -83,6 +84,7 @@ def warmup_distance_kernels() -> None:
     No global RNG state or caller data is consumed. Repeated calls still perform
     tiny dispatches; they need not compile again if signatures are already loaded.
     """
+    require_native_runtime()
     coordinates = np.array([[0., 0.], [3., 4.]], dtype=np.float64)
     coordinates.flags.writeable = False
     matrix = np.empty((2, 2), dtype=np.float64)
@@ -94,6 +96,8 @@ def warmup_distance_kernels() -> None:
         distance_tour_kernel(coordinates, matrix, use_dense, candidate)
     candidate.flags.writeable = False
     distance_tour_kernel(coordinates, matrix, True, candidate)
+    coordinate_edge_kernel(coordinates, 0, 1)
+    verify_dispatchers((coordinate_edge_kernel, distance_edge_kernel, distance_tour_kernel, _fill_dense))
 
 
 @dataclass(frozen=True, eq=False, init=False)

@@ -65,7 +65,7 @@ Native compiled `hypot` may differ from Python's implementation in the last bits
 Each algorithm exposes the same logical boundary through a Python wrapper:
 
 ```text
-solve(instance, *, seed, budget, parameters, record_history=False) -> SolverResult
+solve(instance, *, seed, budget, parameters, record_history=False, history_policy=None) -> SolverResult
 ```
 
 Wrappers validate records and pass primitive scalars and arrays into compiled kernels; kernels need not accept dictionaries or rich objects. Implementation and hardware selection belong to the adapter, not scientific parameters.
@@ -74,9 +74,10 @@ Wrappers validate records and pass primitive scalars and arrays into compiled ke
 | --- | --- |
 | `instance` | A validated instance using the representation and objective above. |
 | `seed` | Explicit Python integer in `[0, 2**64)`; booleans are not seeds. Accepted even by a deterministic algorithm so the common call and provenance stay consistent. |
-| `budget` | Explicit algorithm-specific work limits, a finite positive search-time limit in seconds, or both; at least one stopping limit is required. Initial implementations support fixed work; time-based requests require the later time-budget extension. |
+| `budget` | Explicit algorithm-specific work limits, a finite positive search-time limit in seconds, or both; at least one stopping limit is required. NN requires an explicit finite ordered start list even when a time limit is present; GA/SA may use time-only limits. |
 | `parameters` | Validated scientific configuration: initialization and algorithm-specific choices. Resolve defaults and record the effective values before execution; reject unknown fields rather than silently ignoring them. |
 | `record_history` | Disabled by default. Enables best-so-far observations only when the implementation supports a defined sampling policy. |
+| `history_policy` | Optional with recording enabled: `interval_s >= 0` (default `0.1`) and integer `max_points >= 2` (default `4096`), resolved and recorded as scientific inputs. |
 
 An optional initial tour, if supported by the chosen algorithm, is supplied through its parameters and follows the same tour contract. The solver owns its working copy and does not mutate caller-provided arrays. Returned best tours must not alias mutable solver state or caller-owned buffers.
 
@@ -108,7 +109,9 @@ Use these common counters, with zero for algorithms to which they do not apply:
 
 Incremental move-delta evaluations are not full-tour evaluations. Additional diagnostic counters are permitted if their meanings are documented. For a logical batch of searches, aggregate counters across those searches, not execution threads. Counters are not a claim that a GA generation and an SA proposal have equal computational cost.
 
-A progress point contains `elapsed_s`, a snapshot of `work`, and `best_cost` for a complete tour. Timestamps are monotonic search-relative wall-clock observations, counters do not decrease, and best-so-far costs do not increase beyond validation tolerance. Recording must not consume randomness or alter proposal, selection, or acceptance rules. Its overhead can change how much work fits within a time limit and must be measured and reported. Sampling intervals and terminal-sample policy must be defined before enabling history or reporting time-to-target.
+A progress point contains `elapsed_s`, a snapshot of `work`, and `best_cost` for a complete tour. Timestamps are monotonic search-relative wall-clock observations, counters do not decrease, and best-so-far costs do not increase beyond validation tolerance. Recording must not consume randomness or alter proposal, selection, or acceptance rules. Its overhead can change how much work fits within a time limit and must be measured and reported. `SearchControl` supplies a shared monotonic clock and sampling policy. At each safe checkpoint, resolve stopping first: use `observe` only when continuing, and `finish` for the stopping checkpoint (so the reserved terminal slot is not consumed twice). The first complete incumbent is sampled at its safe checkpoint; later observations require at least `interval_s` since the last sample. Zero requests every safe checkpoint. Finish always records the terminal incumbent, replacing the last observation if the work snapshot is identical. No complete tour means an empty enabled history. `max_points` reserves a terminal slot; exceeding the bound raises `HistoryLimitError`, never silently truncates or downsamples evidence. Use a larger bound/interval for long searches. Observations are immutable `ProgressPoint` values; no intermediate tour is fabricated.
+
+Time limits and history bounds apply **per adapter invocation**: once to NN's complete ordered start batch, once to each independent GA population/SA chain. Serial orchestration executes every requested logical search with its own full allowance and reports their summed work/times; this is not a shared campaign deadline. A campaign with several populations/chains therefore has several explicit allowances. Neither the runner nor an adapter silently divides a limit or adds searches.
 
 Malformed inputs and execution failures must not masquerade as `ok` or `no_solution`. The runner records failures separately, including their phase and error information. It wraps successful solver results with experiment IDs, effective configuration, seeds, timings, provenance, and execution metadata in a versioned run envelope. Numerical solvers do not write result files themselves.
 
