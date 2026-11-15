@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack, tick } from 'svelte';
   import { ApiClient } from '../results/client';
   import { ExperimentController, initialState, terminal, shouldPoll } from './controller';
   import { decodeGeometry } from './geometry';
@@ -36,6 +36,20 @@
   let inputError = $state('');
   let stopConfirmed = $state(false);
   let cityPage = $state(0);
+  let resultPanel = $state<HTMLDivElement>();
+  let resultHeight = $state(0);
+  async function inspectAttempt(id: string) {
+    if (controller.state.busy) return;
+    // Keep the document from shrinking while the old verified view is cleared.
+    resultHeight = resultPanel?.getBoundingClientRect().height ?? 0;
+    cityPage = 0;
+    await controller.inspect(id);
+    resultHeight = 0;
+    await tick();
+    if (active && visible && !view.error && view.details?.details.attempt_id === id) {
+      resultPanel?.querySelector('h2')?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }
   function download(blob: Blob, name: string) {
     const url = URL.createObjectURL(blob), link = document.createElement('a');
     link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -160,9 +174,10 @@
       </section>
       {#if view.analysis && view.selected}
         <Analysis page={view.analysis} busy={!!view.busy} instanceId={view.resultInstance?.instance.instance_id ?? ''}
-          implementations={available} references={view.artifacts.filter(a => a.kind === 'json')} analyze={q => controller.analyze(q)} inspect={id => { cityPage = 0; void controller.inspect(id); }} />
+          implementations={available} references={view.artifacts.filter(a => a.kind === 'json')} analyze={q => controller.analyze(q)} inspect={id => void inspectAttempt(id)} />
         <div class="source-actions"><button disabled={!!view.busy || !view.query?.cursor} onclick={() => view.query && controller.analyze({ ...view.query, cursor: null })}>First analysis page</button><button disabled={!!view.busy || !view.analysis.next_cursor} onclick={() => view.query && controller.analyze({ ...view.query, cursor: view.analysis!.next_cursor })}>Next analysis page</button></div>
       {/if}
+      <div class="result-slot" bind:this={resultPanel} style:min-height={`${resultHeight}px`} aria-busy={view.busy === 'Verifying final tour'}>
       {#if view.details}
         <section class="app-card"><h2>Verified final result</h2><p>Attempt: {view.details.details.attempt_id}</p>
           <p>Cost: {view.details.details.result.verified_cost ?? 'No final solution'} · Native verified: {String(view.details.details.native_verified)} · Usable: {String(view.details.details.row.usable)}</p>
@@ -184,12 +199,14 @@
           <details><summary>Configuration, logical results and timings</summary><pre>{JSON.stringify(view.details.details, null, 2)}</pre></details>
         </section>
       {/if}
+      </div>
     {/if}
   {/if}
   {#if view.busy}<p role="status">{view.busy}…</p>{/if}
   {#if view.error}<div role="alert" class="app-error"><strong>{view.error}</strong><p>Refresh stale state before trying again. For authorization loss, disconnect and enable fresh pairing in the owner terminal. An uncertain submission must retry its original key.</p></div>{/if}
 </main>
 <style>
+  .result-slot { display: flow-root; }
   :global(.app-card) { border: 1px solid #8886; border-radius: .7rem; padding: 1rem; margin: 1rem 0; }
   :global(.form-grid) { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; }
   :global(.app-card label) { display: block; margin: .5rem 0; }

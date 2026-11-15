@@ -159,6 +159,25 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         expect(page.get_by_role("heading", name="Verified final result")).to_be_visible()
         expect(page.get_by_label("Show tour")).to_be_checked()
         expect(page.get_by_role("region", name="Instance inspection")).to_be_visible()
+        expect(page.get_by_role('heading', name='Verified final result')).to_be_in_viewport()
+        # Deliberately hold the next result request to observe the loading layout.
+        held = []
+        page.route('**/api/jobs/result', lambda route: held.append(route), times=1)
+        next_attempt = trials[1]['attempt_id']
+        next_button = page.get_by_role('button', name=next_attempt, exact=True)
+        next_button.scroll_into_view_if_needed()
+        before = page.evaluate('({y: scrollY, height: document.documentElement.scrollHeight})')
+        next_button.click()
+        expect(page.locator('.result-slot')).to_have_attribute('aria-busy', 'true')
+        page.wait_for_timeout(100)
+        during = page.evaluate('({y: scrollY, height: document.documentElement.scrollHeight})')
+        assert during['height'] >= before['height'], 'loading must not collapse the old viewer space'
+        assert abs(during['y'] - before['y']) <= 2, 'loading must not jump the document upward'
+        assert len(held) == 1
+        held[0].continue_()
+        expect(page.get_by_text(f'Attempt: {next_attempt}', exact=True)).to_be_visible()
+        expect(page.get_by_role('heading', name='Verified final result')).to_be_in_viewport()
+        expect(page.get_by_role('region', name='Instance inspection')).to_be_in_viewport(ratio=0.5)
         page.get_by_label("Analysis table").select_option("comparisons")
         with page.expect_response("**/api/jobs/analysis") as comparison:
             page.get_by_role("button", name="Show analysis", exact=True).click()
