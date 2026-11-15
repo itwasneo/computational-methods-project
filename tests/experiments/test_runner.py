@@ -13,6 +13,7 @@ from tsp_hpc.experiments.manifests import Manifest
 from tsp_hpc.reproducibility.identity import stable_id
 from tsp_hpc.problem.objective import validate_solution
 from tsp_hpc.solvers.results import SolverResult
+from tsp_hpc.solvers.nn import solver as nn
 import tsp_hpc.experiments.runner as runner
 
 
@@ -76,7 +77,7 @@ def test_source_provenance_tracks_package_checkout_not_callers_directory(tmp_pat
     assert runner._source_state() == {"revision": None, "dirty": None}
 
 
-@pytest.mark.parametrize("implementation", runner.nn.implementation_names())
+@pytest.mark.parametrize("implementation", nn.implementation_names())
 @pytest.mark.parametrize("mode", ["dense", "on_demand"])
 def test_generate_run_validate_save(tmp_path, implementation, mode):
     record, manifest, bindings, output = campaign(
@@ -129,7 +130,7 @@ def test_resolved_default_identity_and_fresh_attempts(tmp_path):
     requested = manifest.expand()[0]
     runner.run_manifest(manifest, instance_paths=bindings, output_path=output)
     first = records(output)[0]
-    assert first["effective_execution"]["implementation"] == runner.nn.DEFAULT_IMPLEMENTATION
+    assert first["effective_execution"]["implementation"] == nn.DEFAULT_IMPLEMENTATION
     assert first["execution_id"] != requested.execution_id
     assert first["execution_id"] == stable_id("execution", {
         "search_id": requested.search_id, "execution": first["effective_execution"],
@@ -146,7 +147,7 @@ def test_resolved_default_identity_and_fresh_attempts(tmp_path):
 def test_effective_collision_rejected_before_output_or_setup(tmp_path, monkeypatch):
     base = {"backend": "serial", "resources": {"profile": "local-cpu"}}
     _, manifest, bindings, output = campaign(tmp_path, executions=[
-        base, {**base, "implementation": runner.nn.DEFAULT_IMPLEMENTATION},
+        base, {**base, "implementation": nn.DEFAULT_IMPLEMENTATION},
     ])
     monkeypatch.setattr(runner, "prepare_distances", lambda *a, **k: pytest.fail("unexpected preparation"))
     with pytest.raises(ValueError, match="duplicate effective"):
@@ -158,8 +159,8 @@ def test_trial_setup_is_fresh_and_seeded_only_after_warmup(tmp_path, monkeypatch
     _, manifest, bindings, output = campaign(tmp_path, repetitions=[8, 2])
     events = []
     prepare = runner.prepare_distances
-    warm = runner.nn.warmup_nearest_neighbour
-    solve = runner.nn.NearestNeighbourSolver.solve
+    warm = nn.warmup_nearest_neighbour
+    solve = nn.NearestNeighbourSolver.solve
     def observe_prepare(*args, **kwargs):
         events.append("prepare")
         return prepare(*args, **kwargs)
@@ -170,8 +171,8 @@ def test_trial_setup_is_fresh_and_seeded_only_after_warmup(tmp_path, monkeypatch
         events.append(kwargs["seed"])
         return solve(self, instance, **kwargs)
     monkeypatch.setattr(runner, "prepare_distances", observe_prepare)
-    monkeypatch.setattr(runner.nn, "warmup_nearest_neighbour", observe_warm)
-    monkeypatch.setattr(runner.nn.NearestNeighbourSolver, "solve", observe_solve)
+    monkeypatch.setattr(nn, "warmup_nearest_neighbour", observe_warm)
+    monkeypatch.setattr(nn.NearestNeighbourSolver, "solve", observe_solve)
     python_state, numpy_state = random.getstate(), np.random.get_state()
     runner.run_manifest(manifest, instance_paths=bindings, output_path=output)
     expected = []
@@ -238,14 +239,14 @@ def test_memory_ceiling_failure_does_not_fall_back(tmp_path):
 
 def test_runner_independently_validates_and_continues_after_failure(tmp_path, monkeypatch):
     _, manifest, bindings, output = campaign(tmp_path, repetitions=[0, 1])
-    solve = runner.nn.NearestNeighbourSolver.solve
+    solve = nn.NearestNeighbourSolver.solve
     calls = []
     def corrupt_first(self, *args, **kwargs):
         result = solve(self, *args, **kwargs)
         calls.append(1)
         return result if len(calls) > 1 else SolverResult(
             "ok", result.best_tour, result.best_cost + 1, result.work, "work_limit")
-    monkeypatch.setattr(runner.nn.NearestNeighbourSolver, "solve", corrupt_first)
+    monkeypatch.setattr(nn.NearestNeighbourSolver, "solve", corrupt_first)
     runner.run_manifest(manifest, instance_paths=bindings, output_path=output)
     failed, passed, summary = records(output)
     assert failed["error"]["phase"] == "validation" and failed["result"] is None
@@ -280,7 +281,7 @@ def test_existing_shard_and_input_paths_are_never_overwritten(tmp_path, monkeypa
 @pytest.mark.parametrize("exception", [OSError("disk full"), KeyboardInterrupt()])
 def test_write_failure_or_interrupt_aborts_without_success_summary(tmp_path, monkeypatch, exception):
     _, manifest, bindings, output = campaign(tmp_path, repetitions=[0, 1])
-    target, name = ((runner.nn.NearestNeighbourSolver, "solve")
+    target, name = ((nn.NearestNeighbourSolver, "solve")
                     if isinstance(exception, KeyboardInterrupt) else (runner, "_write_record"))
     original = getattr(target, name)
     count = 0
@@ -323,9 +324,9 @@ def test_solver_errors_are_distinguished_from_success(tmp_path, monkeypatch, pha
     def fail(*args, **kwargs):
         raise ArithmeticError("injected numerical failure")
     if phase == "solver_warmup":
-        monkeypatch.setattr(runner.nn, "warmup_nearest_neighbour", fail)
+        monkeypatch.setattr(nn, "warmup_nearest_neighbour", fail)
     else:
-        monkeypatch.setattr(runner.nn.NearestNeighbourSolver, "solve", fail)
+        monkeypatch.setattr(nn.NearestNeighbourSolver, "solve", fail)
     summary = runner.run_manifest(manifest, instance_paths=bindings, output_path=output)
     trial = records(output)[0]
     assert trial["error"]["phase"] == phase and trial["error"]["type"] == "ArithmeticError"

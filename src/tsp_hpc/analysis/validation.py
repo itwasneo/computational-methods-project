@@ -1,4 +1,4 @@
-"""Runner-v1/v2 record validation and scalar projection, independent of table storage.
+"""Runner-v1/v2/v3 validation and scalar projection, independent of table storage.
 
 Rebuild plans through the shared manifest rules; check recorded structure and
 identities, not objective costs without original instance artifacts.
@@ -17,6 +17,7 @@ from tsp_hpc.problem.data import validate_tour
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.reproducibility.build import validate_observation, validate_source
 from tsp_hpc.solvers.results import WorkCounters
+from tsp_hpc.solvers.validation import aggregate_results, decode_result, validate_nested_duration as _less_equal
 
 TRIAL_FIELDS = set("schema_version record_type campaign_id attempt_id started_at requested_plan effective_execution execution_id runtime input setup_policy max_matrix_bytes adapter outcome result error timings".split())
 PHASES = set("input_time_s distance_preparation_wall_time_s distance_warmup_time_s preprocessing_time_s solver_warmup_time_s solve_wall_time_s search_time_s solver_validation_time_s runner_validation_time_s pre_persistence_time_s failed_phase_time_s".split())
@@ -88,7 +89,10 @@ def decode_record(raw):
 
 
 def _plan(record):
+    require_fields(record, {"schema_version", "search_id", "execution_id", "trial_seed", "search", "execution", "logical_searches"})
     search = record["search"]
+    if type(search) is not dict or type(search.get("instance")) is not dict:
+        raise ValueError("requested search and instance must be JSON objects")
     experiment = {key: value for key, value in search.items()
                   if key not in ("instance", "repetition", "seed_scheme", "bit_generator")}
     experiment.update(instance_id=search["instance"]["instance_id"],
@@ -103,12 +107,12 @@ def _plan(record):
 def _runtime(runtime, schema_version):
     fields = {"versions", "source", "platform", "machine", "processor", "cpu_count",
               "memory", "runner_workers", "solver_threads", "cpu_affinity", "environment"}
-    require_fields(runtime, fields | ({"build"} if schema_version == 2 else set()))
+    require_fields(runtime, fields | ({"build"} if schema_version >= 2 else set()))
     require_fields(runtime["versions"], {"python", "tsp_hpc", "numpy", "numba", "llvmlite"})
     for value in runtime["versions"].values():
         require_text(value)
     validate_source(runtime["source"])
-    if schema_version == 2:
+    if schema_version >= 2:
         validate_observation(runtime["build"], runtime["source"], runtime["versions"]["tsp_hpc"])
     for key in ("platform", "machine", "processor"):
         if type(runtime[key]) is not str:
@@ -141,13 +145,6 @@ def _timings(values, allowed, required=()):
         require_number(value)
 
 
-def _less_equal(left, right):
-    if not math.isfinite(left) or not math.isfinite(right) or (
-        left > right and not math.isclose(left, right, rel_tol=1e-10, abs_tol=1e-9)
-    ):
-        raise ValueError("inconsistent nested timing durations")
-
-
 def _execution(record, search, requested, search_id):
     effective = record["effective_execution"]
     if effective is not None:
@@ -163,7 +160,7 @@ def _execution(record, search, requested, search_id):
             raise ValueError("effective execution changes the requested configuration")
         if record["execution_id"] != stable_id("execution", {"search_id": search_id, "execution": effective}):
             raise ValueError("effective execution identity mismatch")
-        if search["algorithm"] != "nn" or effective["backend"] != "serial" or search["instance"]["distance_kind"] != "euclidean_2d":
+        if (record["schema_version"] < 3 and search["algorithm"] != "nn") or effective["backend"] != "serial" or search["instance"]["distance_kind"] != "euclidean_2d":
             raise ValueError("unsupported effective runner capability")
     elif record["execution_id"] is not None:
         raise ValueError("unresolved execution must have null identity")
@@ -228,6 +225,8 @@ def _result(result, search):
     require_fields(result, {"status", "best_tour", "best_cost", "work", "termination_reason", "history"})
     require_fields(result["work"], set(WorkCounters().to_dict()))
     work = WorkCounters(**result["work"]).to_dict()
+    if search["record_history"] or "time_limit_s" in search["budget"]:
+        raise ValueError("legacy envelopes support only fixed-work NN without history")
     count = len(search["budget"]["start_cities"])
     if work != WorkCounters(nn_starts_completed=count, full_tour_evaluations=count).to_dict():
         raise ValueError("NN work counters disagree with fixed workload")
@@ -254,7 +253,7 @@ def _failed(record, effective):
     if record["result"] is not None:
         raise ValueError("failed trial cannot carry an accepted result")
     error = record["error"]
-    require_fields(error, {"phase", "type", "message", "reported_work"})
+    require_fields(error, {"phase", "type", "message", "reported_work"} | ({"logical_index"} if record["schema_version"] == 3 else set()))
     if error["phase"] not in ("capability", "input", "distance_preparation", "solver_warmup", "solve", "validation"):
         raise ValueError("unknown failure phase")
     if (effective is None) != (error["phase"] == "capability"):
@@ -268,9 +267,62 @@ def _failed(record, effective):
     require_number(record["timings"]["failed_phase_time_s"])
 
 
+def _logical_results(record, plan):
+    if record["budget_scope"] != "per-logical-invocation":
+        raise ValueError("unsupported budget scope")
+    entries, invocations = record["logical_results"], plan.invocations()
+    if type(entries) is not list or len(entries) > len(invocations):
+        raise ValueError("invalid logical-result sequence")
+    completed = record["outcome"] == "completed"
+    if completed and len(entries) != len(invocations):
+        raise ValueError("completed trial is missing logical results")
+    results = []
+    keys = {"solve_wall_time_s", "search_time_s", "solver_validation_time_s", "runner_validation_time_s"}
+    for entry, expected in zip(entries, invocations):
+        require_fields(entry, {*expected, "result", "timings"})
+        if canonical_json({key: entry[key] for key in expected}) != canonical_json(expected):
+            raise ValueError("logical result order/seed disagrees with plan")
+        times = entry["timings"]
+        _timings(times, keys, keys)
+        _less_equal(times["search_time_s"] + times["solver_validation_time_s"], times["solve_wall_time_s"])
+        results.append(decode_result(entry["result"], plan.search, search_time_s=times["search_time_s"],
+                                     validation_time_s=times["solver_validation_time_s"]))
+    for key in keys:
+        total = math.fsum(entry["timings"][key] for entry in entries)
+        if not math.isclose(total, record["timings"].get(key, 0.), rel_tol=1e-10, abs_tol=1e-9):
+            raise ValueError("logical timing total disagrees with trial")
+    if not completed:
+        error = record["error"]
+        index = error["logical_index"]
+        if error["phase"] in ("solve", "validation"):
+            if index is None:
+                if len(entries) != len(invocations):
+                    raise ValueError("missing failed logical index")
+            elif type(index) is not int or index != len(entries) or not 0 <= index < len(invocations):
+                raise ValueError("failed logical index is not the next invocation")
+        elif index is not None or entries:
+            raise ValueError("setup failure cannot contain logical results")
+        return None
+    expected = aggregate_results(results)
+    value = record["result"]
+    require_fields(value, expected)
+    require_fields(value["work"], WorkCounters().to_dict())
+    WorkCounters(**value["work"])
+    if value["best_logical_index"] is not None and type(value["best_logical_index"]) is not int:
+        raise ValueError("best logical index must be integer or null")
+    tour = value["best_tour"]
+    if tour is not None and (type(tour) is not list or any(type(city) is not int for city in tour)):
+        raise ValueError("invalid aggregate tour")
+    normalized = {**value, "best_cost": None if value["best_cost"] is None else require_number(value["best_cost"])}
+    if canonical_json(normalized) != canonical_json(expected):
+        raise ValueError("aggregate result disagrees with logical-order reduction")
+    digest = None if tour is None else hashlib.sha256(np.array(tour, dtype="<i8").tobytes()).hexdigest()
+    return expected["work"], expected["best_cost"], digest, expected["status"]
+
+
 def trial_row(record):
     """Validate one trial and project only the analysis table's scalar metadata."""
-    require_fields(record, TRIAL_FIELDS)
+    require_fields(record, TRIAL_FIELDS | ({"budget_scope", "logical_results"} if record["schema_version"] == 3 else set()))
     require_uuid(record["campaign_id"])
     require_uuid(record["attempt_id"])
     if datetime.fromisoformat(record["started_at"]).utcoffset() is None:
@@ -291,9 +343,12 @@ def trial_row(record):
     work, cost, tour_digest, status = None, None, None, None
     if record["outcome"] == "completed":
         _completed(record, search, effective)
-        work, cost, tour_digest, status = _result(record["result"], search)
+        work, cost, tour_digest, status = (_logical_results(record, plan) if record["schema_version"] == 3
+                                           else _result(record["result"], search))
     elif record["outcome"] == "failed":
         _failed(record, effective)
+        if record["schema_version"] == 3:
+            _logical_results(record, plan)
     else:
         raise ValueError("unknown outcome")
     config = effective or requested

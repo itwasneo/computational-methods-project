@@ -1,4 +1,4 @@
-"""Sequential fixed-work campaigns with exclusive, single-writer JSONL shards.
+"""Registered serial solver campaigns with exclusive, single-writer JSONL shards.
 
 Manifest/input binding errors precede execution. Trial failures are records;
 serialization/write failures and process interrupts abort rather than masquerade
@@ -7,6 +7,8 @@ as completed campaigns. No resume, implicit generation, or resource allocation.
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from dataclasses import replace
+import math
 import os
 from pathlib import Path
 import platform
@@ -24,7 +26,8 @@ from tsp_hpc.problem.distances import DEFAULT_MAX_MATRIX_BYTES, prepare_distance
 from tsp_hpc.reproducibility.identity import canonical_json, stable_id
 from tsp_hpc.problem.instances import load_instance
 from tsp_hpc.experiments.manifests import Manifest
-from tsp_hpc.solvers.nn import solver as nn
+from tsp_hpc.solvers.registry import SolverRegistry, default_registry
+from tsp_hpc.solvers.validation import aggregate_results, encode_result, validate_result, validate_nested_duration
 from tsp_hpc.problem.objective import validate_solution
 from tsp_hpc.solvers.results import SolverResult
 
@@ -91,20 +94,28 @@ def runtime_provenance() -> dict:
     }
 
 
-def _execution(plan) -> dict:
+def _execution(plan, registry):
     search, execution = plan.search, plan.execution
-    if search["record_history"] or "time_limit_s" in search["budget"]:
-        raise ValueError("timed/history runner records require the versioned runner extension")
-    if search["algorithm"] != "nn":
-        raise ValueError(f"runner does not support algorithm {search['algorithm']!r}")
-    if execution["backend"] != "serial":
-        raise ValueError("runner supports only serial execution")
-    if search["instance"]["distance_kind"] != "euclidean_2d":
-        raise ValueError("runner supports only unrounded euclidean_2d execution")
-    execution.setdefault("implementation", nn.DEFAULT_IMPLEMENTATION)
-    if execution["implementation"] not in nn.implementation_names():
-        raise ValueError(f"unavailable NN implementation: {execution['implementation']!r}")
-    return execution
+    spec = registry.resolve(search["algorithm"], implementation=execution.get("implementation"),
+                            backend=execution["backend"], distance_kind=search["instance"]["distance_kind"],
+                            distance_mode=execution["distance_mode"],
+                            timed="time_limit_s" in search["budget"], record_history=search["record_history"])
+    execution["implementation"] = spec.implementation
+    return execution, spec
+
+
+def _adapter_metadata(solver, prepared, spec):
+    metadata = solver.metadata
+    expected = {**prepared.metadata, "algorithm": spec.algorithm, "variant": spec.variant,
+                "implementation": spec.implementation, "backend": "serial"}
+    if type(metadata) is not dict or metadata.keys() != expected.keys() | {"solver_warmup_time_s"}:
+        raise ValueError("adapter must report the shared preparation/warm-up metadata")
+    if canonical_json({key: metadata[key] for key in expected}) != canonical_json(expected):
+        raise ValueError("adapter metadata disagrees with its registration/preparation")
+    duration = metadata["solver_warmup_time_s"]
+    if type(duration) not in (int, float) or not math.isfinite(duration) or duration < 0:
+        raise ValueError("invalid adapter warm-up duration")
+    return dict(metadata)
 
 
 def _write_record(stream, record) -> None:
@@ -116,22 +127,12 @@ def _write_record(stream, record) -> None:
     os.fsync(stream.fileno())
 
 
-def _result_record(result: SolverResult, reference_cost) -> dict:
-    return {
-        "status": result.status,
-        "best_tour": None if result.best_tour is None else result.best_tour.tolist(),
-        "best_cost": reference_cost,
-        "work": result.work.to_dict(), "termination_reason": result.termination_reason,
-        "history": result.history,
-    }
-
-
-def _trial(plan, execution, capability_error, bindings, provenance, campaign_id, matrix_limit):
+def _trial(plan, execution, spec, capability_error, bindings, provenance, campaign_id, matrix_limit):
     start = perf_counter()
     search = plan.search
     identifier = search["instance"]["instance_id"]
     record = {
-        "schema_version": 2, "record_type": "trial", "campaign_id": campaign_id,
+        "schema_version": 3, "record_type": "trial", "campaign_id": campaign_id,
         "attempt_id": uuid4().hex, "started_at": datetime.now(timezone.utc).isoformat(),
         "requested_plan": plan.to_dict(), "effective_execution": execution,
         "execution_id": None if execution is None else stable_id(
@@ -139,9 +140,10 @@ def _trial(plan, execution, capability_error, bindings, provenance, campaign_id,
         "runtime": provenance, "input": {"path": str(bindings[identifier]) if identifier in bindings else None},
         "setup_policy": "fresh-per-trial", "max_matrix_bytes": matrix_limit,
         "adapter": None, "outcome": "failed", "result": None, "error": None,
-        "timings": {},
+        "budget_scope": "per-logical-invocation", "logical_results": [], "timings": {},
     }
     result = None
+    logical_index = None
     phase = "capability"
     phase_start = perf_counter()
     try:
@@ -169,34 +171,47 @@ def _trial(plan, execution, capability_error, bindings, provenance, campaign_id,
 
         phase = "solver_warmup"
         phase_start = perf_counter()
-        solver = nn.NearestNeighbourSolver(prepared, implementation=execution["implementation"])
-        record["adapter"] = solver.metadata
-        record["timings"]["solver_warmup_time_s"] = solver.solver_warmup_time_s
+        solver = spec.factory(prepared)
+        record["adapter"] = _adapter_metadata(solver, prepared, spec)
+        record["timings"]["solver_warmup_time_s"] = record["adapter"]["solver_warmup_time_s"]
+        validate_nested_duration(record["timings"]["solver_warmup_time_s"], perf_counter() - phase_start)
 
-        phase = "solve"
-        phase_start = perf_counter()
-        # NN consumes no randomness. Future stochastic adapters must receive
-        # fresh logical chain/population seeds, never reuse a warm-up generator.
-        result = solver.solve(loaded.instance, seed=plan.trial_seed, budget=search["budget"],
-                              parameters=search["parameters"], record_history=search["record_history"])
-        record["timings"]["solve_wall_time_s"] = perf_counter() - phase_start
-        if not isinstance(result, SolverResult):
-            raise TypeError("solver must return SolverResult")
-        record["timings"].update(search_time_s=result.search_time_s,
-                                  solver_validation_time_s=result.validation_time_s)
-
-        phase = "validation"
-        phase_start = perf_counter()
-        reference = None
-        if result.status == "ok":
-            reference = validate_solution(loaded.instance, result.best_tour, result.best_cost)
-        record["timings"]["runner_validation_time_s"] = perf_counter() - phase_start
-        record["result"] = _result_record(result, reference)
+        accepted = []
+        for logical_index, invocation in enumerate(plan.invocations()):
+            result = None
+            phase = "solve"
+            phase_start = perf_counter()
+            # Detached settings and the logical seed on EVERY call. Warm-up must
+            # never supply measured RNG/search state to these invocations.
+            request = plan.search
+            result = solver.solve(loaded.instance, seed=invocation["seed"], budget=request["budget"],
+                                  parameters=request["parameters"], record_history=request["record_history"],
+                                  history_policy=request.get("history_policy"))
+            solve_time = perf_counter() - phase_start
+            if not isinstance(result, SolverResult):
+                raise TypeError("solver must return SolverResult")
+            times = {"solve_wall_time_s": solve_time, "search_time_s": result.search_time_s,
+                     "solver_validation_time_s": result.validation_time_s}
+            phase = "validation"
+            phase_start = perf_counter()
+            validate_nested_duration(result.search_time_s + result.validation_time_s, solve_time)
+            validate_result(result, search)
+            if result.status == "ok":
+                reference = validate_solution(loaded.instance, result.best_tour, result.best_cost)
+                result = replace(result, best_cost=reference)
+            times["runner_validation_time_s"] = perf_counter() - phase_start
+            accepted.append(result)
+            record["logical_results"].append({**invocation, "result": encode_result(result), "timings": times})
+            for key, duration in times.items():
+                record["timings"][key] = record["timings"].get(key, 0.) + duration
+        logical_index = None
+        record["result"] = aggregate_results(accepted)
         record["outcome"] = "completed"
     except Exception as error:
         # Do not catch KeyboardInterrupt/SystemExit or errors from shard writes.
         record["error"] = {
             "phase": phase, "type": type(error).__name__, "message": str(error),
+            "logical_index": logical_index,
             "reported_work": result.work.to_dict() if isinstance(result, SolverResult) else None,
         }
         record["timings"]["failed_phase_time_s"] = perf_counter() - phase_start
@@ -205,7 +220,8 @@ def _trial(plan, execution, capability_error, bindings, provenance, campaign_id,
 
 
 def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path],
-                 output_path: str | Path, max_matrix_bytes: int = DEFAULT_MAX_MATRIX_BYTES) -> dict:
+                 output_path: str | Path, max_matrix_bytes: int = DEFAULT_MAX_MATRIX_BYTES,
+                 registry: SolverRegistry | None = None) -> dict:
     """Execute plans in order and return the persisted campaign summary.
 
     Bind artifact paths explicitly by manifest instance ID. Each trial reloads,
@@ -219,6 +235,9 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
     summary signals an interrupted/failed campaign, not resumable completion.
     """
     campaign_start = perf_counter()
+    registry = default_registry() if registry is None else registry
+    if not isinstance(registry, SolverRegistry):
+        raise TypeError("registry must be a SolverRegistry")
     if not isinstance(manifest, Manifest):
         raise TypeError("manifest must be a Manifest")
     if not isinstance(instance_paths, Mapping):
@@ -237,9 +256,9 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
     resolved = []
     seen = set()
     for plan in manifest.expand():
-        execution, error = None, None
+        execution, error, spec = None, None, None
         try:
-            execution = _execution(plan)
+            execution, spec = _execution(plan, registry)
         except ValueError as failure:
             error = failure
         if execution is not None:
@@ -247,7 +266,7 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
             if identity in seen:
                 raise ValueError("duplicate effective execution after implementation resolution")
             seen.add(identity)
-        resolved.append((plan, execution, error))
+        resolved.append((plan, execution, error, spec))
     provenance = runtime_provenance()
     campaign_id = uuid4().hex
     counts = {"completed": 0, "failed": 0}
@@ -257,9 +276,9 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
     # writers. Do not unlink incomplete output on failure: preserve evidence.
     with output.open("x", encoding="utf-8") as stream:
         setup_time = perf_counter() - campaign_start
-        for plan, execution, error in resolved:
+        for plan, execution, error, spec in resolved:
             trial_start = perf_counter()
-            record = _trial(plan, execution, error, bindings, provenance, campaign_id, max_matrix_bytes)
+            record = _trial(plan, execution, spec, error, bindings, provenance, campaign_id, max_matrix_bytes)
             write_start = perf_counter()
             _write_record(stream, record)
             write_end = perf_counter()
@@ -269,7 +288,7 @@ def run_manifest(manifest: Manifest, *, instance_paths: Mapping[str, str | Path]
                                   "end_to_end_time_s": write_end - trial_start})
             counts[record["outcome"]] += 1
         summary = {
-            "schema_version": 2, "record_type": "campaign_summary", "campaign_id": campaign_id,
+            "schema_version": 3, "record_type": "campaign_summary", "campaign_id": campaign_id,
             "counts": counts, "planned_trials": len(resolved), "trial_timings": trial_timings,
             "timings": {"setup_time_s": setup_time, "trial_persistence_time_s": persistence_time,
                         "end_to_end_time_s": perf_counter() - campaign_start},
