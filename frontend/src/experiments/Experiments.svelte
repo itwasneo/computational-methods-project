@@ -1,17 +1,27 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
   import { ApiClient } from '../results/client';
-  import { ExperimentController, initialState, terminal } from './controller';
+  import { ExperimentController, initialState, terminal, shouldPoll } from './controller';
   import { decodeGeometry } from './geometry';
   import Analysis from './Analysis.svelte';
   import InstanceInspection from '../InstanceInspection.svelte';
   import type { Theme } from '../theme';
   import type { ScientificConfiguration, DistanceMode } from '../contracts';
-  let { theme, api, disconnectVersion, onSession }: { theme: Theme; api: ApiClient; disconnectVersion: number; onSession: (connected: boolean) => void } = $props();
+  let { theme, api, disconnectVersion, onSession, active }: { theme: Theme; api: ApiClient; disconnectVersion: number; onSession: (connected: boolean) => void; active: boolean } = $props();
   let view = $state(initialState());
   const controller = new ExperimentController(value => view = value, untrack(() => api));
   $effect(() => { disconnectVersion; untrack(() => controller.disconnect()); });
-  onMount(() => { const timer = setInterval(() => void controller.poll(), 1500); return () => clearInterval(timer); });
+  let visible = $state(document.visibilityState === 'visible');
+  onMount(() => {
+    const changed = () => visible = document.visibilityState === 'visible';
+    document.addEventListener('visibilitychange', changed);
+    return () => document.removeEventListener('visibilitychange', changed);
+  });
+  $effect(() => {
+    if (!active || !visible || !shouldPoll(view)) return;
+    const timer = setTimeout(() => void controller.poll(), 1500);
+    return () => clearTimeout(timer);
+  });
   onDestroy(() => controller.disconnect());
   let secret = $state('');
   let generator = $state<'uniform-v1' | 'clustered-v1'>('uniform-v1');

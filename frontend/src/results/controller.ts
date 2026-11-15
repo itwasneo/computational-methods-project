@@ -43,7 +43,6 @@ export class ResultsController {
   #change: (state: ResultsState) => void;
   #epoch = 0;
   #abort = new AbortController();
-  #timer: ReturnType<typeof setTimeout> | undefined;
   #cursors: (string | null)[] = [null];
   #queryKey: string | null = null;
 
@@ -60,7 +59,6 @@ export class ResultsController {
   }
 
   #begin(busy: string): Operation {
-    clearTimeout(this.#timer);
     this.#abort.abort();
     this.#abort = new AbortController();
     const epoch = ++this.#epoch;
@@ -94,7 +92,6 @@ export class ResultsController {
     } finally {
       if (operation.epoch === this.#epoch) {
         this.#set({ busy: '' });
-        this.#watch(operation);
       }
     }
   }
@@ -251,20 +248,4 @@ export class ResultsController {
     this.#set({ page, pageIndex: index });
   }
 
-  #watch(operation: Operation) {
-    const dataset = this.#state.dataset;
-    if (operation.epoch !== this.#epoch || dataset?.state !== 'ready' || this.#state.error) return;
-    this.#timer = setTimeout(async () => {
-      try {
-        const status = await this.#api.status(dataset.workspace_id, dataset.dataset_id, operation.signal);
-        this.#check(operation);
-        if (status.state !== 'ready' || status.revision !== dataset.revision) {
-          throw new ApiError('stale_revision', 'Sources changed; refresh the catalog and reload.');
-        }
-      } catch (error) {
-        if (operation.epoch === this.#epoch && !(error instanceof ApiError && error.code === 'catalog_busy')) this.#fail(error);
-      }
-      this.#watch(operation);
-    }, 5000);
-  }
 }

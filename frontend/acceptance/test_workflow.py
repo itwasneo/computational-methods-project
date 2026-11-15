@@ -120,6 +120,11 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         expect(page.get_by_role("heading", name="Selected job: completed")).to_be_visible(timeout=90000)
         expect(page.get_by_role("heading", name="4. Analyze results")).to_be_visible()
         assert len(submissions) == 1
+        idle_requests = []
+        page.on('request', lambda request: idle_requests.append(request.url) if '/api/' in request.url else None)
+        expect(page.get_by_text('trials: 4 rows', exact=False)).to_be_visible()
+        count = len(idle_requests); page.wait_for_timeout(2000)
+        assert len(idle_requests) == count, 'completed experiments must not generate background API requests'
         expect(page.get_by_text("trials: 4 rows", exact=False)).to_be_visible()
         rows = list((output / ".tsp-local/jobs").glob("*/results.jsonl"))
         # Check actual native records independently of what the page displays.

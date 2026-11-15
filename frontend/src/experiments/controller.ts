@@ -15,6 +15,11 @@ export function initialState() {
     pending: null as { preflight: string; key: string; root: string } | null };
 }
 export type ExperimentState = ReturnType<typeof initialState>;
+export function shouldPoll(state: ExperimentState): boolean {
+  const progressing = (job: JobRecord) => !terminal(job) && job.state !== 'held';
+  return state.connected && !!state.capabilities?.local_runs_enabled && !state.busy && !state.error
+    && (state.jobs.some(progressing) || (!!state.selected && progressing(state.selected)));
+}
 type RetryStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const RETRY_KEY = 'tsp-hpc-pending-submission-v1';
 function browserStore(): RetryStore | null { try { return globalThis.sessionStorage ?? null; } catch { return null; } }
@@ -162,7 +167,7 @@ export class ExperimentController {
     }
     if (selected?.result_revision && !this.state.analysis) await this.analysis({ ...selection, table: 'trials' });
   }
-  poll() { if (!this.state.connected || !this.state.capabilities?.local_runs_enabled || this.state.busy || this.state.error) return;
+  poll() { if (!shouldPoll(this.state)) return;
     return this.action('Refreshing jobs', () => this.jobs()); }
   refreshJobs() { return this.action('Refreshing jobs', () => this.jobs()); }
   select(job: JobRecord) { return this.action('Loading job', async () => {

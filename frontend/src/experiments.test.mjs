@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ApiClient } from './results/client.ts';
 import { wireGuard } from './wire.ts';
-import { ExperimentController } from './experiments/controller.ts';
+import { ExperimentController, shouldPoll } from './experiments/controller.ts';
 import { decodeGeometry } from './experiments/geometry.ts';
 
 const capture = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/backend-v1.json', import.meta.url), 'utf8')).examples;
@@ -157,6 +157,24 @@ test('bounded transport cancels oversized bodies instead of buffering without a 
   })));
   await assert.rejects(client.workspace(new AbortController().signal), /invalid response/);
   assert.equal(cancelled, true);
+});
+
+test('polling only observes progressing jobs, never idle, terminal, held, busy or failed views', async () => {
+  const { controller, calls } = harness();
+  await controller.connect('secret');
+  const count = calls.length;
+  await controller.poll(); assert.equal(calls.length, count);
+  for (const state of ['completed', 'failed', 'cancelled', 'interrupted', 'held']) {
+    controller.state.jobs = [{ ...clone('completed').job, state }];
+    await controller.poll(); assert.equal(calls.length, count, state);
+  }
+  for (const state of ['queued', 'preparing', 'running', 'stop_requested', 'recovering']) {
+    controller.state.jobs = [{ ...clone('completed').job, state }];
+    assert.equal(shouldPoll(controller.state), true, state);
+  }
+  controller.state.busy = 'Loading'; assert.equal(shouldPoll(controller.state), false);
+  controller.state.busy = ''; controller.state.error = 'Offline'; assert.equal(shouldPoll(controller.state), false);
+  controller.state.error = ''; await controller.poll(); assert.ok(calls.length > count);
 });
 
 test('snapshot download preserves raw uint64 and signed-zero artifact bytes', async () => {

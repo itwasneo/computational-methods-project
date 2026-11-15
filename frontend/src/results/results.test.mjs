@@ -149,9 +149,15 @@ test('loading is observable, failed diagnostics persist, stale errors remove row
   assert.equal(controller.state.dataset.state, 'loading'); assert.equal(controller.state.page, null);
   t.mock.timers.tick(500); await load;
   assert.equal(controller.state.dataset.state, 'failed'); assert.equal(controller.state.dataset.diagnostics[0].message, 'Invalid shard.');
-  const other = harness({ '/api/datasets/status': () => ({ ...dataset, state: 'stale', revision: null }) });
+  let stale = false;
+  const other = harness({ '/api/trials/query': () => stale
+    ? { code: 'stale_revision', message: 'Sources changed; reload.' }
+    : { query_key: 'query', items: [row], next_cursor: null } });
   t.after(() => other.controller.dispose()); await ready(other.controller);
-  t.mock.timers.tick(5000); await flush();
+  const count = other.calls.length;
+  t.mock.timers.tick(60000); await flush();
+  assert.equal(other.calls.length, count, 'ready datasets must not poll while idle');
+  stale = true; await other.controller.navigate(0);
   assert.equal(other.controller.state.page, null); assert.equal(other.controller.state.errorCode, 'stale_revision');
 });
 

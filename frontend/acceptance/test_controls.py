@@ -36,6 +36,18 @@ def test_queued_cancel_graceful_intent_and_confirmed_immediate_stop(tmp_path):
                 if fd is None: time.sleep(.02)
             signal.pidfd_send_signal(fd, signal.SIGSTOP)
             first = job["job_id"]
+            polls = []
+            page.on('request', lambda request: polls.append(request.url) if request.url.endswith('/api/jobs/query') else None)
+            page.get_by_role('button', name='Saved results', exact=True).click()
+            count = len(polls); page.wait_for_timeout(1800)
+            assert len(polls) == count, 'inactive application view must not poll'
+            page.get_by_role('button', name='Experiments', exact=True).click()
+            page.evaluate("Object.defineProperty(document, 'visibilityState', {configurable: true, value: 'hidden'}); document.dispatchEvent(new Event('visibilitychange'))")
+            count = len(polls); page.wait_for_timeout(1800)
+            assert len(polls) == count, 'hidden browser tab must not poll'
+            page.evaluate("Object.defineProperty(document, 'visibilityState', {configurable: true, value: 'visible'}); document.dispatchEvent(new Event('visibilitychange'))")
+            page.wait_for_timeout(2000)
+            assert len(polls) > count, 'visible active work must resume polling'
             # Queue another campaign behind the frozen owned worker.
             page.get_by_role("button", name="Review experiment", exact=True).click()
             page.get_by_role("button", name="Run reviewed experiment", exact=True).click()

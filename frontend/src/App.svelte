@@ -31,6 +31,6 @@
   </button>
 </nav>
 <!-- Keep the paired session in memory when inspecting the separate fixture preview. -->
-<div hidden={mode !== 'experiments'}><Experiments {theme} {api} {disconnectVersion} onSession={connected => session = connected ? session + 1 : 0} /></div>
+<div hidden={mode !== 'experiments'}><Experiments active={mode === 'experiments'} {theme} {api} {disconnectVersion} onSession={connected => session = connected ? session + 1 : 0} /></div>
 <div hidden={mode !== 'live'}><Results {api} {session} onDisconnect={() => { session = 0; disconnectVersion++; }} /></div>
 {#if mode === 'fixture'}<FixturePreview {theme} />{/if}

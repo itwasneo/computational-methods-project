@@ -49,7 +49,9 @@ pidfds/procfs and enabled JIT. Numerical-only installations need no web dependen
    Inspect resolved configuration, identities/seeds, estimates and job ceiling, then
    **Run reviewed experiment**. Input edits invalidate review. No manifest editing or
    copied ID/path binding is needed: the backend constructs the accepted manifest.
-4. **Monitor:** job counts/state refresh automatically. Selecting a terminal result
+4. **Monitor:** job counts/state refresh while known jobs are progressing and the
+   Experiments view and browser tab are visible. Idle/terminal/held queues do not poll;
+   use **Refresh jobs** to discover work submitted by another client. Selecting a terminal result
    loads shared trial analysis, including distance mode, timings and eligibility.
    Completion does not mean every trial succeeded; failed/incomplete evidence stays visible.
 5. **Compare:** select **Paired comparison**, baseline implementation/mode and timing
@@ -93,8 +95,8 @@ kinds remain declarations; the interface does not prove optimality.
 The **Saved results** tab shares pairing with Experiments. Select existing JSONL shards
 and optionally an actual expected manifest (not an instance/reference JSON), then **Load**.
 Whole-dataset filters/sorting and paged rows preserve incomplete/duplicate/usable flags.
-Refresh invalidates obsolete datasets; ready sources are checked every five seconds and
-on queries. This tab reads CLI shards; verified job tours are in Experiments.
+Refresh invalidates obsolete datasets; ready sources are checked on queries, not by
+background polling. This tab reads CLI shards; verified job tours are in Experiments.
 
 For read-only operation, run `tsp-hpc serve --workspace PATH --port 8000` without execution
 flags and start `pnpm --dir frontend run dev` separately. Pair in Experiments, then use
