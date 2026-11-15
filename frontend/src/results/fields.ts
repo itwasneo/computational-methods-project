@@ -27,11 +27,10 @@ export function filterValues(field: Field, input: string, missing: boolean): Col
       throw new Error('Enter one decimal number per line.');
     }
     if (typeof value !== 'number' || !Number.isFinite(value)
-        || (Number.isInteger(value) && !Number.isSafeInteger(value))
         || (field === 'n_cities' && (!Number.isSafeInteger(value) || value < 2))) {
       throw new Error(field === 'n_cities'
         ? 'Cities must be safe integers of at least two.'
-        : 'Enter finite numbers; integer values must be in the safe integer range.');
+        : 'Enter finite numbers.');
     }
     return value;
   });

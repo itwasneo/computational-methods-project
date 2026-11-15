@@ -85,13 +85,16 @@ test('filters remain typed and server requests, not current-page transformations
   assert.deepEqual(filterValues('best_cost', '0\n4.5\n0', true), { field: 'best_cost', values: [0, 4.5, null] });
   assert.deepEqual(filterValues('implementation', ' A \na', false).values, [' A ', 'a']);
   assert.deepEqual(filterValues('outcome', '', false).values, []);
+  for (const field of ['best_cost', 'search_time_s']) {
+    assert.deepEqual(filterValues(field, '1e20\n100000000000000000000\n-1e20', false).values, [1e20, -1e20]);
+  }
   for (const text of ['true', 'null', '0x10', 'NaN', '1e999']) assert.throws(() => filterValues('best_cost', text, false));
   assert.throws(() => filterValues('n_cities', '2.5', false));
   assert.throws(() => filterValues('n_cities', '2.00000000000000001', false));
   assert.throws(() => filterValues('n_cities', '9007199254740992', false));
   assert.throws(() => filterValues('attempt_id', Array.from({ length: 501 }, (_, i) => String(i)).join('\n'), false));
   const { controller, calls } = harness(); t.after(() => controller.dispose()); await ready(controller);
-  const filters = [filterValues('best_cost', '0', true)];
+  const filters = [filterValues('best_cost', '0\n1e20', true)];
   const sort = { field: 'best_cost', direction: 'descending' };
   await controller.query(filters, sort);
   assert.deepEqual(calls.at(-1).body.filters, filters); assert.deepEqual(calls.at(-1).body.sort, sort);

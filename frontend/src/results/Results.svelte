@@ -184,7 +184,7 @@
                   <div><dt>Duplicate execution</dt><dd>{row.duplicate_execution ? 'Yes' : 'No'}</dd></div>
                   <div><dt>Usable in shared analysis</dt><dd>{row.usable ? 'Yes' : 'No'}</dd></div></dl>
                 <p>Usable does not establish paired-comparison eligibility or verified producer provenance.</p>
-                <p>Geometry unavailable: original-instance and tour binding is not implemented. No fixture geometry is substituted.</p>
+                <p>This table does not display geometry. Use the verified-results API with the original instance; no fixture geometry is substituted.</p>
               </td></tr>
             {/if}
           {:else}

@@ -20,7 +20,7 @@ FIXTURE = Path(__file__).resolve().parents[2] / "examples/interface-contracts/re
 
 
 def matches(value, annotation):
-    """Test-only recursive shape check for the mirrored design definitions."""
+    """Test-only recursive shape check for the mirrored wire definitions."""
     if is_typeddict(annotation):
         fields = get_type_hints(annotation)
         return type(value) is dict and value.keys() == fields.keys() and all(
@@ -51,31 +51,18 @@ def wire():
     return json.loads(FIXTURE.read_text())
 
 
-def test_wire_examples_match_python_design_types(wire):
+def test_wire_examples_match_python_types(wire):
     for name, kind in {
         "session": c.SessionResponse,
         "workspace": c.WorkspaceResponse, "catalog": c.ArtifactPage, "query": c.TrialQuery, "page": c.TrialPage,
         "dataset_request": c.DatasetRequest, "dataset_status_request": c.DatasetStatusRequest, "dataset": c.Dataset,
-        "details": c.TrialDetails, "missing_details": c.TrialDetails,
-        "geometry": c.Geometry, "stale_error": c.ErrorResponse,
+        "geometry": c.VerifiedGeometry, "stale_error": c.ErrorResponse,
     }.items():
         assert matches(wire[name], kind), name
     assert not matches({**wire["query"], "api_version": 2}, c.TrialQuery)
-    assert not matches({**wire["details"], "solver_seed": 2**64 - 1}, c.TrialDetails)
     assert not matches({**wire["query"], "path": "/arbitrary/file"}, c.TrialQuery)
     assert c.PAGE_DEFAULT == 100 and c.PAGE_MAX == 500
     assert c.GEOMETRY_BYTES_MAX == 16 * 1024 * 1024
-
-
-def test_local_run_examples_use_the_same_descriptive_type_boundary():
-    runs = json.loads(FIXTURE.with_name("local-runs-v1.json").read_text())
-    for name, entry in runs["examples"].items():
-        kind = getattr(c, entry["type"])
-        assert is_typeddict(kind), name
-        assert matches(entry["value"], kind), name
-    assert c.RUN_LIST_MAX == 1000
-    assert int(runs["examples"]["generate"]["value"]["generation"]["seed"]) == 2**64 - 1
-    assert int(runs["examples"]["generate_clustered"]["value"]["generation"]["seed"]) == 2**53 + 1
 
 
 def test_captured_backend_payloads_match_python_types_and_verified_geometry():
@@ -91,6 +78,8 @@ def test_captured_backend_payloads_match_python_types_and_verified_geometry():
     assert tour_cost(instance, tour) == details["result"]["verified_cost"]
     assert geometry["geometry_revision"] == details["geometry_revision"]
     assert details["solver_seed"] == geometry["instance"]["instance_seed"] == str(2**64 - 1)
+    assert not matches({**details, "solver_seed": 2**64 - 1}, c.VerifiedDetails)
+    assert not matches({**examples["completed"]["value"]["job"], "campaign_id": None}, c.JobRecord)
     assert {entry["algorithm"] for entry in examples["capabilities"]["value"]["implementations"]} == {"nn"}
     assert "session_token" not in FIXTURE.with_name("backend-v1.json").read_text()
 
@@ -125,17 +114,7 @@ def test_float64_wire_preserves_bytes_identity_duplicates_and_zero_cost(wire):
     route = np.array(struct.unpack(f"<{count}I", route_raw), dtype=np.int64)
     assert route.tolist() == [2, 0, 3, 1]
     instance = TSPInstance(geometry["instance"]["instance_id"], coordinates)
-    assert tour_cost(instance, route) == wire["details"]["row"]["best_cost"] == 0
-
-
-def test_large_seeds_missing_data_and_unknown_source_remain_explicit(wire):
-    assert int(wire["details"]["solver_seed"]) == 2**64 - 1
-    assert int(wire["details"]["trial_seed"]) == 2**53 + 1
-    assert wire["details"]["source"] == {"revision": None, "dirty": None}
-    failed = wire["missing_details"]
-    assert failed["artifact_state"] == "missing"
-    assert failed["snapshot_id"] is None and failed["artifact_handle"] is None
-    assert failed["row"]["best_cost"] is None
-    assert failed["row"]["search_time_s"] is None
-    assert failed["row"]["usable"] is False
-    assert wire["page"]["items"][0]["best_cost"] == 0
+    assert tour_cost(instance, route) == wire["page"]["items"][0]["best_cost"] == 0
+    failed = wire["page"]["items"][1]
+    assert failed["best_cost"] is None and failed["search_time_s"] is None
+    assert failed["usable"] is False

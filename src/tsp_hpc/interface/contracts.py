@@ -1,10 +1,6 @@
 """API v1 wire types, not runtime validators or authorization.
 
-See docs/interface.md for implemented routes. Legacy preview DTOs remain for
-compatibility; solver-neutral execution/publication types below define the actual
-backend endpoints, not the older NN-only design fixtures.
-
-See docs/interface.md. Scientific validation remains in the shared Python APIs.
+See docs/interface.md for routes and requests.py for input validation.
 All fields are required, including nullable fields. Wire seeds are decimal strings.
 """
 
@@ -37,7 +33,7 @@ class Workspace(TypedDict):
 class Artifact(TypedDict):
     artifact_handle: str
     display_name: str
-    kind: Literal["result_shard", "json", "instance", "manifest", "reference"]
+    kind: Literal["result_shard", "json"]
     revision: str
     validation: Literal["unvalidated"]
 
@@ -146,12 +142,6 @@ class TrialQuery(Context):
     cursor: str | None
 
 
-class FacetQuery(Context):
-    field: Field
-    limit: int
-    cursor: str | None
-
-
 class TrialRow(TypedDict):
     attempt_id: str
     instance_id: str
@@ -172,49 +162,12 @@ class TrialPage(Context):
     next_cursor: str | None
 
 
-class FacetPage(Context):
-    field: Field
-    values: list[Scalar]
-    next_cursor: str | None
-
-
 class InstanceDescriptor(TypedDict):
     instance_id: str
     coordinate_checksum: str
     n_cities: int
     distance_kind: Literal["euclidean_2d", "tsplib_euc_2d"]
     instance_seed: str | None
-
-
-class SourceProvenance(TypedDict):
-    revision: str | None
-    dirty: bool | None
-
-
-class TrialDetails(Context):
-    row: TrialRow
-    campaign_id: str
-    requested_execution_id: str
-    execution_id: str | None
-    search_id: str
-    instance: InstanceDescriptor
-    solver_seed: str
-    trial_seed: str
-    source: SourceProvenance
-    artifact_state: Literal["available", "missing", "ambiguous", "mismatched", "stale"]
-    artifact_handle: str | None
-    snapshot_id: str | None
-
-
-class DetailsRequest(Context):
-    attempt_id: str
-    artifact_handle: str | None
-
-
-class GeometryRequest(Context):
-    attempt_id: str
-    artifact_handle: str
-    snapshot_id: str
 
 
 class Coordinates(TypedDict):
@@ -225,15 +178,6 @@ class Coordinates(TypedDict):
 class Tour(TypedDict):
     encoding: Literal["u32-le-base64"]
     data: str
-
-
-class Geometry(Context):
-    attempt_id: str
-    artifact_handle: str
-    snapshot_id: str
-    instance: InstanceDescriptor
-    coordinates: Coordinates
-    tour: Tour | None
 
 
 class ErrorResponse(TypedDict):
@@ -254,22 +198,13 @@ class ErrorResponse(TypedDict):
     retryable: bool
 
 
-# Local-run contracts. Requests use handles, never paths or process IDs.
-Implementation = Literal["visited-scan-v1", "remaining-array-v1"]
+# Execution requests use handles, never paths or process IDs.
 DistanceMode = Literal["dense", "on_demand"]
 
 
 class RunContext(CatalogRefreshRequest):
     # Owner-authorized re-pairing revokes the old session, not durable jobs.
     session_id: str
-
-
-class InstanceIdentity(TypedDict):
-    instance_id: str
-    coordinate_checksum: str
-    n_cities: int
-    distance_kind: Literal["euclidean_2d"]
-    instance_seed: str | None
 
 
 class UniformGeneration(TypedDict):
@@ -297,56 +232,9 @@ class InstanceGenerateRequest(RunContext):
     generation: UniformGeneration | ClusteredGeneration
 
 
-class InstanceSnapshot(RunContext):
-    # Binds immutable artifact content and provenance, not just coordinates.
-    instance_snapshot_id: str
-    instance: InstanceIdentity
-
-
-class RunLimits(TypedDict):
-    max_cities: int
-    max_start_cities: int
-    max_repetitions: int
-    max_trials: int
-    max_queued_campaigns: int
-    max_matrix_bytes: int
-
-
 class OutputRoot(TypedDict):
     root_id: str
     display_name: str
-
-
-class RunCapabilities(RunContext):
-    capabilities_revision: str
-    local_runs_enabled: bool
-    implementations: list[Implementation]
-    distance_modes: list[DistanceMode]
-    limits: RunLimits
-    output_root: OutputRoot | None
-
-
-class CampaignConfiguration(TypedDict):
-    implementations: list[Implementation]
-    distance_modes: list[DistanceMode]
-    start_cities: list[int]
-    repetitions: list[int]
-    solver_seed: str
-    max_matrix_bytes: int
-
-
-class PreflightRequest(RunContext):
-    instance_snapshot_id: str
-    capabilities_revision: str
-    configuration: CampaignConfiguration
-
-
-class CampaignPreflight(PreflightRequest):
-    # Binds the reviewed snapshot, configuration, capabilities and output root.
-    preflight_id: str
-    output_root: OutputRoot
-    trial_count: int
-    estimated_matrix_bytes: int  # Not a total-memory bound.
 
 
 class JobSubmitRequest(RunContext):
@@ -376,55 +264,6 @@ class QueueStatus(RunContext):
     pending_job_ids: list[str]
 
 
-class JobStatus(RunContext):
-    job_id: str
-    revision: str
-    submission_key: str
-    preflight_id: str
-    instance_snapshot_id: str
-    campaign_id: str | None
-    state: Literal["queued", "held", "preparing", "running", "stop_requested", "stopping",
-                   "completed", "failed", "cancelled", "interrupted"]
-    queue_position: int | None
-    stop_mode: Literal["after_trial", "now"] | None
-    planned_trials: int
-    recorded_trials: int
-    failed_trials: int
-    result_handle: str | None
-    elapsed_time_s: float | None
-
-
-class JobResultRequest(JobStatusRequest):
-    expected_revision: str
-    attempt_id: str
-
-
-class JobResultBinding(RunContext):
-    # Join into existing DetailsRequest/GeometryRequest, not UI-only results.
-    job_id: str
-    job_revision: str
-    campaign_id: str
-    attempt_id: str
-    instance_snapshot_id: str
-    instance: InstanceIdentity
-    result_handle: str
-    dataset_id: str
-    dataset_revision: str
-
-
-class RunError(TypedDict):
-    api_version: Literal[1]
-    request_id: str
-    code: Literal["invalid_request", "execution_disabled", "snapshot_stale", "preflight_stale",
-                  "queue_full", "submission_conflict", "job_stale", "job_not_found",
-                  "session_revoked", "owner_pairing_required", "internal_error"]
-    message: str
-    recovery: Literal["edit", "refresh", "owner_pairing", "none"]
-
-
-# Solver-neutral execution API. Legacy NN-only design DTOs above are retained
-# for old fixtures, not accepted as the /api/runs/preflight contract. All actual
-# HTTP routes use ErrorResponse, including execution errors.
 class ScientificConfiguration(TypedDict):
     algorithm: Literal["nn", "ga", "sa"]
     parameters: dict[str, int | float]
