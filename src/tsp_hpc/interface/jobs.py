@@ -20,6 +20,7 @@ import threading
 from time import monotonic
 
 from tsp_hpc.interface.cursors import encode_cursor, decode_cursor
+from tsp_hpc.interface.cache import cache_usage
 from tsp_hpc.interface.errors import InterfaceError
 from tsp_hpc.interface.processes import WORKER_MODULE, exited, kill_verified, process_identity, recover_pidfd, valid_identity
 from tsp_hpc.interface.runtime import runtime_binding
@@ -68,6 +69,7 @@ class JobQueue:
         self._wake, self._stop = threading.Event(), threading.Event()
         self._closed, self._fatal = False, False
         self._pidfd, self._process = None, None
+        self._next_cache_check = 0.
         self._cursor_key = secrets.token_bytes(32)
         self._lease_identity = None
         try:
@@ -143,7 +145,10 @@ class JobQueue:
                     or (job["result_handle"] is None) != (job["result_revision"] is None)
                     or (job["state"] in ACTIVE and job["started"] is None)
                     or (job["state"] == "queued" and (job["started"] is not None or job["worker"] is not None
-                        or job["stop_mode"] is not None or job["recorded_trials"] or job["result_handle"] is not None))):
+                        or job["stop_mode"] is not None or job["recorded_trials"] or job["result_handle"] is not None
+                        or job["failure_code"] is not None or job["elapsed_time_s"] is not None))
+                    or (job["state"] == "completed" and (job["failure_code"] is not None
+                        or job["recorded_trials"] != job["planned_trials"] or job["result_handle"] is None))):
                 raise ValueError("invalid lifecycle metadata")
             self._progress({"attempt_ids": job["attempt_ids"], "counts": {
                 "completed": job["recorded_trials"] - job["failed_trials"], "failed": job["failed_trials"]}}, job)
@@ -154,12 +159,22 @@ class JobQueue:
             raise ValueError("multiple or inconsistent active workers")
 
     def _commit(self, state):
+        if self._fatal:
+            raise InterfaceError("execution_unavailable", "Queue durability is uncertain; restart and inspect preserved state.", 503)
         state["revision"] = secrets.token_hex(16)
         raw = encode(state)
         if len(raw) > STATE_BYTES:
             raise InterfaceError("resource_limit", "Durable queue metadata exceeds its bound.", 413)
-        self.storage.check()
-        self.storage.replace("queue.json", raw)
+        try:
+            self.storage.check()
+            self.storage.replace("queue.json", raw)
+        except Exception:
+            # Rename may already have published an admission before fsync failed.
+            # Never overwrite uncertain durable keys from the older memory copy.
+            self._fatal = True
+            self._stop.set(); self._wake.set()
+            self._kill_owned()
+            raise InterfaceError("execution_unavailable", "Queue durability is uncertain; restart and inspect preserved state.", 503) from None
         self._state = state
 
     def _guard(self):
@@ -281,7 +296,7 @@ class JobQueue:
             raise InterfaceError("invalid_artifact", "Immutable submission changed.", 422)
         try:
             value = decode(raw)
-            if (type(value) is not dict or value["schema_version"] != 1 or value["job_id"] != job["job_id"]
+            if (type(value) is not dict or type(value["schema_version"]) is not int or value["schema_version"] != 1 or value["job_id"] != job["job_id"]
                     or value["campaign_id"] != job["campaign_id"]
                     or value["plan"]["public"]["preflight_id"] != job["preflight_id"]
                     or value["plan"]["public"]["instance_snapshot_id"] != job["instance_snapshot_id"]):
@@ -369,6 +384,30 @@ class JobQueue:
             raise
         return fd
 
+    def _kill_owned(self):
+        try:
+            if self._pidfd is not None:
+                kill_verified(self._pidfd)
+            elif self._process is not None:
+                # Only a direct, unreaped Popen child; NEVER a reconstructed/recovered
+                # PID. This closes the launch-to-pidfd failure/FD-exhaustion window.
+                self._process.kill()
+        except OSError:
+            return False  # Preserve active ownership for reconciliation; no invented exit.
+        return True
+
+    def _observe_cache(self, job):
+        try:
+            with self.storage.directory("cache") as caches:
+                cache_usage(caches, self.limits)
+        except InterfaceError as error:
+            self._kill_owned()
+            code = "resource_limit" if error.code == "resource_limit" else "invalid_artifact"
+            self._change(job["job_id"], state="stopping", failure_code=code)
+            job = self._find(job["job_id"])
+        self._next_cache_check = monotonic() + .25
+        return job
+
     def _launch(self, job):
         lease = self._lease()
         if lease is None:
@@ -384,16 +423,22 @@ class JobQueue:
                     raise ValueError("submission changed")
                 request = decode(raw)
                 plan = request["plan"]
-                if plan["limits"] != asdict(self.limits) or runtime_binding()["runtime_key"] != plan["runtime"]["runtime_key"]:
+                runtime = runtime_binding()
+                if (plan["limits"] != asdict(self.limits) or not runtime["platform_available"]
+                        or runtime["runtime_key"] != plan["runtime"]["runtime_key"]):
                     raise ValueError("runtime/resource policy changed")
                 if hashlib.sha256(directory.read("instance.json", self.limits.max_instance_bytes)).hexdigest() != plan["public"]["snapshot_sha256"]:
                     raise ValueError("input changed")
                 with self.storage.directory("cache") as caches:
+                    usage = cache_usage(caches, self.limits)
                     name = plan["runtime"]["runtime_key"]
                     try:
+                        os.stat(name, dir_fd=caches.fd, follow_symlinks=False)
+                    except FileNotFoundError:
+                        if usage["contexts"] >= self.limits.max_cache_contexts or usage["entries"] >= self.limits.max_cache_entries:
+                            raise InterfaceError("resource_limit", "Compiler-cache retention capacity reached; use a new root.", 413)
                         os.mkdir(name, 0o700, dir_fd=caches.fd)
-                    except FileExistsError:
-                        pass
+                        os.fsync(caches.fd)
                     with caches.directory(name) as cache:
                         state = deepcopy(self._state)
                         active = self._find(job["job_id"], state)
@@ -419,13 +464,14 @@ class JobQueue:
                         self._pidfd = os.pidfd_open(self._process.pid, 0)
                         identity = process_identity(self._process.pid, job["job_id"])
                         self._change(job["job_id"], worker=identity)
-        except (OSError, ValueError, TypeError, InterfaceError):
+        except (OSError, ValueError, TypeError, InterfaceError) as error:
             if self._process is not None:
-                if self._pidfd is not None:
-                    kill_verified(self._pidfd)
+                self._kill_owned()
                 self._change(job["job_id"], state="stopping", failure_code="launch_failed")
             else:
-                self._change(job["job_id"], state="failed", failure_code="launch_failed" if phase == "launch" else "preflight_stale")
+                code = (error.code if isinstance(error, InterfaceError) and error.code in {"resource_limit", "invalid_artifact"}
+                        else "launch_failed" if phase == "launch" else "preflight_stale")
+                self._change(job["job_id"], state="failed", failure_code=code)
         finally:
             os.close(lease)  # Only the actual child retains the worker lease now.
 
@@ -442,6 +488,7 @@ class JobQueue:
 
     def _finish(self, job):
         """Only after verified exit/free lease; shared validation owns the prefix."""
+        job = self._observe_cache(job)
         from tsp_hpc.analysis import read_sources
         from tsp_hpc.experiments.manifests import Manifest
         changes = {"state": "failed", "failure_code": job["failure_code"] or "worker_failed"}
@@ -491,7 +538,9 @@ class JobQueue:
                     raise ValueError("receipt/prefix mismatch")
             else:
                 complete = False
-            if receipt is not None and receipt["state"] == "completed" and complete:
+            if job["failure_code"] is not None:
+                pass  # Operational/resource failure does not erase valid science or become success.
+            elif receipt is not None and receipt["state"] == "completed" and complete:
                 changes.update(state="completed", failure_code=None)
             elif receipt is not None and receipt["state"] == "cancelled" and not complete:
                 changes.update(state="cancelled", failure_code=None)
@@ -552,6 +601,8 @@ class JobQueue:
                 if exited(self._pidfd):
                     self._finish(job)
                     return
+                if monotonic() >= self._next_cache_check:
+                    job = self._observe_cache(job)
                 self._apply_stop(job)
                 if job["started"] is not None and monotonic() - job["started"] >= min(job["wall_limit_s"], self.limits.max_job_seconds):
                     kill_verified(self._pidfd)
@@ -585,8 +636,7 @@ class JobQueue:
                 # durable state; never hide an exception by launching more work.
                 with self._lock:
                     self._fatal = True
-                    if self._pidfd is not None:
-                        kill_verified(self._pidfd)
+                    self._kill_owned()
                 return
             self._wake.wait(.05)
             self._wake.clear()
@@ -599,9 +649,10 @@ class JobQueue:
         with self._lock:
             # Termination authority is the owned pidfd, not a writable state path.
             # Even a replaced/unavailable output root must not skip child cleanup.
-            if self._pidfd is not None:
-                kill_verified(self._pidfd)
+            self._kill_owned()
             try:
+                if self._fatal:
+                    return  # Do not replace ambiguous disk state with stale memory.
                 state = deepcopy(self._state)
                 state["held"] = True
                 self._commit(state)
