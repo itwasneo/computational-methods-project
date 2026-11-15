@@ -189,7 +189,6 @@
   {#if view.error}<div role="alert" class="app-error"><strong>{view.error}</strong><p>Refresh stale state before trying again. For authorization loss, disconnect and enable fresh pairing in the owner terminal. An uncertain submission must retry its original key.</p></div>{/if}
 </main>
 <style>
-  .experiment-app { max-width: 1400px; margin: auto; padding: 1rem; }
   :global(.app-card) { border: 1px solid #8886; border-radius: .7rem; padding: 1rem; margin: 1rem 0; }
   :global(.form-grid) { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; }
   :global(.app-card label) { display: block; margin: .5rem 0; }

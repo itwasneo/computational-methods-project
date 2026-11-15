@@ -193,4 +193,15 @@ def test_readonly_cannot_expose_execution_controls(tmp_path):
         expect(page.get_by_text("Execution is disabled.", exact=False)).to_be_visible()
         expect(page.get_by_role("button", name="Generate instance")).to_have_count(0)
         assert not list(output.iterdir())
+        # Tool layout fills the viewport rather than imposing a centered desktop cap.
+        for width in (390, 1280, 2560, 3840):
+            page.set_viewport_size({"width": width, "height": 900})
+            for tab in ('Experiments', 'Saved results'):
+                page.get_by_role('button', name=tab, exact=True).click()
+                available = page.evaluate('document.body.clientWidth') # Excludes the reserved scrollbar gutter.
+                for selector in ('main:visible', '.app-nav'):
+                    bounds = page.locator(selector).bounding_box()
+                    assert bounds['x'] == 0
+                    assert abs(bounds['width'] - available) <= 1, (width, tab, bounds)
+                assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), (width, tab)
         browser.close()
