@@ -11,6 +11,7 @@ import { PAGE_DEFAULT, PAGE_MAX, GEOMETRY_BYTES_MAX } from './contracts.ts';
 const wire = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/read-only-v1.json', import.meta.url), 'utf8'));
 const runs = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/local-runs-v1.json', import.meta.url), 'utf8'));
 const backend = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/backend-v1.json', import.meta.url), 'utf8'));
+const analysis = JSON.parse(readFileSync(new URL('../../examples/interface-contracts/analysis-v1.json', import.meta.url), 'utf8'));
 
 // Compile the shared JSON as literal assignments: a cast would hide contract drift.
 test('shared wire examples satisfy the TypeScript design types', () => {
@@ -32,6 +33,13 @@ test('shared wire examples satisfy the TypeScript design types', () => {
     for (const [name, entry] of Object.entries(backend.examples)) {
       source.push(`const backend_${name}: C.${entry.type} = ${JSON.stringify(entry.value)};`);
     }
+    for (const [name, entry] of Object.entries(analysis.examples)) {
+      source.push(`const analysis_${name}: C.${entry.type} = ${JSON.stringify(entry.value)};`);
+    }
+    source.push('// @ts-expect-error comparison settings cannot masquerade as scalar-table options',
+      'const badAnalysisOptions: C.ScalarAnalysisQuery = {table: "summary", attempt_ids: null, limit: 1, cursor: null, baseline_implementation: "x"};',
+      '// @ts-expect-error references are handles, not arbitrary filesystem paths',
+      'const badReferencePath: C.ReferenceAnalysisQuery = {...analysis_references_request.query, path: "/etc/passwd"};');
     source.push('// @ts-expect-error verified result seeds remain strings even when small',
       'const badVerifiedSeed: C.VerifiedDetails = {...backend_result.details, trial_seed: 42};',
       '// @ts-expect-error geometry has no caller-selected record paths',

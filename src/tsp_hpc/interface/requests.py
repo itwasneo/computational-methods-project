@@ -1,7 +1,8 @@
 """Strict request validators, separate from wire types and routing.
 
-Local-run models are not wired to endpoints. Response/design DTOs remain in
-contracts; these models neither authorize operations nor validate scientific
+Implemented route models and retained legacy preview models are distinguished
+below. Wire DTOs remain in contracts; validation alone neither grants authority nor
+validates scientific
 identities, reference freshness or advertised runtime limits.
 """
 
@@ -294,3 +295,74 @@ class TrialPublicationRequest(DatasetStatusRequest):
 
 class TrialGeometryRequest(TrialPublicationRequest):
     geometry_revision: OpaqueId
+
+
+class AnalysisSelection(StrictModel):
+    attempt_ids: list[OpaqueId] | None = Field(max_length=VALUES_PER_FILTER_MAX)
+    limit: StrictInt = Field(ge=1, le=PAGE_MAX)
+    cursor: StrictStr | None = Field(max_length=512)
+
+    @field_validator("attempt_ids")
+    @classmethod
+    def distinct_attempts(cls, value):
+        return None if value is None else _distinct(value)
+
+
+class ScalarAnalysisQuery(AnalysisSelection):
+    table: Literal["trials", "summary", "diagnostics"]
+
+    @model_validator(mode="after")
+    def diagnostic_scope(self):
+        if self.table == "diagnostics" and self.attempt_ids is not None:
+            raise ValueError("diagnostics describe the full indexed dataset")
+        return self
+
+
+class ProgressAnalysisQuery(AnalysisSelection):
+    table: Literal["progress"]
+    max_points: StrictInt = Field(ge=1, le=100_000)
+
+
+class TargetAnalysisQuery(AnalysisSelection):
+    table: Literal["targets"]
+    instance_id: OpaqueId
+    target_cost: StrictFloat = Field(ge=0, allow_inf_nan=False)
+    max_points: StrictInt = Field(ge=1, le=100_000)
+
+    @field_validator("target_cost")
+    @classmethod
+    def normalized_zero(cls, value):
+        return 0.0 if value == 0 else value
+
+
+class ComparisonAnalysisQuery(AnalysisSelection):
+    table: Literal["comparisons"]
+    baseline_implementation: OpaqueId
+    baseline_distance_mode: DistanceMode | None
+    metric: Literal["search_time_s", "end_to_end_time_s"]
+
+
+class ReferenceAnalysisQuery(AnalysisSelection):
+    table: Literal["references"]
+    reference_handle: OpaqueId
+    artifact_catalog_revision: OpaqueId
+
+
+class FacetAnalysisQuery(AnalysisSelection):
+    table: Literal["facets"]
+    field: QueryField
+
+
+AnalysisQuery = Annotated[ScalarAnalysisQuery | ProgressAnalysisQuery | TargetAnalysisQuery | ComparisonAnalysisQuery |
+                          ReferenceAnalysisQuery | FacetAnalysisQuery, Field(discriminator="table")]
+
+
+class DatasetAnalysisRequest(DatasetStatusRequest):
+    revision: OpaqueId
+    query: AnalysisQuery
+
+
+class JobAnalysisRequest(JobStatusRequest):
+    expected_revision: OpaqueId
+    result_revision: OpaqueId
+    query: AnalysisQuery

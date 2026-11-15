@@ -352,6 +352,11 @@ def reference_gaps(analysis: Analysis, document: dict) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["attempt_id", "group_id", "reference_kind", "reference_cost", "reference_source", "absolute_gap", "percent_gap"])
 
 
+def references_from_json(data: str | bytes) -> dict:
+    """Strict parsing for captured authorized content; reference_gaps validates it."""
+    return decode_record(data)
+
+
 def load_references(path) -> dict:
     """Strict reference JSON parsing (including duplicate/non-finite rejection)."""
-    return decode_record(Path(path).read_bytes())
+    return references_from_json(Path(path).read_bytes())

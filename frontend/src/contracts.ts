@@ -1,5 +1,6 @@
-// API v1 wire types. Workspace/session/catalog/datasets/trial queries are implemented.
-// Facets/details/geometry/local runs remain planned. Response guards live in results/client.ts.
+// API v1 wire types; see docs/interface.md for implemented backend routes.
+// Legacy preview DTOs remain; the existing results/client.ts guards cover the
+// read-only table UI, not an implementation of the newer execution/publication UI.
 // Mirrors tsp_hpc.interface.contracts; all fields are required, even when nullable.
 export const API_VERSION = 1;
 export const PAGE_DEFAULT = 100;
@@ -346,3 +347,32 @@ export interface JobGeometryResponse extends JobPublicationContext { geometry: V
 export interface TrialPublicationContext extends Context { instance_handle: string; artifact_catalog_revision: string; }
 export interface TrialDetailsResponse extends TrialPublicationContext { details: VerifiedDetails; }
 export interface TrialGeometryResponse extends TrialPublicationContext { geometry: VerifiedGeometry; }
+
+export interface AnalysisSelection { attempt_ids: string[] | null; limit: number; cursor: string | null; }
+export interface ScalarAnalysisQuery extends AnalysisSelection { table: 'trials' | 'summary' | 'diagnostics'; }
+export interface ProgressAnalysisQuery extends AnalysisSelection { table: 'progress'; max_points: number; }
+export interface TargetAnalysisQuery extends AnalysisSelection {
+  table: 'targets'; instance_id: string; target_cost: number; max_points: number;
+}
+export interface ComparisonAnalysisQuery extends AnalysisSelection {
+  table: 'comparisons'; baseline_implementation: string; baseline_distance_mode: DistanceMode | null;
+  metric: 'search_time_s' | 'end_to_end_time_s';
+}
+export interface ReferenceAnalysisQuery extends AnalysisSelection {
+  table: 'references'; reference_handle: string; artifact_catalog_revision: string;
+}
+export interface FacetAnalysisQuery extends AnalysisSelection { table: 'facets'; field: Field; }
+export type AnalysisQuery = ScalarAnalysisQuery | ProgressAnalysisQuery | TargetAnalysisQuery | ComparisonAnalysisQuery | ReferenceAnalysisQuery | FacetAnalysisQuery;
+export interface DatasetAnalysisRequest extends Context { query: AnalysisQuery; }
+export interface JobAnalysisRequest extends JobStatusRequest { expected_revision: string; result_revision: string; query: AnalysisQuery; }
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+export interface AnalysisPage {
+  table: 'trials' | 'summary' | 'diagnostics' | 'progress' | 'targets' | 'comparisons' | 'references' | 'facets';
+  query_key: string; columns: string[]; items: Record<string, JsonValue>[]; total_rows: number; next_cursor: string | null;
+  history_coverage: { selected_attempts: number; recorded_attempts: number; missing_attempts: number; points: number };
+  reference: { artifact_handle: string; artifact_catalog_revision: string; sha256: string } | null;
+  clock: 'logical_and_concatenated_search' | 'first_observed_concatenated_search_crossing' | null;
+  validation: 'shared-records';
+}
+export interface DatasetAnalysisResponse extends Context, AnalysisPage {}
+export interface JobAnalysisResponse extends JobPublicationContext, AnalysisPage {}

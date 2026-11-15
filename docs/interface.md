@@ -7,7 +7,7 @@ The interface is a read-only-by-default companion to [run → analyze](usage.md)
 | Part | Implemented | Not implemented |
 | --- | --- | --- |
 | Svelte 5 / TypeScript / Vite | Pairing, workspace selection, ingestion status, paged real trial rows, server-side filters/sorting | Facet lists, charts, editor and job controls |
-| FastAPI / Pydantic / Uvicorn | Session and owner-terminal re-pairing, authorized catalog, bounded ingestion/scalar queries, opt-in immutable instance snapshots | Tour binding, details/geometry endpoints, solver jobs |
+| FastAPI / Pydantic / Uvicorn | Owner-only pairing/authority, immutable instances, capabilities/preflight, durable serial jobs/recovery, independently verified final geometry, bounded shared analysis/history | Full installed-process/security acceptance is being completed; multicore/remote/resume are outside this milestone |
 | WebGL2 | Separate synthetic viewer preview | Real-result artifact binding |
 | Delivery | Guarded same-origin development proxy | Bundled frontend serving from the installed CLI |
 
@@ -35,7 +35,7 @@ Open **http://127.0.0.1:5173**, enter the same secret, select `nn.jsonl` and cli
 
 - The secret input clears on submission; the session token stays in memory, never browser storage. After reload/disconnect, type `pair` and Enter **in the running backend terminal**, supply a fresh secret at the hidden prompt, then pair in the browser. No backend restart is needed. Switching views retains the session.
 - Trial pages contain up to 100 attempts. Previous/Next, sorting and exact-value filters operate on the entire dataset **on the server**. Enter one value per line; blank filters are unrestricted. Nullable columns offer **Include missing values**. There are no misleading current-page facet lists.
-- Attempt expansion shows completeness, duplicate and usable flags. `usable` does not certify comparison eligibility or producer provenance. Real geometry is explicitly unavailable; synthetic geometry is never substituted.
+- Attempt expansion shows completeness, duplicate and usable flags. `usable` does not certify comparison eligibility or producer provenance. The current browser view does not request the new verified-geometry API; synthetic geometry is never substituted.
 - Loading, empty, failed and stale states are explicit. Selection/refresh changes discard old pages; request/context checks reject late replies. Ready datasets are rechecked every five seconds and on queries, not through an instantaneous filesystem watcher.
 
 The development ports are fixed at 5173/8000. An occupied frontend port fails rather than changing the trusted origin. Use the exact address above, not `localhost`. Stop each server with Ctrl-C. `vite preview` is static-only: it has no API proxy.
@@ -284,6 +284,74 @@ examples checked against both Python and TypeScript DTOs. It contains no credent
 and is not benchmark/provenance-attestation evidence. Older read-only/local-run
 preview fixtures are retained but do not override these implemented route types.
 
+### Bounded shared analysis and observed histories
+
+| Route | Request / response |
+| --- | --- |
+| `POST /api/analysis/query` | `DatasetAnalysisRequest` / `DatasetAnalysisResponse` (also available read-only) |
+| `POST /api/jobs/analysis` | `JobAnalysisRequest` / `JobAnalysisResponse` (owned terminal result only) |
+
+Both take a tagged `query` with `table`, nullable `attempt_ids`, `limit` (1–500)
+and nullable `cursor`. Null attempts means the full indexed selection; an empty
+list means no attempts. IDs must be distinct/known. These are explicit subsets of
+an already indexed dataset, **not** re-ingestion: selecting one duplicate cannot
+repair its ambiguity or manufacture a latest-successful-attempt winner.
+
+| Table | Additional required query fields | Meaning |
+| --- | --- | --- |
+| `trials` | none | Algorithm-aware scalar rows, budgets, actual work, history/termination/eligibility/native flags |
+| `summary` | none | Shared `summary_table`, including failure/incomplete/duplicate denominators |
+| `diagnostics` | none; attempts must be null | Paged full-index diagnostic codes, safe source handles and affected IDs; no raw messages/paths |
+| `facets` | `field` from the existing trial-field whitelist | Whole-selection distinct values/counts, ascending with missing last; not current-page values |
+| `comparisons` | `baseline_implementation`, nullable `baseline_distance_mode`, `metric` (`search_time_s` or `end_to_end_time_s`) | Shared `paired_comparisons`, including rejected pairs/reasons |
+| `references` | `reference_handle`, `artifact_catalog_revision` | Shared `reference_gaps` over an explicitly authorized captured JSON document |
+| `progress` | `max_points` | Paged shared `iter_progress` observations, the same iterator used by CLI `progress_table` |
+| `targets` | `instance_id`, `target_cost`, `max_points` | Shared `time_to_target`: first **observed** crossing and descriptive censoring |
+
+A dataset request includes workspace/dataset/revision context. A job request uses
+`RunContext`, `job_id`, `expected_revision` and `result_revision`, not a caller path.
+Responses echo that context and include `query_key`, `columns`, JSON `items`,
+`total_rows`, `next_cursor`, `history_coverage`, optional reference binding and an
+explicit clock label. Private source/exception/citation-path columns are omitted;
+canonical JSON work/configuration columns become named objects. All seeds remain
+strings; unsafe-size exact integer observations are decimal strings, while missing
+observations remain null. Finite float64 targets accept equivalent JSON numeric
+spellings; counters/IDs retain exact-integer semantics.
+
+Cursors bind the normalized query/page size and immutable dataset/result context;
+reference queries additionally bind captured content SHA-256. Request IDs can
+change. Changing selection, options, page size or revisions requires a fresh first
+page, not a silent cursor restart. Sources/rules are checked through publication.
+No full-history HTTP table or query cache is retained: progress streams the common
+iterator and retains at most one page. The **total** selected history must fit
+`max_points` (maximum/default service ceiling 100,000); this is not a sampling or
+truncation request. Default row and conservative materialization-estimate bounds
+are 10,000 and 128 MiB, with 4 MiB response and 64 KiB reference-document bounds.
+Narrow the scope or page size on a resource error. Estimates are not total RSS.
+
+History preserves logical IDs/seeds and original `elapsed_s`; `search_elapsed_s`
+concatenates logical search durations **without setup/validation/persistence gaps**.
+It is not job/trial wall time. There is no interpolation, invented intermediate
+tour or final-cost-to-history conversion. Coverage distinguishes missing histories
+from recorded empty histories; trial rows retain per-attempt flags. Target results
+retain failed/incomplete/duplicate/missing-history reasons and eligible non-reaching
+or no-solution censoring. No first-hitting-time, survival-inference or cross-algorithm
+work-equivalence claim is made. Time-limited runs cannot yield implementation-speed
+ratios; fixed-work pairs retain shared work/solution/source/compiler/context checks.
+
+References never follow a stored path. Checksum/objective mismatches, duplicate
+references, malformed JSON and solutions below a declared exact optimum fail using
+the CLI's shared rules. Response provenance is the explicit authorized handle,
+catalog revision and captured SHA, not raw citation text that could contain private
+paths. `exact`/`best_known` is the document's declaration, not a new optimum proof.
+
+`validation: "shared-records"` states the analysis boundary. Like CLI analysis, this
+is structural/source-checked recorded evidence, **not** independent coordinate-based
+certification of every observation; request the separate verified-final-publication
+API for that boundary. Captured native payloads in
+`examples/interface-contracts/analysis-v1.json` are checked against Python and
+TypeScript contracts, not used as timing/quality/attestation evidence.
+
 ### Session and HTTP boundary
 
 Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.
@@ -374,22 +442,19 @@ Rows are **attempts**, keyed and labelled by `attempt_id`, not campaign/configur
 - `outcome` is `completed`/`failed`, not job state or eligibility. Preserve `campaign_complete`, `duplicate_execution` and `usable`; filters cannot repair exclusions or choose baselines.
 - Apply responses only while request/workspace/revision/query/selection still match; cancellation alone is insufficient. Changed sources produce `stale_revision`; loading/failed datasets produce `dataset_not_ready`.
 
-### Scientific authority and snapshots — planned
+### Remaining browser integration, not missing backend routes
 
-**Facets, projected details, geometry, aggregate/comparison charts and jobs remain unimplemented.** Their existing design requirements are:
+Facet controls, verified-details/geometry views, charts, editor/undo and job controls
+are still frontend work. The backend routes above implement their agreed scientific
+and authority boundaries; old preview DTOs do not define those routes. A future UI
+must correlate context/query/selection, retain off-page selections, use authoritative
+server results, present exclusions/censoring and never replace missing real geometry
+with the synthetic viewer. It must not calculate new scientific summaries, inferred
+histories, speed ratios or equivalent work across algorithms.
 
-- Facets page through whole-dataset distinct values independently of active filters, with typed ascending/null-last ordering. Do not derive options from loaded pages or discard off-page selections; counts are not required.
-- Details expose projected IDs, exact seeds, provenance and availability—not raw runner records. `requested_execution_id` is non-null; effective `execution_id` can be null on failure.
-- Use shared `Analysis.trial`, `summary_table`, `paired_comparisons` and `reference_gaps`. Keep caches bounded and revision-bound. Use server-side filtering/sorting and bounded pages with virtualized visible rows. Bound chart points; request narrower scope or explicit aggregation instead of silently sampling evidence. Provide tables and preserve rejected comparisons as diagnostics, not zeros or ratios of display aggregates.
-- Resolve only authorized artifacts through `load_instance`, matching instance ID, checksum, city count, convention, generation seed and validated provenance/content identity. A handle is a candidate, not proof. Ambiguous bindings require explicit selection, not filename order.
-- Bind `snapshot_id` to dataset revision + attempt + descriptor + validated artifact provenance/content + recorded result/tour identity. Missing/mismatched/stale bindings produce no usable snapshot/geometry; resolved handles/snapshots are non-null only when available.
-- Validate a tour against its original instance before publication. Failed trials may expose geometry but no tour. Artifact matches cannot repair unknown/dirty producer provenance. Fetch full supported geometry on demand; unsupported sizes require explicit limits/export, not silent reduction. Do not fabricate histories, progress or intermediate tours; UI/network/job timing is not scientific trial timing.
+### Exact geometry and seed transport
 
-Editing/undo and run controls require separate immutable submission, capabilities and lifecycle contracts. They must reuse shared Python science, reject unsupported execution and never perform cluster operations.
-
-### Exact geometry and seed transport — planned
-
-Seeds are canonical unsigned decimal strings in `[0, 2**64)`: no signs, leading zeros except `"0"`, exponents or JavaScript Number conversion. Nullable seeds stay null; other integer/count metadata must be exactly safe.
+Seeds are canonical unsigned decimal strings in `[0, 2**64)`: no signs, leading zeros except `"0"`, exponents or JavaScript Number conversion. Nullable seeds stay null. Protocol counters/indices are safe exact integers; the modern publication/analysis DTOs explicitly encode larger scientific integer observations as decimal strings.
 
 | Payload | Encoding |
 | --- | --- |
@@ -405,9 +470,12 @@ Cap combined decoded geometry/tour at 16 MiB before allocation; account for base
 | HTTP status | Codes |
 | --- | --- |
 | 400 | `invalid_request` (also 404/405/415 for unavailable endpoints/methods/content types) |
-| 403 / 404 | `unauthorized` / `artifact_not_found`, `dataset_not_found` |
-| 409 | `catalog_busy`, `ingestion_busy`, `dataset_not_ready`, `stale_revision`, `cursor_invalid` |
-| 413 | `catalog_limit_exceeded`, `dataset_limit_exceeded`, `request_too_large` |
-| 422 / 503 / 500 | `invalid_artifact` / `workspace_unavailable` / `internal_error` |
+| 403 / 404 | `unauthorized`, `execution_disabled` / `artifact_not_found`, `dataset_not_found`, `snapshot_not_found`, `job_not_found` |
+| 409 | `catalog_busy`, `ingestion_busy`, `dataset_not_ready`, `stale_revision`, `cursor_invalid`, `snapshot_mismatch`, `snapshot_stale`, `preflight_stale`, `submission_conflict`, `queue_full`, `job_stale`, `job_state_invalid`, `queue_stale`, `execution_busy` |
+| 413 | `catalog_limit_exceeded`, `dataset_limit_exceeded`, `request_too_large`, `artifact_too_large`, `geometry_too_large`, `resource_limit` |
+| 422 / 503 / 500 | `invalid_artifact`, `unsupported_execution`, `invalid_plan` / `workspace_unavailable`, `execution_unavailable` / `internal_error` |
 
-`snapshot_mismatch` (409), `artifact_too_large` and `geometry_too_large` (413) remain reserved for future artifact/geometry operations. Wire fixtures test compatibility, not solver evidence or authenticated real-data geometry. Functional client/proxy tests and real runner ingestion checks remain separate from rendering measurements.
+`result_unavailable` is 409 when an exited/validated source is not available, or 404
+for a missing exact attempt. Wire fixtures test compatibility, not performance or
+producer authenticity. Functional native-worker/API/client/proxy tests remain
+separate from withdrawn browser-performance gates.

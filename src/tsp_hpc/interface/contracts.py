@@ -670,3 +670,90 @@ class TrialDetailsResponse(TrialPublicationContext):
 
 class TrialGeometryResponse(TrialPublicationContext):
     geometry: VerifiedGeometry
+
+
+class AnalysisSelection(TypedDict):
+    attempt_ids: list[str] | None
+    limit: int
+    cursor: str | None
+
+
+class ScalarAnalysisQuery(AnalysisSelection):
+    table: Literal["trials", "summary", "diagnostics"]
+
+
+class ProgressAnalysisQuery(AnalysisSelection):
+    table: Literal["progress"]
+    max_points: int
+
+
+class TargetAnalysisQuery(AnalysisSelection):
+    table: Literal["targets"]
+    instance_id: str
+    target_cost: float
+    max_points: int
+
+
+class ComparisonAnalysisQuery(AnalysisSelection):
+    table: Literal["comparisons"]
+    baseline_implementation: str
+    baseline_distance_mode: DistanceMode | None
+    metric: Literal["search_time_s", "end_to_end_time_s"]
+
+
+class ReferenceAnalysisQuery(AnalysisSelection):
+    table: Literal["references"]
+    reference_handle: str
+    artifact_catalog_revision: str
+
+
+class FacetAnalysisQuery(AnalysisSelection):
+    table: Literal["facets"]
+    field: Field
+
+
+AnalysisQuery = ScalarAnalysisQuery | ProgressAnalysisQuery | TargetAnalysisQuery | ComparisonAnalysisQuery | ReferenceAnalysisQuery | FacetAnalysisQuery
+
+
+class DatasetAnalysisRequest(Context):
+    query: AnalysisQuery
+
+
+class JobAnalysisRequest(JobStatusRequest):
+    expected_revision: str
+    result_revision: str
+    query: AnalysisQuery
+
+
+class HistoryCoverage(TypedDict):
+    selected_attempts: int
+    recorded_attempts: int
+    missing_attempts: int
+    points: int
+
+
+class ReferenceBinding(TypedDict):
+    artifact_handle: str
+    artifact_catalog_revision: str
+    sha256: str
+
+
+class AnalysisPage(TypedDict):
+    table: Literal["trials", "summary", "diagnostics", "progress", "targets", "comparisons", "references", "facets"]
+    query_key: str
+    columns: list[str]
+    items: list[dict[str, object]]  # JSON values; exact unsafe integers are decimal strings.
+    total_rows: int
+    next_cursor: str | None
+    history_coverage: HistoryCoverage
+    reference: ReferenceBinding | None
+    clock: Literal["logical_and_concatenated_search", "first_observed_concatenated_search_crossing"] | None
+    validation: Literal["shared-records"]
+
+
+class DatasetAnalysisResponse(Context, AnalysisPage):
+    pass
+
+
+class JobAnalysisResponse(JobPublicationContext, AnalysisPage):
+    pass
