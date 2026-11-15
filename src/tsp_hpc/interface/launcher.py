@@ -97,6 +97,9 @@ def serve(workspace: str, *, port: int = 8000, session_secret_stdin: bool = Fals
     authority = ExecutionAuthority(workspace, enabled=enable_execution, output_root=execution_root)
     authority.close()  # Validate owner options before credentials/listening; lifespan reopens.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        # Restart on the same loopback port after normal TCP TIME_WAIT cleanup;
+        # unlike SO_REUSEPORT this does not permit two active listeners.
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             listener.bind(("127.0.0.1", port))
             listener.listen(128)

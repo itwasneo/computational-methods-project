@@ -1,6 +1,6 @@
 import { fixture } from './rendering/model.mjs';
 
-/** Display data only; never a binding from a real result to an instance artifact. */
+/** Display buffers; real-result bindings are verified before decoding into this shape. */
 export type Inspection = {
   coordinates: Float64Array;
   route: Uint32Array | null;

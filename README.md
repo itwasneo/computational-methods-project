@@ -22,15 +22,28 @@ uv run --locked tsp-hpc --help
 uv run --locked pytest -W error
 ```
 
-Follow [Run a manifest](docs/usage.md#run-a-manifest) for a four-trial NN example,
-then [Analyze result shards](docs/usage.md#analyze-result-shards) for tables and plots.
+For the interactive workflow, install the interface dependencies and launch both services:
+
+```bash
+uv sync --locked --extra interface
+pnpm --dir frontend install --frozen-lockfile
+uv run --locked --extra interface python tools/local_app.py
+```
+
+Use Node 24/pnpm 10.32.1. Supply a private pairing secret at the prompt and open
+http://127.0.0.1:5173. Generate an instance, select NN distance modes, review/run,
+and inspect shared comparisons and verified tours—no manual manifest or ID copying.
+See [application operation](docs/interface.md#start-the-application), including explicit
+execution authority, output locations and recovery.
+
+For scripted CLI work, follow [Run a manifest](docs/usage.md#run-a-manifest),
+then [Analyze result shards](docs/usage.md#analyze-result-shards).
 Use a fresh output path for each attempt; result shards are never appended or overwritten.
 For direct Python calls, see [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour).
 
-The optional [local interface](docs/interface.md) reads saved results and provides an
-owner-authorized serial job API. It is read-only by default; execution requires both
-`--enable-execution` and a disjoint `--execution-root` at startup. Algorithm availability
-comes from the explicit solver registry and API capabilities, not the scientific specifications.
+The standalone `serve` command is read-only by default; the app launcher explicitly
+opts into jobs with disjoint read/output roots. Algorithm availability comes from the
+solver registry and API capabilities, not the scientific specifications.
 
 ## Documentation
 

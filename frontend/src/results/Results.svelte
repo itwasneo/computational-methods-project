@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { initialState, ResultsController } from './controller';
+  import { compactId, duration, exactTitle } from '../display';
   import { columns, filterValues } from './fields';
-  import { PAIRING_PATTERN } from './client';
+  import { PAIRING_PATTERN, ApiClient } from './client';
+  let { api = new ApiClient(), session = 0, onDisconnect }: { api?: ApiClient; session?: number; onDisconnect?: () => void } = $props();
   import { PAGE_DEFAULT, SHARDS_MAX, type Field, type Sort } from '../contracts';
 
   let view = $state(initialState());
-  const controller = new ResultsController(state => view = state);
+  const controller = new ResultsController(state => view = state, untrack(() => api));
+  $effect(() => { if (session) void controller.attach(); else if (onDisconnect) controller.disconnect(); });
   onDestroy(() => controller.dispose());
   let secret = $state('');
   let selected = $state<string[]>([]);
@@ -67,8 +70,10 @@
 
 <main>
   <h1>Local experiment results</h1>
-  <p class="notice">Read-only results from your selected workspace. No solver execution or real-data geometry yet.</p>
-  {#if !view.paired}
+  <p class="notice">Read-only saved results. Use Experiments to generate inputs, run jobs and inspect verified tours.</p>
+  {#if !view.paired && onDisconnect}
+    <p>Connect in the Experiments tab to browse this workspace.</p>
+  {:else if !view.paired}
     <form class="connection-panel" onsubmit={connect}>
       <p>Start the local backend on port 8000, then enter the random secret supplied at its startup or owner re-pairing prompt.</p>
       <label>Session pairing secret
@@ -83,7 +88,7 @@
       <div class="source-actions">
         <strong>Workspace: {view.workspace?.display_name ?? 'Loading'}</strong>
         <button disabled={!!view.busy} onclick={refresh}>Refresh catalog</button>
-        <button onclick={() => { controller.disconnect(); selected = []; manifest = ''; secret = ''; }}>Disconnect</button>
+        <button onclick={() => { controller.disconnect(); onDisconnect?.(); selected = []; manifest = ''; secret = ''; }}>Disconnect</button>
       </div>
       <fieldset disabled={!!view.busy || !view.catalogRevision}>
         <legend>Result shards (1–{SHARDS_MAX})</legend>
@@ -132,7 +137,7 @@
 
   {#if view.dataset?.state === 'ready'}
     <div class="source-actions">
-      <p class="notice">Server-side filters use exact values (one per line). Blank selections mean unrestricted. Full-dataset value lists are not available yet.</p>
+      <p class="notice">Server-side filters use full IDs and exact values (one per line); time filters use seconds. Blank selections mean unrestricted. Full-dataset value lists are not available yet.</p>
       <button disabled={!!view.busy} onclick={resetAll}>Reset filters and sorting</button>
     </div>
     {#if filterError}<p role="alert" class="failed">{filterError}</p>{/if}
@@ -143,7 +148,7 @@
         <thead><tr>
           {#each columns as column}
             <th scope="col" class:numeric={column.numeric} aria-sort={view.sort?.field === column.field ? view.sort.direction : undefined}>
-              <div class="column-heading"><span>{column.label}</span>
+              <div class="column-heading"><span>{column.field === 'search_time_s' ? 'Search time' : column.label}</span>
                 <button disabled={!!view.busy} popovertarget={`live-filter-${column.field}`} class="filter-button"
                   class:active={view.filters.some(filter => filter.field === column.field)}
                   aria-label={`Sort and filter ${column.label}`} onclick={event => positionFilter(event, column.field)}>
@@ -171,16 +176,19 @@
         <tbody>
           {#each view.page?.items ?? [] as row (row.attempt_id)}
             <tr class:selected={selectedAttempt === row.attempt_id}>
-              <td><button class="experiment-button" aria-expanded={selectedAttempt === row.attempt_id}
-                onclick={() => selectedAttempt = selectedAttempt === row.attempt_id ? null : row.attempt_id}>{row.attempt_id}</button></td>
-              <td>{row.instance_id}</td><td>{row.implementation ?? '—'}</td>
+              <td title={row.attempt_id}><button class="experiment-button" aria-label={row.attempt_id} aria-expanded={selectedAttempt === row.attempt_id}
+                onclick={() => selectedAttempt = selectedAttempt === row.attempt_id ? null : row.attempt_id}>{compactId(row.attempt_id)}</button></td>
+              <td title={row.instance_id}>{compactId(row.instance_id)}</td><td>{row.implementation ?? '—'}</td>
               <td class="numeric">{row.n_cities}</td><td>{row.algorithm}</td>
               <td class:failed={row.outcome === 'failed'}>{row.outcome}</td>
-              <td class="numeric">{row.best_cost ?? '—'}</td><td class="numeric">{row.search_time_s ?? '—'}</td>
+              <td class="numeric">{row.best_cost ?? '—'}</td><td class="numeric" title={exactTitle('search_time_s', row.search_time_s)}>{duration(row.search_time_s)}</td>
             </tr>
             {#if selectedAttempt === row.attempt_id}
               <tr class="detail-row"><td colspan={columns.length}>
-                <dl><div><dt>Campaign complete</dt><dd>{row.campaign_complete ? 'Yes' : 'No'}</dd></div>
+                <dl><div><dt>Full attempt ID</dt><dd>{row.attempt_id}</dd></div>
+                  <div><dt>Full instance ID</dt><dd>{row.instance_id}</dd></div>
+                  <div><dt>Search time (seconds, full precision)</dt><dd>{row.search_time_s ?? '—'}</dd></div>
+                  <div><dt>Campaign complete</dt><dd>{row.campaign_complete ? 'Yes' : 'No'}</dd></div>
                   <div><dt>Duplicate execution</dt><dd>{row.duplicate_execution ? 'Yes' : 'No'}</dd></div>
                   <div><dt>Usable in shared analysis</dt><dd>{row.usable ? 'Yes' : 'No'}</dd></div></dl>
                 <p>Usable does not establish paired-comparison eligibility or verified producer provenance.</p>

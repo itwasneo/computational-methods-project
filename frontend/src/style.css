@@ -62,15 +62,16 @@
 * { box-sizing: border-box; }
 html { scrollbar-gutter: stable; }
 body { margin: 0; }
-main { max-width: 1600px; margin: auto; padding: 24px; }
+main { margin: 0; padding: 16px; }
 h1 { margin: 0; font-size: 22px; }
 p { margin: 0; }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 5px; margin-left: auto; }
 
 button, input, select, textarea { font: inherit; }
+fieldset { min-inline-size: 0; }
 input:not([type="checkbox"]), select, textarea { background: var(--page); color: var(--text); border: 1px solid var(--control-border); padding: 6px; max-width: 100%; }
 button:disabled { opacity: 0.5; cursor: default; }
-.app-nav { max-width: 1600px; margin: auto; padding: 16px 24px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.app-nav { margin: 0; padding: 16px 16px 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .app-nav [aria-pressed="true"] { background: var(--selection); border-color: var(--selection-border); }
 .notice { color: var(--muted); margin: 8px 0; font-size: 13px; }
 .connection-panel, .dataset-status, .error-panel { margin: 16px 0; padding: 16px; border: 1px solid var(--border); }
@@ -80,6 +81,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .candidate-list { max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
 .source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0; }
 .error-panel { border-color: var(--danger); }
+.live-table { table-layout: auto; min-width: 0; }
 .live-table td { white-space: normal; overflow-wrap: anywhere; }
 .live-table .filter-panel { max-height: min(360px, calc(100dvh - 16px)); }
 button, input[type="checkbox"] { cursor: pointer; }
@@ -87,9 +89,10 @@ button { border: 1px solid var(--control-border); border-radius: 3px; padding: 7
 button:hover { background: var(--hover); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 
-.table-region { overflow-x: auto; min-height: clamp(320px, 65vh, 720px); overflow-anchor: none; }
+.table-region { overflow: auto; min-height: min(320px, 70dvh); max-height: 70dvh; overflow-anchor: none; }
 table { table-layout: fixed; border-collapse: collapse; width: 100%; min-width: 1400px; text-align: left; white-space: nowrap; }
 th, td { padding: 12px; border-bottom: 1px solid var(--border); }
+thead { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: 0 1px var(--border); }
 th { font-size: 12px; background: var(--surface); vertical-align: top; }
 .column-heading { display: flex; align-items: center; gap: 6px; }
 th.numeric .column-heading { justify-content: flex-end; }
@@ -199,8 +202,4 @@ dd { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .viewer-controls, .viewer-controls button, .viewer-error button { transition: none; transform: none !important; }
-}
-
-@media (max-width: 600px) {
-  main { padding: 16px; }
 }
