@@ -83,7 +83,8 @@ def _owner_controls(pairing, fd: int, stop: threading.Event):
             print("Owner terminal controls disabled; backend continues. No remote reset is available.", file=sys.stderr, flush=True)
 
 
-def serve(workspace: str, *, port: int = 8000, session_secret_stdin: bool = False) -> int:
+def serve(workspace: str, *, port: int = 8000, session_secret_stdin: bool = False,
+          enable_execution: bool = False, execution_root=None) -> int:
     if type(port) is not int or not 1 <= port <= 65535:
         raise ValueError("Port must be between 1 and 65535.")
     # Report invalid roots/scan limits before asking for credentials or starting a listener.
@@ -92,6 +93,9 @@ def serve(workspace: str, *, port: int = 8000, session_secret_stdin: bool = Fals
         catalog.refresh()
     finally:
         catalog.close()
+    from tsp_hpc.interface.execution import ExecutionAuthority
+    authority = ExecutionAuthority(workspace, enabled=enable_execution, output_root=execution_root)
+    authority.close()  # Validate owner options before credentials/listening; lifespan reopens.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         try:
             listener.bind(("127.0.0.1", port))
@@ -107,7 +111,8 @@ def serve(workspace: str, *, port: int = 8000, session_secret_stdin: bool = Fals
                 secret = getpass.getpass("Session pairing secret (43–128 random URL-safe characters): ")
         except (EOFError, KeyboardInterrupt):
             raise ValueError("Session pairing cancelled.") from None
-        app = create_app(workspace, port=port, bootstrap_secret=secret)
+        app = create_app(workspace, port=port, bootstrap_secret=secret,
+                         enable_execution=enable_execution, execution_root=execution_root)
         del secret
         # Disable raw ASGI/Uvicorn tracebacks and access logs; API errors are sanitized.
         logging = {

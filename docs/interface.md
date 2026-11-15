@@ -52,6 +52,26 @@ The [rendering primitives](../frontend/src/rendering/) retain canonical float64 
 
 Installed users can install `tsp-hpc[interface]`. `tsp-hpc serve` binds only `127.0.0.1` and serves the API, not frontend assets. Startup validates the workspace/scan limits before requesting a secret; an occupied port fails explicitly. Ctrl-C cancels ingestion cooperatively, joins its worker and closes the catalog. Help/version and numerical commands do not import web dependencies.
 
+### Owner opt-in and execution requests
+
+Read-only remains the default. Local execution requires both
+`--enable-execution --execution-root /owner/chosen/output` at startup; the output
+root must already exist and be disjoint from the read workspace. Browser/native
+HTTP requests cannot enable or change this authority. `POST /api/execution`
+accepts `RunContext` (version/request/workspace/current session IDs) and returns
+`ExecutionInfo` with limits and an opaque output-root identity, never its path.
+The read workspace stays read-only even when a separate execution root is enabled.
+
+Execution requests use the solver-neutral `ScientificConfiguration` and
+`ExecutionPreflightRequest`, not the older NN-only design fixture types. They
+reuse shared parameter/budget/history normalization, preserve uint64 seeds as
+strings and require explicit independent logical IDs. Null implementation entries
+request registry default resolution, not fallback to a different algorithm.
+Actual capability/resource/instance validation remains preflight's responsibility.
+Stop-now requests require `confirm_stop_now: true` and an expected job revision.
+All actual routes use the same `ErrorResponse`/`retryable` envelope; the older
+`RunError` recovery DTO remains a design fixture only. No new UI is implemented.
+
 ### Session and HTTP boundary
 
 Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.

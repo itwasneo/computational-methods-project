@@ -16,7 +16,7 @@ from tsp_hpc.interface.errors import InterfaceError
 from tsp_hpc.interface.workspace import WorkspaceCatalog
 from tsp_hpc.interface.queries import TrialQueries
 from tsp_hpc.interface.requests import (
-    ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest,
+    ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest, RunRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -181,21 +181,27 @@ class LocalBoundary:
                 await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
-def create_app(workspace, *, port: int, bootstrap_secret: str):
+def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=False,
+               execution_root=None, execution_limits=None):
     """Construct a session without opening its workspace until lifespan startup."""
     if type(port) is not int or not 1 <= port <= 65535:
         raise ValueError("Port must be between 1 and 65535.")
+    if type(enable_execution) is not bool or enable_execution != (execution_root is not None):
+        raise ValueError("Execution requires both --enable-execution and --execution-root.")
     pairing = Pairing(bootstrap_secret)
     origin = f"http://127.0.0.1:{port}"
 
     @asynccontextmanager
     async def lifespan(app):
         from tsp_hpc.interface.ingestion import DatasetStore
-        catalog = datasets = None
+        from tsp_hpc.interface.execution import ExecutionAuthority
+        catalog = datasets = execution = None
         try:
             catalog = WorkspaceCatalog(workspace)
             catalog.refresh()
             app.state.catalog = catalog
+            execution = ExecutionAuthority(workspace, enabled=enable_execution, output_root=execution_root, limits=execution_limits)
+            app.state.execution = execution
             datasets = DatasetStore(catalog)
             app.state.datasets = datasets
             app.state.trial_queries = TrialQueries(datasets)
@@ -205,6 +211,8 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
                 if datasets is not None:
                     datasets.close()
             finally:
+                if execution is not None:
+                    execution.close()
                 if catalog is not None:
                     catalog.close()
                 pairing.clear()
@@ -242,6 +250,19 @@ def create_app(workspace, *, port: int, bootstrap_secret: str):
 
     def authorized_operation(request: Request):
         return pairing.operation(request.headers.get("authorization", "").encode("latin-1"))
+
+    def run_context(request: Request, body: RunRequest):
+        catalog_for(request, body)
+        if not hmac.compare_digest(body.session_id, pairing._session_id):
+            raise InterfaceError("unauthorized", "Session identity is not current.", 403)
+        return {"api_version": 1, "request_id": body.request_id,
+                "workspace_id": body.workspace_id, "session_id": body.session_id}
+
+    @app.post("/api/execution")
+    def execution_info(body: RunRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **request.app.state.execution.describe()}
 
     @app.get("/api/workspace")
     def workspace_info(request: Request):

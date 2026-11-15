@@ -42,6 +42,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     serve.add_argument("--port", type=int, default=8000, help="127.0.0.1 port (default: 8000)")
     serve.add_argument("--session-secret-stdin", action="store_true",
                        help="read a private startup secret from stdin; disables terminal re-pairing controls")
+    serve.add_argument("--enable-execution", action="store_true", help="owner opt-in to local writes and solver jobs")
+    serve.add_argument("--execution-root", help="existing writable output directory, disjoint from --workspace")
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
@@ -54,7 +56,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.exit(2, "Interface dependencies unavailable; use uv sync --locked --extra interface or install tsp-hpc[interface].\n")
         from tsp_hpc.interface.errors import InterfaceError
         try:
-            return serve_workspace(args.workspace, port=args.port, session_secret_stdin=args.session_secret_stdin)
+            return serve_workspace(args.workspace, port=args.port, session_secret_stdin=args.session_secret_stdin,
+                                   enable_execution=args.enable_execution, execution_root=args.execution_root)
         except (InterfaceError, ValueError) as error:
             parser.exit(2, f"tsp-hpc: {error}\n")
     from tsp_hpc.experiments.manifests import Manifest
