@@ -88,6 +88,17 @@ class Directory:
                 raise InterfaceError("snapshot_stale", "Stored artifact changed during reading.", 409)
             return data
 
+    @contextmanager
+    def open_regular(self, name, limit):
+        fd = os.open(component(name), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=self.fd)
+        with os.fdopen(fd, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+                raise InterfaceError("invalid_artifact", "Result is not a bounded private regular file.", 422)
+            yield stream
+            if stamp(before) != stamp(os.fstat(stream.fileno())) or stamp(before) != stamp(os.stat(name, dir_fd=self.fd, follow_symlinks=False)):
+                raise InterfaceError("stale_revision", "Result changed during reading.", 409)
+
     def write_new(self, name, data):
         fd = os.open(component(name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
                      0o600, dir_fd=self.fd)

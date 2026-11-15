@@ -287,3 +287,15 @@ export interface ReviewedExecution extends ExecutionPreflightRequest {
   valid_for_s: number;
   output_root: OutputRoot;
 }
+export interface JobRecord extends Omit<JobStatus, keyof RunContext | 'state'> {
+  state: JobState | 'recovering';
+  attempt_ids: string[];
+  result_revision: string | null;
+  failure_code: string | null;
+}
+export interface JobEnvelope extends RunContext { job: JobRecord; }
+export interface JobSubmission extends JobEnvelope { deduplicated: boolean; }
+export interface JobsQueryRequest extends RunContext { limit: number; cursor: string | null; }
+export interface JobsPage extends RunContext {
+  queue_revision: string; items: JobRecord[]; next_cursor: string | null;
+}

@@ -265,3 +265,8 @@ class ExecutionControlRequest(JobControlRequest):
 
 class SnapshotRequest(RunRequest):
     instance_snapshot_id: OpaqueId
+
+
+class JobsQueryRequest(RunRequest):
+    limit: StrictInt = Field(ge=1, le=PAGE_MAX)
+    cursor: StrictStr | None = Field(max_length=512)

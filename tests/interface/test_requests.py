@@ -115,7 +115,7 @@ def test_configuration_preserves_shared_manifest_semantics_without_executing():
 def test_legacy_design_requests_do_not_grant_execution_or_change_pairing(session, tmp_path):
     client, _, workspace, secret, _ = session
     before = sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*"))
-    for path in ("/api/jobs/submit", "/api/jobs/stop", "/api/session/reset"):
+    for path in ("/api/jobs/stop", "/api/session/reset"):
         response = client.post(path, json={"api_version": 1, "request_id": "unavailable"})
         assert response.status_code == 404
     assert client.get("/api/workspace").json()["workspace"] == workspace

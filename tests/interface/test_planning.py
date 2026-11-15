@@ -136,7 +136,7 @@ def test_independent_logical_plans_use_logical_not_trial_seeds(execution_session
         registry, _ = scripted_registry(algorithm)
         planner = PreflightStore(app.state.execution, app.state.snapshots, registry=registry)
         caps = planner.capabilities()
-        config = ScientificConfigurationRequest.model_validate(configuration(algorithm))
+        config = ScientificConfigurationRequest.model_validate(configuration(algorithm, history_policy={"max_points": 1024}))
         plan = planner.preflight(identifier, config, caps["capabilities_revision"], context["session_id"])
         trial, = plan["trials"]
         assert [item["logical_id"] for item in trial["invocations"]] == ["first", "second"]

@@ -500,3 +500,43 @@ class ReviewedExecution(ExecutionPreflightRequest):
     job_time_ceiling_s: int
     valid_for_s: int
     output_root: OutputRoot
+
+
+class JobRecord(TypedDict):
+    job_id: str
+    revision: str
+    submission_key: str
+    preflight_id: str
+    instance_snapshot_id: str
+    campaign_id: str
+    state: Literal["queued", "held", "preparing", "running", "recovering", "stop_requested", "stopping",
+                   "completed", "failed", "cancelled", "interrupted"]
+    queue_position: int | None
+    stop_mode: Literal["after_trial", "now"] | None
+    planned_trials: int
+    recorded_trials: int
+    failed_trials: int
+    attempt_ids: list[str]
+    result_handle: str | None
+    result_revision: str | None
+    elapsed_time_s: float | None
+    failure_code: str | None
+
+
+class JobEnvelope(RunContext):
+    job: JobRecord
+
+
+class JobSubmission(JobEnvelope):
+    deduplicated: bool
+
+
+class JobsQueryRequest(RunContext):
+    limit: int
+    cursor: str | None
+
+
+class JobsPage(RunContext):
+    queue_revision: str
+    items: list[JobRecord]
+    next_cursor: str | None

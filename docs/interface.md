@@ -135,6 +135,52 @@ code changes require backend restart, not use of stale imported modules. Known
 compiler settings are resolved for the child process rather than reinterpreting
 later environment edits. These bindings are observations, not machine attestation.
 
+### Durable serial jobs
+
+| Route | Request / response |
+| --- | --- |
+| `POST /api/jobs/submit` | `JobSubmitRequest` / `JobSubmission` (202, including deduplicated retries) |
+| `POST /api/jobs/status` | `JobStatusRequest` / `JobEnvelope` |
+| `POST /api/jobs/query` | `JobsQueryRequest` / `JobsPage` |
+| `POST /api/queue/status` | `RunContext` / `QueueStatus` |
+
+One controller and at most one active campaign/owned Python child use an execution
+root. By default eight campaigns may wait and 256 job directories may be retained;
+finished jobs and failed/unacknowledged creation evidence consume retention, never
+silently evicting submission keys. A different key deliberately creates a fresh
+campaign/attempt and exclusive output directory, even with identical science.
+The same key plus the same preflight ID always returns the original job, including
+after review expiry/re-pairing/restart. A key with a different preflight conflicts.
+
+Immutable canonical input and reviewed manifest/runtime/resource settings are
+written before an atomic, fsynced admission record. Only committed queue entries
+can launch; a lost acknowledgement cannot create a duplicate worker. Crash-before-
+admission files remain unexecuted evidence. No browser credential is persisted.
+Queue metadata, file counts, plans, records, total result bytes and response pages
+are bounded. Oversized scientific recording fails rather than truncating history.
+
+The child runs the installed `tsp_hpc.interface.worker` via structured arguments,
+not a shell or caller-selected module. Only its job/cache/lease descriptors are
+inherited. It rechecks the immutable request/input and reviewed code/compiler
+context, pins the reviewed CPU affinity and known serial library/compiler settings,
+and invokes the same `run_manifest` as the CLI. Search seeds/IDs do not depend on
+queue order. Native compilation caches are private and separated by runtime key.
+
+A worker has address-space, CPU, per-file-size and core-dump resource limits; the
+controller also enforces the job wall-clock ceiling. Defaults are 4 GiB address
+space, 300 seconds and 64 MiB result files; inherited OS/cgroup limits can be
+stricter. These are not total RSS/allocation or performance guarantees. No raw
+worker output/tracebacks are sent to HTTP. Failed trials remain genuine records;
+`completed` means the whole campaign finished, **not** that every trial succeeded.
+Inspect `failed_trials`. Job wall time is not scientific search time.
+
+Status is an observed lifecycle snapshot. Durable trial-prefix notifications do
+not invent per-proposal progress or intermediate tours. Result handles/revisions
+appear only after verified worker exit and shared source/manifest validation;
+independent final-tour authentication is a separate publication boundary. PIDs,
+internal paths, raw plans and records are not job response fields. Paging cursors
+are bound to the current queue revision and cannot silently restart pagination.
+
 ### Session and HTTP boundary
 
 Native clients supply the startup secret through the hidden prompt or `--session-secret-stdin` with a private pipe, then exchange it via `POST /api/session`. One successful exchange returns a Bearer token and a correlation-only `session_id`; five failed attempts exhaust pairing. Credentials are neither persisted nor logged; raw server tracebacks/access logs are disabled.

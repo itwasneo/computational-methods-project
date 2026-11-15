@@ -1,6 +1,6 @@
 """Optional local API foundation: session pairing and read-only candidate catalogs."""
 
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 import hashlib
 import hmac
 import re
@@ -18,6 +18,7 @@ from tsp_hpc.interface.queries import TrialQueries
 from tsp_hpc.interface.requests import (
     ArtifactRequest, DatasetRequest, DatasetStatusRequest, SessionRequest, TrialQueryRequest, WorkspaceRequest, RunRequest,
     InstanceLoadRequest, InstanceGenerateRequest, SnapshotRequest, ExecutionPreflightRequest,
+    JobSubmitRequest, JobStatusRequest, JobsQueryRequest,
 )
 
 BODY_LIMIT = 16 * 1024
@@ -196,38 +197,36 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
     async def lifespan(app):
         from tsp_hpc.interface.ingestion import DatasetStore
         from tsp_hpc.interface.execution import ExecutionAuthority
-        catalog = datasets = execution = storage = None
-        try:
+        with ExitStack() as cleanup:
+            cleanup.callback(pairing.clear)
             catalog = WorkspaceCatalog(workspace)
+            cleanup.callback(catalog.close)
             catalog.refresh()
             app.state.catalog = catalog
             execution = ExecutionAuthority(workspace, enabled=enable_execution, output_root=execution_root, limits=execution_limits)
+            cleanup.callback(execution.close)
             app.state.execution = execution
             app.state.snapshots = None
             if execution.enabled:
                 from tsp_hpc.interface.storage import LocalStorage
                 from tsp_hpc.interface.snapshots import SnapshotStore
                 storage = LocalStorage(execution, catalog._root)
+                cleanup.callback(storage.close)
                 app.state.storage = storage
                 app.state.snapshots = SnapshotStore(storage)
             from tsp_hpc.interface.planning import PreflightStore
             app.state.preflights = PreflightStore(execution, app.state.snapshots)
+            app.state.jobs = None
             datasets = DatasetStore(catalog)
+            cleanup.callback(datasets.close)
             app.state.datasets = datasets
             app.state.trial_queries = TrialQueries(datasets)
+            if execution.enabled:
+                from tsp_hpc.interface.jobs import JobQueue
+                jobs = JobQueue(storage, app.state.snapshots, app.state.preflights)
+                cleanup.callback(jobs.close)  # Hold/stop jobs before waiting for ingestion shutdown.
+                app.state.jobs = jobs
             yield
-        finally:
-            try:
-                if datasets is not None:
-                    datasets.close()
-            finally:
-                if storage is not None:
-                    storage.close()
-                if execution is not None:
-                    execution.close()
-                if catalog is not None:
-                    catalog.close()
-                pairing.clear()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.pairing = pairing  # Launcher authority, never exposed through a route.
@@ -289,6 +288,35 @@ def create_app(workspace, *, port: int, bootstrap_secret: str, enable_execution=
             plan = request.app.state.preflights.preflight(body.instance_snapshot_id, body.configuration,
                                                          body.capabilities_revision, body.session_id)
             return {**context, **plan}
+
+    def jobs_for(request):
+        request.app.state.execution.require()
+        return request.app.state.jobs
+
+    @app.post("/api/jobs/submit", status_code=202)
+    def job_submit(body: JobSubmitRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            job, duplicate = jobs_for(request).submit(body.preflight_id, body.submission_key, body.session_id)
+            return {**context, "job": job, "deduplicated": duplicate}
+
+    @app.post("/api/jobs/status")
+    def job_status(body: JobStatusRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, "job": jobs_for(request).status(body.job_id)}
+
+    @app.post("/api/jobs/query")
+    def jobs_query(body: JobsQueryRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).page(limit=body.limit, cursor=body.cursor)}
+
+    @app.post("/api/queue/status")
+    def queue_status(body: RunRequest, request: Request):
+        with authorized_operation(request):
+            context = run_context(request, body)
+            return {**context, **jobs_for(request).queue()}
 
     def snapshots_for(request):
         request.app.state.execution.require()
