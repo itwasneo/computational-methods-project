@@ -15,7 +15,8 @@ def public_review(private):
     """Project old serial review metadata without rewriting or reauthorizing it."""
     public = decode(encode(private["public"]))
     config = public["configuration"]
-    if "backend" not in config or "threads_per_worker" not in config:
+    if ("backend" not in config or "threads_per_worker" not in config
+            or "estimated_solver_scratch_bytes" not in public):
         executions = [execution for experiment in private["manifest"]["experiments"]
                       for execution in experiment["executions"]]
         if (config.get("backend", "serial") != "serial" or config.get("threads_per_worker", 1) != 1

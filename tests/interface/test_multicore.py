@@ -102,6 +102,17 @@ def test_legacy_serial_review_projection_preserves_private_evidence(job_client, 
         public_review(private)
 
 
+def test_missing_multicore_scratch_is_not_projected_as_legacy_serial(job_client, execution_session):
+    from tsp_hpc.interface.errors import InterfaceError
+    from tsp_hpc.interface.planning import public_review
+    _, app, _, _, _ = execution_session
+    plan = job_client.review(**configuration(1))
+    private = app.state.preflights.validate(plan['preflight_id'], job_client.context['session_id'])
+    del private['public']['estimated_solver_scratch_bytes']
+    with pytest.raises(InterfaceError, match='inconsistent'):
+        public_review(private)
+
+
 def test_owner_resource_ceiling_overrides_available_host(job_client, execution_session):
     from dataclasses import replace
     _, app, _, _, _ = execution_session
