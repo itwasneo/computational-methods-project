@@ -135,15 +135,17 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         assert {r["effective_execution"]["distance_mode"] for r in trials} == {"dense", "on_demand"}
         assert len({r["result"]["best_cost"] for r in trials}) == 1
         attempt = trials[0]["attempt_id"]
-        attempt_button = page.get_by_role('button', name=attempt, exact=True)
+        attempt_button = page.get_by_role('button', name=f'Inspect attempt {attempt[:8]}…{attempt[-6:]} ({attempt})', exact=True)
         expect(attempt_button).to_have_text(f'{attempt[:8]}…{attempt[-6:]}')
         time_cell = attempt_button.locator('xpath=ancestor::tr').locator('td[title^="search_time_s:"]')
         raw_seconds = time_cell.get_attribute('title').split(': ', 1)[1].removesuffix(' s')
         assert time_cell.inner_text().endswith((' ms', ' s', ' min', ' h'))
-        page.get_by_label('Full values and all columns').check()
+        page.get_by_label('Full-precision values').check()
+        page.get_by_label('All columns', exact=True).check()
         expect(attempt_button).to_have_text(attempt)
         expect(time_cell).to_have_text(raw_seconds)
-        page.get_by_label('Full values and all columns').uncheck()
+        page.get_by_label('Full-precision values').uncheck()
+        page.get_by_label('All columns', exact=True).uncheck()
         # Exercise both scroll axes; headers must stay pinned and column-aligned.
         region = page.locator('[aria-label="Experiment analysis"] .table-region')
         region.evaluate("e => { e.style.height = '120px'; e.style.width = '480px'; e.querySelector('table').style.minWidth = '960px'; }")
@@ -164,7 +166,7 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         held = []
         page.route('**/api/jobs/result', lambda route: held.append(route), times=1)
         next_attempt = trials[1]['attempt_id']
-        next_button = page.get_by_role('button', name=next_attempt, exact=True)
+        next_button = page.get_by_role('button', name=f'Inspect attempt {next_attempt[:8]}…{next_attempt[-6:]} ({next_attempt})', exact=True)
         next_button.scroll_into_view_if_needed()
         before = page.evaluate('({y: scrollY, height: document.documentElement.scrollHeight})')
         next_button.click()
@@ -199,17 +201,19 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         expect(page.get_by_text("trials: 4 rows", exact=False)).to_be_visible()
         assert len(list((output / ".tsp-local/jobs").iterdir())) == 2
         assert [json.loads(l) for l in rows[0].read_text().splitlines()] == records
-        page.get_by_role("button", name="Saved results", exact=True).click()
+        page.get_by_role("link", name="Saved results", exact=True).click()
         expect(page.get_by_text("Workspace: inputs", exact=True)).to_be_visible()
         assert not page.get_by_role("button", name="Pair with local backend").is_visible()
         # Restart/reload loses credentials, not jobs. Dispatch must stay held until explicit continuation.
         secret = control["restart"]()
         page.reload()
+        expect(page.get_by_role('heading', name='Local experiment results')).to_be_visible()
+        page.get_by_role('link', name='Experiments', exact=True).click()
         page.get_by_label("Pairing secret", exact=True).fill(secret)
         page.get_by_role("button", name="Connect", exact=True).click()
         expect(page.get_by_role("button", name="Continue held queue")).to_be_visible()
         assert json.loads((output / ".tsp-local/queue.json").read_bytes())["held"] is True
-        page.get_by_role("button", name=rows[0].parent.name, exact=True).click()
+        page.get_by_role("button", name=f'Select job {rows[0].parent.name[:8]}…{rows[0].parent.name[-6:]} ({rows[0].parent.name})', exact=True).click()
         expect(page.get_by_text("trials: 4 rows", exact=False)).to_be_visible()
         page.get_by_role("button", name="Review fresh rerun").click()
         page.get_by_role("button", name="Run reviewed experiment", exact=True).click()
@@ -236,7 +240,7 @@ def test_readonly_cannot_expose_execution_controls(tmp_path):
         for width in (390, 1280, 2560, 3840):
             page.set_viewport_size({"width": width, "height": 900})
             for tab in ('Experiments', 'Saved results'):
-                page.get_by_role('button', name=tab, exact=True).click()
+                page.get_by_role('link', name=tab, exact=True).click()
                 available = page.evaluate('document.body.clientWidth') # Excludes the reserved scrollbar gutter.
                 for selector in ('main:visible', '.app-nav'):
                     bounds = page.locator(selector).bounding_box()

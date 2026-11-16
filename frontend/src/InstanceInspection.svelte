@@ -13,7 +13,9 @@
 
   onMount(() => {
     fullscreenAvailable = document.fullscreenEnabled;
-    const changed = () => { fullscreen = document.fullscreenElement === surface; };
+    const changed = () => {
+      fullscreen = document.fullscreenElement === surface;
+    };
     document.addEventListener('fullscreenchange', changed);
     return () => document.removeEventListener('fullscreenchange', changed);
   });
@@ -33,18 +35,20 @@
   let error = $state('');
   let showTour = $state(untrack(() => inspection.route !== null));
 
-  function selectCity(id: number) {
+  let cityDraft = $state(0);
+  export function selectCity(id: number) {
+    if (!Number.isSafeInteger(id) || id < 0 || id >= inspection.coordinates.length / 2) return;
     selected = id;
+    cityDraft = id;
     viewer?.select(id);
   }
 
   $effect(() => {
-    retry;
     if (!canvas) return;
     error = '';
     let instance: ReturnType<typeof createViewer> | null = null;
     try {
-      instance = createViewer(canvas, inspection, selectCity, message => {
+      instance = createViewer(canvas, inspection, selectCity, (message) => {
         error = message;
       });
       instance.select(untrack(() => selected));
@@ -55,25 +59,82 @@
       error = cause instanceof Error ? cause.message : String(cause);
       viewer = null;
     }
-    return () => { instance?.destroy(); };
+    return () => {
+      instance?.destroy();
+    };
   });
 
-  $effect(() => { viewer?.theme(theme); });
+  $effect(() => {
+    viewer?.theme(theme);
+  });
 </script>
 
-  <div class="instance-inspection" role="region" aria-label="Instance inspection">
-    <div class="canvas-area" bind:this={surface}>
+<div class="instance-inspection" role="region" aria-label="Instance inspection">
+  <form
+    class="city-selection"
+    onsubmit={(event) => {
+      event.preventDefault();
+      selectCity(cityDraft);
+    }}
+  >
+    <label>
+      City ID
+      <input
+        type="number"
+        min="0"
+        max={inspection.coordinates.length / 2 - 1}
+        required
+        bind:value={cityDraft}
+      />
+    </label>
+    <button disabled={!viewer || !!error}>Select city</button>
+  </form>
+  <p role="status">
+    Selected city {selected}: X {Object.is(inspection.coordinates[selected * 2], -0)
+      ? '-0'
+      : inspection.coordinates[selected * 2]}, Y {Object.is(
+      inspection.coordinates[selected * 2 + 1],
+      -0,
+    )
+      ? '-0'
+      : inspection.coordinates[selected * 2 + 1]} (diamond marker)
+  </p>
+  <div class="canvas-area" bind:this={surface}>
     <div class="viewer-controls" role="group" aria-label="Viewer controls">
-      <button disabled={!viewer || !!error} aria-label="Fit instance to view" title="Fit instance to view (Home)" onclick={() => viewer?.fit()}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <button
+        disabled={!viewer || !!error}
+        aria-label="Fit instance to view"
+        title="Fit instance to view (Home)"
+        onclick={() => viewer?.fit()}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          aria-hidden="true"
+        >
           <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />
           <rect x="8" y="8" width="8" height="8" rx="1" />
         </svg>
       </button>
-      <button disabled={!viewer || !!error} aria-label="Zoom in" onclick={() => viewer?.zoom(1.2)}>+</button>
-      <button disabled={!viewer || !!error} aria-label="Zoom out" onclick={() => viewer?.zoom(1 / 1.2)}>−</button>
+      <button disabled={!viewer || !!error} aria-label="Zoom in" onclick={() => viewer?.zoom(1.2)}>
+        +
+      </button>
+      <button
+        disabled={!viewer || !!error}
+        aria-label="Zoom out"
+        onclick={() => viewer?.zoom(1 / 1.2)}
+      >
+        −
+      </button>
       {#if inspection.route}
-        <label><input type="checkbox" bind:checked={showTour} onchange={() => viewer?.tour(showTour)} /> Show tour</label>
+        <label>
+          <input type="checkbox" bind:checked={showTour} onchange={() => viewer?.tour(showTour)} />
+          Show tour
+        </label>
       {/if}
       <button
         class="fullscreen-button"
@@ -82,7 +143,15 @@
         title={fullscreen ? 'Exit fullscreen (Escape)' : 'Enter fullscreen'}
         onclick={toggleFullscreen}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          aria-hidden="true"
+        >
           {#if fullscreen}
             <path d="M3 8h5V3m8 0v5h5M8 21v-5H3m18 0h-5v5" />
           {:else}
@@ -91,19 +160,22 @@
         </svg>
       </button>
     </div>
-        {#key retry}
-          <!-- Canvas keyboard pan/zoom is implemented by createViewer. -->
-          <canvas
-            bind:this={canvas}
-            tabindex="0"
-            aria-label="City view. Drag or use arrow keys to pan; plus and minus zoom; Home fits. Click to select a city."
-            title="Drag to pan · scroll to zoom · click to select"
-          ></canvas>
-        {/key}
-        {#if error}
-          <div class="viewer-error" role="status"><p>{error}</p><button onclick={() => retry += 1}>Retry viewer</button></div>
-        {:else if fullscreenError}
-          <div class="viewer-error" role="status"><p>{fullscreenError}</p></div>
-        {/if}
+    {#key retry}
+      <!-- Canvas keyboard pan/zoom is implemented by createViewer. -->
+      <canvas
+        bind:this={canvas}
+        tabindex="0"
+        aria-label="City view. Drag or use arrow keys to pan; plus and minus zoom; Home fits. Click to select a city."
+        title="Drag to pan · scroll to zoom · click to select"
+      ></canvas>
+    {/key}
+    {#if error}
+      <div class="viewer-error" role="status">
+        <p>{error}</p>
+        <button onclick={() => (retry += 1)}>Retry viewer</button>
       </div>
+    {:else if fullscreenError}
+      <div class="viewer-error" role="status"><p>{fullscreenError}</p></div>
+    {/if}
   </div>
+</div>

@@ -38,10 +38,10 @@ def test_queued_cancel_graceful_intent_and_confirmed_immediate_stop(tmp_path):
             first = job["job_id"]
             polls = []
             page.on('request', lambda request: polls.append(request.url) if request.url.endswith('/api/jobs/query') else None)
-            page.get_by_role('button', name='Saved results', exact=True).click()
+            page.get_by_role('link', name='Saved results', exact=True).click()
             count = len(polls); page.wait_for_timeout(1800)
             assert len(polls) == count, 'inactive application view must not poll'
-            page.get_by_role('button', name='Experiments', exact=True).click()
+            page.get_by_role('link', name='Experiments', exact=True).click()
             page.evaluate("Object.defineProperty(document, 'visibilityState', {configurable: true, value: 'hidden'}); document.dispatchEvent(new Event('visibilitychange'))")
             count = len(polls); page.wait_for_timeout(1800)
             assert len(polls) == count, 'hidden browser tab must not poll'
@@ -53,7 +53,7 @@ def test_queued_cancel_graceful_intent_and_confirmed_immediate_stop(tmp_path):
             page.get_by_role("button", name="Run reviewed experiment", exact=True).click()
             page.get_by_role("button", name="Cancel queued job", exact=True).click()
             expect(page.get_by_role("heading", name="Selected job: cancelled")).to_be_visible()
-            page.get_by_role("button", name=first, exact=True).click()
+            page.get_by_role("button", name=f'Select job {first[:8]}…{first[-6:]} ({first})', exact=True).click()
             page.get_by_role("button", name="Stop after trial", exact=True).click()
             expect(page.get_by_role("heading", name="Selected job: stop_requested")).to_be_visible()
             assert not exited(fd)

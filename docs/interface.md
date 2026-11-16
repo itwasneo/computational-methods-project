@@ -47,8 +47,10 @@ pidfds/procfs and enabled JIT. Numerical-only installations need no web dependen
    for one implementation. The UI does not advertise test-only GA/SA adapters.
 3. **Review:** **Review experiment** validates the shared plan without running it.
    Inspect resolved configuration, identities/seeds, estimates and job ceiling, then
-   **Run reviewed experiment**. Input edits invalidate review. No manifest editing or
-   copied ID/path binding is needed: the backend constructs the accepted manifest.
+   **Run reviewed experiment**. Configuration edits or choosing a new instance invalidate
+   review. The expiry countdown disables an expired plan; the server remains the final
+   authority. A failed fresh-rerun review never leaves an older plan executable. No manifest
+   editing or copied ID/path binding is needed: the backend constructs the accepted manifest.
 4. **Monitor:** job counts/state refresh while known jobs are progressing and the
    Experiments view and browser tab are visible. Idle/terminal/held queues do not poll;
    use **Refresh jobs** to discover work submitted by another client. Selecting a terminal result
@@ -61,7 +63,8 @@ pidfds/procfs and enabled JIT. Numerical-only installations need no web dependen
    Dirty/unknown source or incompatible work/context produces explicit rejection reasons.
 6. **Inspect:** click an attempt ID to fetch independently verified final coordinates
    and tour. Pan/zoom/fit, toggle the tour or use the accessible coordinate/permutation
-   view. A failed/no-solution aggregate has no invented tour. Canonical float64 data stays
+   view. The City ID control and coordinate-row buttons support keyboard selection;
+   the selected city has a diamond marker and a textual coordinate readout. A failed/no-solution aggregate has no invented tour. Canonical float64 data stays
    separate from display buffers; signed zero/order survive export.
 7. **Analyze:** summary, diagnostic, recorded-history, observed-target and reference-gap
    tables call shared Python functions. Choose an authorized reference JSON for gaps.
@@ -70,8 +73,8 @@ pidfds/procfs and enabled JIT. Numerical-only installations need no web dependen
 
 Table headers stay visible while scrolling through rows; horizontal scrolling keeps
 headers aligned with their columns. Tables abbreviate long IDs and display durations with at most two decimal places,
-using ms, s, min or h. Hover for original values; **Full values and all columns** restores
-exact analysis values and field names. Saved-result expansion shows full IDs and seconds.
+using ms, s, min or h. Hover for original values; **Full-precision values** restores
+exact analysis values and field names, independently of **All columns**. Saved-result expansion shows full IDs and seconds.
 Storage, downloads and server-side sorting remain unrounded; exact time filters still
 use seconds and ID filters use full IDs. Tiny positive durations display `<0.01 ms`, not zero.
 
@@ -86,15 +89,27 @@ kinds remain declarations; the interface does not prove optimality.
   interruption. Stop intent is not terminal evidence until the backend verifies exit.
 - Disconnect/reload does not cancel jobs. Type `pair` in the owner terminal with a new
   secret before reconnecting; switching tabs shares the same in-memory grant.
-- A lost submission acknowledgement offers **Retry original submission**, never an
-  automatic new campaign. Only non-secret preflight/key/root retry metadata is retained
+- A lost submission acknowledgement or request timeout offers **Retry original submission**,
+  never an automatic new campaign. Non-secret preflight/key/root retry metadata is retained
   in tab session storage when available; credentials remain memory-only. A retry for a
   different output root is refused. Inspect existing jobs if storage was unavailable.
+  Unreadable retry metadata blocks new setup/submission and has an explicit owner-confirmed
+  clearing action. Clearing a reference never cancels accepted work.
+- Valid non-secret configuration drafts are saved separately, scoped to the output root.
+  After reconnecting, **Restore saved input snapshot** revalidates the referenced input;
+  execution still requires a fresh review. Draft storage never restores reviewed authority.
+- View, job, attempt and explicit analysis-query links support Back/Forward and reload.
+  A linked job is restored only after pairing with its original output root. Credentials,
+  preflight authority and submission keys are not put in URLs. Catalog-bound reference
+  selections may require explicit reselection after a refresh.
 - Every backend restart holds dispatch. Inspect jobs and use **Continue held queue**
   explicitly. **Review fresh rerun** reloads the original snapshot/configuration for a
   new review/key/campaign; it never appends or resumes an old search.
-- Errors pause automatic polling; use **Refresh jobs** after resolving the cause. A
-  stale review requires re-review, not repeated execution. Capacity exhaustion preserves
+- A job-status error pauses polling until **Refresh jobs** succeeds. Unrelated input,
+  catalog or analysis errors do not disable job controls or erase unrelated verified views.
+  Authorization loss resets both views; a stale result binding invalidates all publications
+  from that source. Catalog refreshes invalidate old handles/selections in both views.
+  A stale review requires re-review, not repeated execution. Capacity exhaustion preserves
   evidence; choose a new output root rather than deleting private state to reset keys.
 
 ## Browser local results
