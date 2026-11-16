@@ -265,6 +265,8 @@ class QueueStatus(RunContext):
 
 
 class ScientificConfiguration(TypedDict):
+    backend: Literal["serial", "multicore"]
+    threads_per_worker: int
     algorithm: Literal["nn", "ga", "sa"]
     parameters: dict[str, int | float]
     budget: dict[str, int | float | list[int]]
@@ -337,6 +339,7 @@ class ReviewedPlan(TypedDict):
     trial_count: int
     trials: list[ReviewedTrial]
     estimated_matrix_bytes: int
+    estimated_solver_scratch_bytes: int
     maximum_history_points: int
     estimated_output_bytes: int
     summed_search_allowance_s: float | None

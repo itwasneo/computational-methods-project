@@ -1,4 +1,4 @@
-"""Registered serial solver campaigns with exclusive, single-writer JSONL shards.
+"""Registered single-process campaigns with exclusive, single-writer JSONL shards.
 
 Manifest/input binding errors precede execution. Trial failures are records;
 serialization/write failures and process interrupts abort rather than masquerade
@@ -71,7 +71,11 @@ def _memory_resources() -> dict:
 
 
 def runtime_provenance() -> dict:
-    """Observe the local runtime; environment collection is explicitly allowlisted."""
+    """Base runtime observation; each prepared trial supplies its solver thread ceiling.
+
+    Environment collection is explicitly allowlisted. This is not a measurement
+    of busy cores or continuous attestation against external runtime changes.
+    """
     try:
         affinity = sorted(os.sched_getaffinity(0))
     except (AttributeError, OSError):
@@ -103,6 +107,11 @@ def _execution(plan, registry):
                             backend=execution["backend"], distance_kind=search["instance"]["distance_kind"],
                             distance_mode=execution["distance_mode"],
                             timed="time_limit_s" in search["budget"], record_history=search["record_history"])
+    if execution["backend"] == "multicore":
+        from tsp_hpc.solvers.resources import validate_threads
+        if execution["resources"]["workers"] != 1:
+            raise ValueError("multicore execution uses one process, not campaign workers")
+        validate_threads(execution["resources"]["threads_per_worker"])
     execution["implementation"] = spec.implementation
     return execution, spec
 
@@ -126,7 +135,7 @@ def _trial(plan, execution, spec, capability_error, bindings, provenance, campai
         "requested_plan": plan.to_dict(), "effective_execution": execution,
         "execution_id": None if execution is None else stable_id(
             "execution", {"search_id": plan.search_id, "execution": execution}),
-        "runtime": provenance, "input": {"path": str(bindings[identifier]) if identifier in bindings else None},
+        "runtime": dict(provenance), "input": {"path": str(bindings[identifier]) if identifier in bindings else None},
         "setup_policy": "fresh-per-trial", "max_matrix_bytes": matrix_limit,
         "adapter": None, "outcome": "failed", "result": None, "error": None,
         "budget_scope": "per-logical-invocation", "logical_results": [],
@@ -162,7 +171,14 @@ def _trial(plan, execution, spec, capability_error, bindings, provenance, campai
 
         phase = "solver_warmup"
         phase_start = perf_counter()
-        solver = spec.factory(prepared)
+        if execution["backend"] == "multicore":
+            threads = execution["resources"]["threads_per_worker"]
+            solver = spec.factory(prepared, threads=threads)
+            if getattr(solver, "threads", None) != threads:
+                raise ValueError("adapter thread limit disagrees with requested resources")
+            record["runtime"]["solver_threads"] = threads
+        else:
+            solver = spec.factory(prepared)
         record["adapter"] = validate_adapter_metadata(solver, prepared, spec)
         record["native_execution"] = adapter_native_observation(solver, spec)
         record["timings"]["solver_warmup_time_s"] = record["adapter"]["solver_warmup_time_s"]

@@ -1,6 +1,6 @@
 # Usage
 
-**Saved instance + manifest → serial runner → JSONL → analysis/report.**
+**Saved instance + manifest → registered runner → JSONL → analysis/report.**
 Use the [development environment](development.md) and run commands from the repository
 root. [Contracts](contracts.md) define the scientific rules; [manifests](manifests.md)
 define configuration and identity. The [local API](interface.md) delegates to this same pipeline.
@@ -391,7 +391,7 @@ reports zero search/validation time; runner setup policy is separate.
 
 ### Implementation selection
 
-Both implementations follow `nn-fixed-starts-v1` and are listed by `implementation_names()`:
+The two serial implementations follow `nn-fixed-starts-v1` and are listed by `implementation_names()`:
 
 | Implementation | Candidate search |
 | --- | --- |
@@ -408,6 +408,12 @@ Choose a stable implementation ID explicitly; [manifest labels](manifests.md#exe
 affect execution identity, not scientific work. Register optimized kernels alongside the
 baseline; changed search rules require a different variant. Never execute multicore plans
 as serial merely because the planner accepts them.
+
+The production registry additionally exposes fixed-work multicore
+`visited-scan-threaded-v1`. It requires `backend: multicore`, one process and an
+explicit supported thread count; time/history requests are rejected. See
+[exact references, native-thread resources and the scaling pilot](exact-and-multicore.md)
+for direct reference generation, manifest examples and local application controls.
 
 ## Distance preparation and compiled callers
 

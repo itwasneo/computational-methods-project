@@ -56,7 +56,13 @@ def main(argv=None):
         limits = ExecutionLimits(**plan["limits"])
         _limit(resource.RLIMIT_AS, limits.max_worker_memory_bytes)
         _limit(resource.RLIMIT_FSIZE, limits.max_result_bytes)
-        _limit(resource.RLIMIT_CPU, limits.max_job_seconds, limits.max_job_seconds + 1)
+        threads = plan["public"]["configuration"].get("threads_per_worker", 1)
+        if type(threads) is not int or not 1 <= threads <= limits.max_solver_threads:
+            raise ValueError("invalid worker thread bound")
+        # RLIMIT_CPU counts aggregate thread CPU time; the owner watchdog separately
+        # enforces the unchanged wall-clock ceiling for the whole process.
+        cpu_seconds = limits.max_job_seconds * threads
+        _limit(resource.RLIMIT_CPU, cpu_seconds, cpu_seconds + 1)
         _limit(resource.RLIMIT_CORE, 0)
         affinity = plan["runtime"]["affinity"]
         if affinity is not None:

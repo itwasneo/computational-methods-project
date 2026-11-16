@@ -121,9 +121,10 @@ def _runtime(runtime, schema_version):
     for key in ("platform", "machine", "processor"):
         if type(runtime[key]) is not str:
             raise ValueError("invalid platform observation")
-    for key in ("runner_workers", "solver_threads"):
-        if _count(runtime[key]) != 1:
-            raise ValueError("runner analysis supports serial observations only")
+    if _count(runtime["runner_workers"]) != 1 or _count(runtime["solver_threads"]) < 1:
+        raise ValueError("invalid single-process resource observations")
+    if schema_version < 3 and runtime["solver_threads"] != 1:
+        raise ValueError("legacy records support serial observations only")
     if runtime["cpu_count"] is not None and _count(runtime["cpu_count"]) == 0:
         raise ValueError("CPU count must be positive")
     affinity = runtime["cpu_affinity"]
@@ -183,17 +184,32 @@ def _execution(record, search, requested, search_id):
             raise ValueError("effective execution changes the requested configuration")
         if record["execution_id"] != stable_id("execution", {"search_id": search_id, "execution": effective}):
             raise ValueError("effective execution identity mismatch")
-        if (record["schema_version"] < 3 and search["algorithm"] != "nn") or effective["backend"] != "serial" or search["instance"]["distance_kind"] != "euclidean_2d":
+        if (record["schema_version"] < 3 and search["algorithm"] != "nn") or (record["schema_version"] < 3 and effective["backend"] != "serial") or search["instance"]["distance_kind"] != "euclidean_2d":
             raise ValueError("unsupported effective runner capability")
+        if record.get("logical_results") and record["outcome"] != "completed":
+            _resource_observation(record, search, effective)
     elif record["execution_id"] is not None:
         raise ValueError("unresolved execution must have null identity")
     return effective
+
+
+def _resource_observation(record, search, effective):
+    resources = effective["resources"]
+    if resources["workers"] != 1 or record["runtime"]["solver_threads"] != resources["threads_per_worker"]:
+        raise ValueError("effective execution and observed thread limit disagree")
+    if effective["backend"] == "multicore":
+        if search["algorithm"] != "nn" or search["record_history"] or "time_limit_s" in search["budget"]:
+            raise ValueError("unsupported multicore stopping/history semantics")
+        native = record.get("native_execution")
+        if not native or not native["verified"] or not any(d["options"]["nogil"] for d in native["dispatchers"]):
+            raise ValueError("multicore execution requires verified GIL-free native dispatch")
 
 
 def _completed(record, search, effective):
     """Verify artifact/adapter observations and complete timing boundaries."""
     if effective is None or record["error"] is not None or canonical_json(record["input"].get("descriptor")) != canonical_json(search["instance"]):
         raise ValueError("completed trial lacks verified input/execution")
+    _resource_observation(record, search, effective)
     descriptor = search["instance"]
     content_id = stable_id("instance", {key: descriptor[key] for key in
                                        ("coordinate_checksum", "n_cities", "distance_kind")})

@@ -2,6 +2,8 @@ import { wireGuard } from './wire.ts';
 import type { DistanceMode, ScientificConfiguration } from './contracts.ts';
 
 export interface ConfigurationDraft {
+  backend?: 'serial' | 'multicore';
+  threads?: number;
   implementations: string[];
   modes: DistanceMode[];
   starts: string;
@@ -35,7 +37,18 @@ export function isConfigurationDraft(value: unknown): value is ConfigurationDraf
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const draft = value as Record<string, unknown>;
   return (
-    Object.keys(draft).sort().join(',') === fields.join(',') &&
+    Object.keys(draft)
+      .filter((key) => key !== 'backend' && key !== 'threads')
+      .sort()
+      .join(',') === fields.join(',') &&
+    (draft.backend === undefined || draft.backend === 'serial' || draft.backend === 'multicore') &&
+    (draft.threads === undefined ||
+      (typeof draft.threads === 'number' &&
+        Number.isInteger(draft.threads) &&
+        draft.threads >= 1 &&
+        draft.threads <= 8)) &&
+    ((draft.backend ?? 'serial') !== 'serial' || (draft.threads ?? 1) === 1) &&
+    (draft.backend !== 'multicore' || (draft.timed === false && draft.history === false)) &&
     Array.isArray(draft.implementations) &&
     draft.implementations.length <= 32 &&
     draft.implementations.every((v) => typeof v === 'string' && v.length <= 128) &&

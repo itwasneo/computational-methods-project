@@ -11,6 +11,27 @@ from tsp_hpc.interface.runtime import runtime_binding, code_identity
 from tsp_hpc.interface.storage import decode, encode
 
 
+def public_review(private):
+    """Project old serial review metadata without rewriting or reauthorizing it."""
+    public = decode(encode(private["public"]))
+    config = public["configuration"]
+    if "backend" not in config or "threads_per_worker" not in config:
+        executions = [execution for experiment in private["manifest"]["experiments"]
+                      for execution in experiment["executions"]]
+        if (config.get("backend", "serial") != "serial" or config.get("threads_per_worker", 1) != 1
+                or not executions or any(e["backend"] != "serial" or e["resources"]["workers"] != 1
+                                 or e["resources"]["threads_per_worker"] != 1 for e in executions)):
+            raise InterfaceError("invalid_artifact", "Legacy resource metadata is inconsistent.", 422)
+        config.setdefault("backend", "serial")
+        config.setdefault("threads_per_worker", 1)
+    if "estimated_solver_scratch_bytes" not in public:
+        from tsp_hpc.solvers.resources import nn_scratch_bytes
+        n = private["manifest"]["instances"][0]["n_cities"]
+        public["estimated_solver_scratch_bytes"] = (nn_scratch_bytes(n, len(config["budget"]["start_cities"]), 1)
+            if config["algorithm"] == "nn" else config["parameters"].get("population_size", 1) * n * 8 * 6)
+    return public
+
+
 @dataclass(frozen=True)
 class ReviewedPlan:
     document: bytes
@@ -40,6 +61,8 @@ class PreflightStore:
         if runtime["code"] != self._code:
             raise InterfaceError("preflight_stale", "Backend code/capabilities changed; restart before review.", 409)
         authority = self.authority.describe()
+        from tsp_hpc.solvers.resources import available_threads
+        authority["limits"]["max_solver_threads"] = min(self.limits.max_solver_threads, available_threads())
         descriptions = self.registry.capabilities()
         items = []
         for spec in descriptions:
@@ -76,9 +99,12 @@ class PreflightStore:
             record, _, snapshot = self.snapshots.read(snapshot_id)
             config = configuration.model_dump()
             algorithm, budget = config["algorithm"], config["budget"]
+            threads = config["threads_per_worker"]
+            if threads > caps["limits"]["max_solver_threads"]:
+                raise InterfaceError("resource_limit", "Requested threads exceed the CPU/resource limit.", 413)
             try:
                 implementations = [self.registry.resolve(algorithm, implementation=name,
-                    distance_kind=record.instance.distance_kind, timed="time_limit_s" in budget,
+                    backend=config["backend"], distance_kind=record.instance.distance_kind, timed="time_limit_s" in budget,
                     record_history=config["record_history"]).implementation for name in config["implementations"]]
             except (ValueError, TypeError):
                 raise InterfaceError("unsupported_execution", "Algorithm, implementation, objective or recording is unavailable.", 422) from None
@@ -99,7 +125,10 @@ class PreflightStore:
             if any(value > 2**53 - 1 for value in integers):
                 raise InterfaceError("invalid_plan", "Work/parameter counts must be exactly safe wire integers.", 422)
             population_bytes = (config["parameters"].get("population_size", 1) * record.instance.n_cities * 8 * 6)
-            if matrix + population_bytes > self.limits.max_worker_memory_bytes // 2:
+            from tsp_hpc.solvers.resources import nn_scratch_bytes
+            scratch = (nn_scratch_bytes(record.instance.n_cities, len(logical), threads)
+                       if algorithm == "nn" else population_bytes)
+            if matrix + scratch > self.limits.max_worker_memory_bytes // 2:
                 raise InterfaceError("resource_limit", "Conservative solver-array estimate exceeds worker memory policy.", 413)
             allowance = budget.get("time_limit_s")
             total_allowance = None if allowance is None else allowance * count * invocations
@@ -126,8 +155,8 @@ class PreflightStore:
                 experiment["history_policy"] = config["history_policy"]
             if algorithm != "nn":
                 experiment["logical_search_ids"] = logical
-            experiment["executions"] = [{"backend": "serial", "implementation": name, "distance_mode": mode,
-                                          "resources": {"profile": "local-serial", "workers": 1, "threads_per_worker": 1}}
+            experiment["executions"] = [{"backend": config["backend"], "implementation": name, "distance_mode": mode,
+                                          "resources": {"profile": "local-" + config["backend"], "workers": 1, "threads_per_worker": threads}}
                                          for name in implementations for mode in config["distance_modes"]]
             try:
                 manifest = Manifest({"schema_version": 1, "instances": [record.descriptor], "experiments": [experiment]})
@@ -143,6 +172,7 @@ class PreflightStore:
                        "snapshot_sha256": snapshot["sha256"], "capabilities_revision": capabilities_revision,
                        "configuration": config, "budget_scope": "per-logical-invocation",
                        "trial_count": count, "trials": trials, "estimated_matrix_bytes": matrix,
+                       "estimated_solver_scratch_bytes": scratch,
                        "maximum_history_points": points, "estimated_output_bytes": output_estimate,
                        "summed_search_allowance_s": total_allowance, "job_time_ceiling_s": self.limits.max_job_seconds,
                        "valid_for_s": self.limits.preflight_seconds, "output_root": caps["output_root"]}

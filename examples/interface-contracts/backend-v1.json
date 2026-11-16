@@ -146,6 +146,8 @@
         "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
         "capabilities_revision": "40ce842a2c7be4bd2d4e7b0cdd44fdaca1440b41fb06568bf1891905bdc74599",
         "configuration": {
+          "backend": "serial",
+          "threads_per_worker": 1,
           "algorithm": "nn",
           "parameters": {},
           "budget": {
@@ -183,6 +185,8 @@
         "snapshot_sha256": "2388ccb9293537b2cd13d3eac10df340ef858109f8a534b5231f3f1fa191161b",
         "capabilities_revision": "40ce842a2c7be4bd2d4e7b0cdd44fdaca1440b41fb06568bf1891905bdc74599",
         "configuration": {
+          "backend": "serial",
+          "threads_per_worker": 1,
           "algorithm": "nn",
           "parameters": {},
           "budget": {
@@ -229,6 +233,7 @@
           }
         ],
         "estimated_matrix_bytes": 0,
+        "estimated_solver_scratch_bytes": 1168,
         "maximum_history_points": 2,
         "estimated_output_bytes": 34083,
         "summed_search_allowance_s": null,
@@ -331,6 +336,8 @@
           "budget_scope": "per-logical-invocation",
           "capabilities_revision": "40ce842a2c7be4bd2d4e7b0cdd44fdaca1440b41fb06568bf1891905bdc74599",
           "configuration": {
+            "backend": "serial",
+            "threads_per_worker": 1,
             "algorithm": "nn",
             "budget": {
               "start_cities": [
@@ -358,6 +365,7 @@
             "solver_seed": "18446744073709551615"
           },
           "estimated_matrix_bytes": 0,
+          "estimated_solver_scratch_bytes": 1168,
           "estimated_output_bytes": 34083,
           "instance_snapshot_id": "661437d03287d30b9bafa032d5452ff0",
           "job_time_ceiling_s": 300,

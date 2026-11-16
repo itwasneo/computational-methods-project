@@ -19,7 +19,7 @@ from tsp_hpc.solvers.conformance import check_adapter
 from tsp_hpc.solvers.registry import default_registry
 
 REGISTRY = default_registry()
-SPECS = [REGISTRY.resolve(item["algorithm"], implementation=item["implementation"]) for item in REGISTRY.capabilities()]
+SPECS = [REGISTRY.resolve(item["algorithm"], implementation=item["implementation"], backend=item["backend"]) for item in REGISTRY.capabilities()]
 
 
 def budget_for(algorithm, n, zero=False):
@@ -39,7 +39,8 @@ def parameters_for(algorithm):
 @pytest.mark.parametrize("zero", [False, True])
 def test_registered_fixed_work_ownership_replay_and_history(spec, mode, name, zero):
     instance = fixture(name).instance
-    assert spec.supports_time and spec.supports_history, "baseline handoff requires both execution modes/history"
+    if spec.backend == "serial":
+        assert spec.supports_time and spec.supports_history, "serial baseline requires time/history"
     result = check_adapter(spec, instance, seed=2**63 + 7, budget=budget_for(spec.algorithm, instance.n_cities, zero),
                            parameters=parameters_for(spec.algorithm), distance_mode=mode)
     assert result.status == ("no_solution" if spec.algorithm == "nn" and zero else "ok")
@@ -53,6 +54,11 @@ def test_registered_time_only_and_combined_stops(spec, mode, limit):
     budget = budget_for(spec.algorithm, instance.n_cities)
     if spec.algorithm != "nn" and limit == 1e-12:
         budget = {}  # NN deliberately always retains its finite start list.
+    if not spec.supports_time or not spec.supports_history:
+        with pytest.raises(ValueError, match="fixed work"):
+            check_adapter(spec, instance, seed=7, budget={**budget, "time_limit_s": limit},
+                          record_history=True)
+        return
     result = check_adapter(spec, instance, seed=7, budget={**budget, "time_limit_s": limit},
                            parameters=parameters_for(spec.algorithm), distance_mode=mode,
                            record_history=True, history_policy={"interval_s": 0, "max_points": 4096})
@@ -82,13 +88,19 @@ def test_registered_adapters_reject_bad_direct_requests(spec, change):
 def test_registered_manifest_to_history_pipeline(spec, mode, serial_campaign):
     _, manifest, bindings, output = serial_campaign(spec.algorithm)
     document = manifest.to_dict()
-    document["experiments"][0]["executions"][0].update(implementation=spec.implementation, distance_mode=mode)
+    document["experiments"][0]["executions"][0].update(implementation=spec.implementation, distance_mode=mode, backend=spec.backend)
+    if not spec.supports_history:
+        document["experiments"][0]["record_history"] = False
+        document["experiments"][0].pop("history_policy", None)
     manifest = Manifest(document)
     summary = run_manifest(manifest, instance_paths=bindings, output_path=output)
     assert summary["counts"] == {"completed": 1, "failed": 0}
     analysis = read_shards([output], expected_manifest=manifest)
     assert analysis.trials["usable"].all() and not analysis.diagnostics
     points = progress_table(analysis)
+    if not spec.supports_history:
+        assert points.empty
+        return
     assert not points.empty
     trial = analysis.trial(analysis.trials.iloc[0]["attempt_id"])
     assert json.loads(points.iloc[-1]["cumulative_work_json"]) == trial["result"]["work"]

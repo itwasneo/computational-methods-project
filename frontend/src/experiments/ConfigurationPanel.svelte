@@ -14,9 +14,11 @@
     untrack(() => view.capabilities?.output_root?.root_id ?? ''),
   );
   const saved = store.read();
+  let backend = $state<'serial' | 'multicore'>(saved?.backend ?? 'serial');
+  let threads = $state(saved?.threads ?? 1);
   const availableImplementations = () =>
     view.capabilities?.implementations
-      .filter((i) => i.algorithm === 'nn' && i.available === true)
+      .filter((i) => i.algorithm === 'nn' && i.available === true && i.backend === backend)
       .map((i) => String(i.implementation)) ?? [];
   const initialChoices = untrack(availableImplementations);
   const missingSaved = saved?.implementations.some((id) => !initialChoices.includes(id));
@@ -41,6 +43,8 @@
     originalSnapshot = $state(saved?.originalSnapshot ?? '');
   function saveDraft() {
     store.save({
+      backend,
+      threads,
       implementations,
       modes,
       starts,
@@ -55,6 +59,17 @@
       originalSnapshot,
       snapshot: view.snapshot?.instance_snapshot_id ?? saved?.snapshot ?? null,
     });
+  }
+  function backendChanged(event: Event) {
+    backend = (event.currentTarget as HTMLSelectElement).value as 'serial' | 'multicore';
+    implementations = availableImplementations().slice(0, 1);
+    threads =
+      backend === 'serial' ? 1 : Math.min(2, view.capabilities?.limits.max_solver_threads ?? 1);
+    if (backend === 'multicore') {
+      timed = false;
+      history = false;
+    }
+    edited();
   }
   function edited() {
     controller.invalidateReview();
@@ -83,6 +98,8 @@
   });
   export async function restore(configuration: ScientificConfiguration) {
     original = configuration;
+    backend = configuration.backend;
+    threads = configuration.threads_per_worker;
     originalSnapshot = view.snapshot?.instance_snapshot_id ?? '';
     implementations = configuration.implementations.filter((id): id is string => id !== null);
     modes = [...configuration.distance_modes];
@@ -132,6 +149,8 @@
         base && JSON.stringify(base.budget.start_cities) === JSON.stringify(start_cities);
       const configuration: ScientificConfiguration = {
         algorithm: 'nn',
+        backend,
+        threads_per_worker: threads,
         parameters: base?.parameters ?? {},
         budget: { start_cities, ...(timed ? { time_limit_s: seconds } : {}) },
         logical_search_ids: sameStarts ? base.logical_search_ids : null,
@@ -179,6 +198,35 @@
   <form onsubmit={review} oninput={edited} onchange={edited}>
     <fieldset disabled={!view.snapshot || blocked || !available.length}>
       <div class="form-grid">
+        <label>
+          Execution backend
+          <select bind:value={backend} onchange={backendChanged}>
+            <option value="serial">Serial</option>
+            <option
+              value="multicore"
+              disabled={!view.capabilities?.implementations.some(
+                (i) => i.backend === 'multicore' && i.available === true,
+              )}
+            >
+              Multicore NN (fixed work)
+            </option>
+          </select>
+        </label>
+        <label>
+          Solver threads
+          <input
+            type="number"
+            min="1"
+            max={view.capabilities?.limits.max_solver_threads ?? 1}
+            step="1"
+            bind:value={threads}
+            disabled={backend === 'serial'}
+            required
+          />
+        </label>
+        {#if backend === 'multicore'}<p>
+            One job, bounded native threads. Timed runs and progress histories are not supported.
+          </p>{/if}
         <div>
           Implementations{#each available as id (id)}<label>
               <input type="checkbox" value={id} bind:group={implementations} />
@@ -220,7 +268,7 @@
         mean zero work. NN is deterministic.
       </p>
       <label>
-        <input type="checkbox" bind:checked={timed} />
+        <input type="checkbox" bind:checked={timed} disabled={backend === 'multicore'} />
         Add a per-invocation time limit
       </label>
       {#if timed}<label>
@@ -232,7 +280,7 @@
           overshoot.
         </p>{/if}
       <label>
-        <input type="checkbox" bind:checked={history} />
+        <input type="checkbox" bind:checked={history} disabled={backend === 'multicore'} />
         Record best-so-far history
       </label>
       {#if history}<div class="form-grid">
@@ -264,7 +312,8 @@
         )}
       </p>
       <p>
-        Matrix estimate: {view.review.estimated_matrix_bytes} bytes. Output estimate: {view.review
+        Matrix estimate: {view.review.estimated_matrix_bytes} bytes. Solver scratch estimate: {view
+          .review.estimated_solver_scratch_bytes} bytes. Output estimate: {view.review
           .estimated_output_bytes} bytes. Job ceiling: {view.review.job_time_ceiling_s} s.
       </p>
       <p>

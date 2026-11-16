@@ -53,6 +53,7 @@ solver registry and API capabilities, not the scientific specifications.
 | [Shared contracts](docs/contracts.md) | Data, objective, results, validation and fair comparisons |
 | [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA rules, operators, budgets and checkpoints |
 | [Manifests](docs/manifests.md) | Configuration schema, identities and RNG ownership |
+| [Exact references and multicore NN](docs/exact-and-multicore.md) | Bounded exhaustive validation, native-thread execution and scaling pilot |
 | [Development](docs/development.md) | Environment, architecture, solver integration, tests and packaging |
 | [Local interface](docs/interface.md) | Owner operation, HTTP contracts, security and recovery |
 | [HPC operations](docs/hpc-resources.md) | Allocations, containers, placement and storage |

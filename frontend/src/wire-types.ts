@@ -461,6 +461,7 @@ export interface WireTypes {
     configuration: WireTypes["ScientificConfiguration"];
     estimated_matrix_bytes: number;
     estimated_output_bytes: number;
+    estimated_solver_scratch_bytes: number;
     instance_snapshot_id: string;
     job_time_ceiling_s: number;
     maximum_history_points: number;
@@ -481,6 +482,7 @@ export interface WireTypes {
     configuration: WireTypes["ScientificConfiguration"];
     estimated_matrix_bytes: number;
     estimated_output_bytes: number;
+    estimated_solver_scratch_bytes: number;
     instance_snapshot_id: string;
     job_time_ceiling_s: number;
     maximum_history_points: number;
@@ -515,6 +517,7 @@ export interface WireTypes {
   };
   ScientificConfiguration: {
     algorithm: "nn" | "ga" | "sa";
+    backend: "serial" | "multicore";
     budget: Record<string, number | number | Array<number>>;
     distance_modes: Array<"dense" | "on_demand">;
     history_policy: Record<string, number | number> | null;
@@ -525,6 +528,7 @@ export interface WireTypes {
     record_history: boolean;
     repetitions: Array<number>;
     solver_seed: string;
+    threads_per_worker: number;
   };
   SessionRequest: {
     api_version: 1;

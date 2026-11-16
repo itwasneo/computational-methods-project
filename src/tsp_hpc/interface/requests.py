@@ -182,6 +182,8 @@ class QueueContinueRequest(RunRequest):
 
 
 class ScientificConfigurationRequest(StrictModel):
+    backend: Literal["serial", "multicore"] = "serial"
+    threads_per_worker: StrictInt = Field(default=1, ge=1, le=8)
     algorithm: Literal["nn", "ga", "sa"]
     parameters: dict[StrictStr, Any]
     budget: dict[StrictStr, Any]
@@ -201,6 +203,8 @@ class ScientificConfigurationRequest(StrictModel):
     def scientific_rules(self):
         from tsp_hpc.solvers.configuration import normalize_parameters, normalize_budget, normalize_history
         try:
+            if self.backend == "serial" and self.threads_per_worker != 1:
+                raise ValueError("serial execution requires one thread")
             self.parameters = normalize_parameters(self.algorithm, self.parameters)
             # Actual city bounds are checked against the immutable snapshot during
             # preflight. Wire normalization cannot authorize an instance.
