@@ -43,6 +43,21 @@ def test_guard_precedes_factorial_enumeration_and_numerical_failure_is_not_skipp
         exact_reference(instance)
 
 
+def test_maximum_supported_size_and_no_native_dependency():
+    import subprocess
+    import sys
+    instance = TSPInstance("nine-coincident", np.zeros((MAX_EXACT_CITIES, 2)))
+    ref = exact_reference(instance)
+    assert ref.cost == 0 and ref.tours_evaluated == math.factorial(MAX_EXACT_CITIES - 1)
+    assert ref.tour == tuple(range(MAX_EXACT_CITIES))
+    checked = subprocess.run([sys.executable, "-c", "import sys; "
+        "from tsp_hpc.problem.instances import fixture; "
+        "from tsp_hpc.problem.exact import exact_reference; "
+        "assert exact_reference(fixture('square').instance).cost == 4; "
+        "assert 'numba' not in sys.modules"], capture_output=True, text=True, timeout=10)
+    assert checked.returncode == 0, checked.stderr
+
+
 def test_coincident_tie_is_lexical_and_reference_is_immutable():
     ref = exact_reference(fixture("coincident").instance)
     assert ref.tour == (0, 1, 2, 3)

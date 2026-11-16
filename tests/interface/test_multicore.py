@@ -109,3 +109,9 @@ def test_owner_resource_ceiling_overrides_available_host(job_client, execution_s
     app.state.preflights.limits = replace(app.state.preflights.limits, max_solver_threads=1)
     caps = job_client.post("/api/runs/capabilities")
     assert caps["limits"]["max_solver_threads"] == 1
+    accepted = job_client.review(**configuration(1))
+    response = job_client.client.post("/api/runs/preflight", json={**job_client.context,
+        "instance_snapshot_id": accepted["instance_snapshot_id"],
+        "capabilities_revision": caps["capabilities_revision"],
+        "configuration": {**accepted["configuration"], "threads_per_worker": 2}})
+    assert response.status_code == 413 and response.json()["code"] == "resource_limit"
