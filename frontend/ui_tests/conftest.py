@@ -81,6 +81,7 @@ class MockApi:
         self.grant = 0
         self.jobs = [captured("completed")["job"]]
         self.preflight = captured("preflight")
+        self.capabilities = captured("capabilities")
         self.page_size = 100
         page.route("**/api/**", self.handle)
 
@@ -134,7 +135,7 @@ class MockApi:
             self.catalog_revision = f"catalog-{len(self.calls)}"
             value = {"revision": self.catalog_revision}
         elif path == "/runs/capabilities":
-            value = captured("capabilities")
+            value = deepcopy(self.capabilities)
         elif path in ("/instances/generate", "/instances/load", "/instances/snapshot"):
             if path == "/instances/load":
                 assert body["artifact_revision"] == self.catalog_revision

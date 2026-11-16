@@ -90,6 +90,35 @@ def test_configuration_draft_restores_without_reusing_review_authority(ui):
     assert 'fixture-token' not in stored and 'preflight_id' not in stored
 
 
+def test_multicore_resources_round_trip_without_restoring_authority(ui):
+    page, api = ui
+    api.capabilities['limits']['max_solver_threads'] = 2
+    api.capabilities['implementations'].append({**api.capabilities['implementations'][0],
+        'implementation': 'visited-scan-threaded-v1', 'backend': 'multicore',
+        'default': False, 'supports_time': False, 'supports_history': False})
+    api.connect(); api.prepare_review()
+    backend = page.get_by_role('combobox', name='Execution backend', exact=True)
+    backend.select_option('multicore')
+    expect(page.get_by_role('button', name='Run reviewed experiment', exact=True)).to_have_count(0)
+    page.get_by_label('Solver threads', exact=True).fill('2')
+    expect(page.get_by_label('Record best-so-far history', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Review experiment', exact=True).click()
+    expect(page.get_by_role('button', name='Run reviewed experiment', exact=True)).to_be_enabled()
+    config = next(body['configuration'] for path, body in reversed(api.calls) if path == '/runs/preflight')
+    assert config['backend'] == 'multicore' and config['threads_per_worker'] == 2
+    assert config['implementations'] == ['visited-scan-threaded-v1']
+    assert config['record_history'] is False and 'time_limit_s' not in config['budget']
+    page.reload(); api.connect()
+    expect(backend).to_have_value('multicore')
+    expect(page.get_by_label('Solver threads', exact=True)).to_have_value('2')
+    expect(page.get_by_role('button', name='Run reviewed experiment', exact=True)).to_have_count(0)
+    page.get_by_role('button', name='Restore saved input snapshot', exact=True).click()
+    expect(page.get_by_text('Instance ready: 4 cities', exact=False)).to_be_visible()
+    backend.select_option('serial')
+    expect(page.get_by_label('Solver threads', exact=True)).to_have_value('1')
+    assert not any(path == '/jobs/submit' for path, _ in api.calls)
+
+
 def test_review_expiration_is_visible_and_disables_admission(ui):
     page, api = ui
     page.clock.install()
