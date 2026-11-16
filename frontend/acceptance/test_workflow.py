@@ -181,10 +181,16 @@ def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
         expect(page.get_by_role('heading', name='Verified final result')).to_be_in_viewport()
         expect(page.get_by_role('region', name='Instance inspection')).to_be_in_viewport(ratio=0.5)
         page.get_by_label("Analysis table").select_option("comparisons")
-        with page.expect_response("**/api/jobs/analysis") as comparison:
-            page.get_by_role("button", name="Show analysis", exact=True).click()
+        page.get_by_role("button", name="Show analysis", exact=True).click()
         expect(page.get_by_text("comparisons: 2 rows", exact=False)).to_be_visible()
-        pairs = comparison.value.json()["items"]
+        # Inspect what the user can export, not a potentially unavailable CDP
+        # response-body handle (Network.getResponseBody failed intermittently in CI).
+        with page.expect_download() as comparison:
+            page.get_by_role("button", name="Download this page (JSON)", exact=True).click()
+        comparison_page = json.loads(Path(comparison.value.path()).read_bytes())
+        assert comparison_page["table"] == "comparisons"
+        pairs = comparison_page["items"]
+        assert len(pairs) == 2
         if all(r["runtime"]["source"]["dirty"] is False for r in trials):
             assert all(p["speedup"] > 0 and p["reason"] is None for p in pairs)
             expect(page.get_by_role("img", name="Server-calculated paired time ratios on this page")).to_be_visible()
