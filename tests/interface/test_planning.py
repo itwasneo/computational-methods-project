@@ -42,16 +42,18 @@ def test_capabilities_and_preflight_do_not_prepare_warm_generate_or_solve(execut
     client, app, context, _, output = execution_session
     identifier = snapshot(execution_session)
     from tsp_hpc.problem import distances, instances
+    from tsp_hpc.solvers.ga.solver import GeneticAlgorithmSolver
     from tsp_hpc.solvers.nn import solver
     def forbidden(*args, **kwargs):
         raise AssertionError("preflight must not execute numerical work")
     monkeypatch.setattr(distances, "prepare_distances", forbidden)
     monkeypatch.setattr(instances, "uniform_instance", forbidden)
     monkeypatch.setattr(solver.NearestNeighbourSolver, "__init__", forbidden)
+    monkeypatch.setattr(GeneticAlgorithmSolver, "__init__", forbidden)
     before = sorted(str(p) for p in output.rglob("*"))
     body = request(execution_session, identifier)
     capabilities = client.post("/api/runs/capabilities", json=context).json()
-    assert {item["algorithm"] for item in capabilities["implementations"]} == {"nn"}
+    assert {item["algorithm"] for item in capabilities["implementations"]} == {"nn", "ga"}
     assert all(item["available"] for item in capabilities["implementations"])
     result = client.post("/api/runs/preflight", json=body)
     assert result.status_code == 200, result.text
@@ -71,7 +73,8 @@ def test_capabilities_and_preflight_do_not_prepare_warm_generate_or_solve(execut
 
 
 @pytest.mark.parametrize("config,code", [
-    (configuration("ga"), "unsupported_execution"), (configuration("sa"), "unsupported_execution"),
+    (configuration("ga", implementations=["unknown"]), "unsupported_execution"),
+    (configuration("sa"), "unsupported_execution"),
     (configuration(implementations=["unknown"]), "unsupported_execution"),
     (configuration(implementations=[None, "visited-scan-v1"]), "invalid_plan"),
     (configuration(budget={"start_cities": [4]}), "invalid_plan"),
@@ -133,7 +136,7 @@ def test_independent_logical_plans_use_logical_not_trial_seeds(execution_session
     identifier = snapshot(execution_session)
     _, app, context, _, _ = execution_session
     for algorithm in ("ga", "sa"):
-        registry, _ = scripted_registry(algorithm)
+        registry = default_registry() if algorithm == "ga" else scripted_registry(algorithm)[0]
         planner = PreflightStore(app.state.execution, app.state.snapshots, registry=registry)
         caps = planner.capabilities()
         config = ScientificConfigurationRequest.model_validate(configuration(algorithm, history_policy={"max_points": 1024}))
@@ -141,5 +144,7 @@ def test_independent_logical_plans_use_logical_not_trial_seeds(execution_session
         trial, = plan["trials"]
         assert [item["logical_id"] for item in trial["invocations"]] == ["first", "second"]
         assert all(item["seed"] != trial["trial_seed"] for item in trial["invocations"])
-        if algorithm == "sa": assert plan["summed_search_allowance_s"] == .2
-    assert {item["algorithm"] for item in default_registry().capabilities()} == {"nn"}
+        if algorithm == "ga":
+            assert trial["implementation"] == registry.resolve("ga").implementation
+        else:
+            assert plan["summed_search_allowance_s"] == .2

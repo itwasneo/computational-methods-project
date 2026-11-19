@@ -184,16 +184,16 @@ def test_trial_setup_is_fresh_and_seeded_only_after_warmup(tmp_path, monkeypatch
         np.testing.assert_array_equal(before, after)
 
 
-@pytest.mark.parametrize("unsupported", ["ga", "sa", "multicore", "implementation", "rounded"])
+@pytest.mark.parametrize("unsupported", ["sa", "multicore", "implementation", "rounded"])
 def test_unavailable_capabilities_are_failure_records_without_setup(tmp_path, monkeypatch, unsupported):
     record = fixture("square", distance_kind="tsplib_euc_2d") if unsupported == "rounded" else None
     _, manifest, bindings, output = campaign(tmp_path, record=record)
     document = manifest.to_dict()
     experiment = document["experiments"][0]
-    if unsupported in ("ga", "sa"):
+    if unsupported == "sa":
         experiment["algorithm"] = unsupported
         experiment.pop("variant")
-        experiment["budget"] = {"max_generations" if unsupported == "ga" else "max_proposals": 0}
+        experiment["budget"] = {"max_proposals": 0}
     elif unsupported == "multicore":
         experiment["executions"][0]["backend"] = "multicore"
     elif unsupported == "implementation":

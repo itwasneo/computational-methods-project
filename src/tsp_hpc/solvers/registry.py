@@ -131,7 +131,8 @@ def validate_adapter_metadata(solver, prepared, spec):
 
 @lru_cache(maxsize=1)
 def default_registry() -> SolverRegistry:
-    # Add an algorithm package's explicit registrations here when implemented.
-    # Planning GA/SA does not make placeholder algorithms executable.
-    from tsp_hpc.solvers.nn.solver import DEFAULT_IMPLEMENTATION, solver_specs
-    return SolverRegistry(solver_specs(), defaults={"nn": DEFAULT_IMPLEMENTATION})
+    from tsp_hpc.solvers.ga.solver import solver_spec as ga_solver_spec
+    from tsp_hpc.solvers.nn.solver import DEFAULT_IMPLEMENTATION as NN_DEFAULT, solver_specs
+
+    ga = ga_solver_spec()
+    return SolverRegistry((*solver_specs(), ga), defaults={"nn": NN_DEFAULT, "ga": ga.implementation})

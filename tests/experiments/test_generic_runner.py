@@ -17,7 +17,7 @@ def records(path):
 
 @pytest.mark.parametrize("algorithm", ["ga", "sa"])
 @pytest.mark.parametrize("history", [False, True])
-def test_logical_seeds_ties_aggregation_and_uninstalled_record_reading(serial_campaign, scripted_registry, algorithm, history):
+def test_logical_seeds_ties_aggregation_and_scripted_record_reading(serial_campaign, scripted_registry, algorithm, history):
     _, manifest, bindings, output = serial_campaign(algorithm, history=history)
     registry, calls = scripted_registry(algorithm)
     summary = run_manifest(manifest, instance_paths=bindings, output_path=output, registry=registry)
@@ -37,7 +37,9 @@ def test_logical_seeds_ties_aggregation_and_uninstalled_record_reading(serial_ca
     data = read_shards([output], expected_manifest=manifest)
     assert data.trials["usable"].all() and not data.diagnostics
     assert data.trial(trial["attempt_id"]) == trial
-    assert all(item["algorithm"] == "nn" for item in default_registry().capabilities())
+    assert trial["adapter"]["implementation"] not in {
+        item["implementation"] for item in default_registry().capabilities()
+    }
 
 
 def test_failure_keeps_accepted_prefix_not_a_partial_success(serial_campaign, scripted_registry):

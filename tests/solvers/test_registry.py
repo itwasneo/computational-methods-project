@@ -18,16 +18,19 @@ def test_registry_is_lightweight():
     assert not process.stderr
 
 
-def test_production_registry_exposes_only_real_nn_and_detached_capabilities():
+def test_production_registry_exposes_real_solvers_and_detached_capabilities():
     registry = default_registry()
     descriptions = registry.capabilities()
-    assert [entry["implementation"] for entry in descriptions] == ["visited-scan-v1", "remaining-array-v1"]
+    assert [entry["implementation"] for entry in descriptions] == [
+        "visited-scan-v1", "remaining-array-v1", "serial-generational-v1",
+    ]
     assert registry.resolve("nn", timed=True, record_history=True).implementation == "visited-scan-v1"
+    ga = registry.resolve("ga", timed=True, record_history=True)
+    assert ga.implementation == "serial-generational-v1" and ga.logical_mode == "independent"
     descriptions[0]["distance_modes"].clear()
     assert registry.capabilities()[0]["distance_modes"] == ["dense", "on_demand"]
-    for algorithm in ("ga", "sa"):
-        with pytest.raises(ValueError, match="unavailable"):
-            registry.resolve(algorithm)
+    with pytest.raises(ValueError, match="unavailable"):
+        registry.resolve("sa")
 
 
 @pytest.mark.parametrize("changes", [
@@ -44,6 +47,8 @@ def test_registered_factory_executes_real_adapter(mode):
     instance = fixture("square").instance
     prepared = prepare_distances(instance, mode=mode)
     for item in default_registry().capabilities():
+        if item["algorithm"] != "nn":
+            continue
         spec = default_registry().resolve("nn", implementation=item["implementation"], distance_mode=mode)
         adapter = spec.factory(prepared)
         result = adapter.solve(instance, seed=7, budget={"start_cities": [2, 0]}, parameters={})
@@ -65,7 +70,7 @@ def test_registry_rejects_ambiguous_defaults_and_logical_units():
     registry = SolverRegistry([spec], defaults=defaults)
     defaults.clear()
     assert registry.resolve("ga") is spec
-    assert all(item["algorithm"] == "nn" for item in default_registry().capabilities())
+    assert all(item["implementation"] != "test-only" for item in default_registry().capabilities())
 
 
 def test_shared_configuration_owns_defaults_and_order():

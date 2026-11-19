@@ -76,6 +76,7 @@ conformance, fault-injection and installed-process coverage even when workflows 
 | `reproducibility` | Identities, logical RNG streams, build/native observations |
 | `solvers` | Configuration, registry, results, stopping/history, validation and conformance |
 | `solvers/nn` | Adapter and explicitly named native implementations |
+| `solvers/ga` | Serial GA adapter, native generation steps and permutation operators |
 | `experiments` | Manifest planning and serial execution |
 | `analysis` | Record validation, lazy sources, tables/comparisons and reports |
 | `interface` | Authority, snapshots, preflight, durable jobs/worker, publication/query adapters |
@@ -97,8 +98,9 @@ analysis or HTTP service. `solvers.configuration` normalizes science independent
 the installed registry so historical records remain readable.
 
 `SolverRegistry` contains immutable `SolverSpec` entries and explicit defaults.
-`default_registry()` registers `visited-scan-v1` and `remaining-array-v1`; it performs
-no filesystem/plugin discovery. Add concrete registrations there, never placeholders
+`default_registry()` registers NN's `visited-scan-v1` and `remaining-array-v1`, and
+GA's `serial-generational-v1`. It performs no filesystem/plugin discovery.
+Add concrete registrations there, never placeholders
 or imports that silently fall back. Test-only scripted GA/SA adapters are non-native
 orchestration fixtures, not algorithms or advertised capabilities.
 

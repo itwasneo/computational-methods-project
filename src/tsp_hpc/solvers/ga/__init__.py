@@ -1,1 +1,1 @@
-"""Permutation operators for the serial genetic algorithm baseline."""
+"""Serial genetic algorithm adapter and permutation operators."""
