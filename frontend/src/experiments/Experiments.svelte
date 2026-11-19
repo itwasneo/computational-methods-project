@@ -177,8 +177,8 @@
 <section class="experiment-app" aria-labelledby="experiment-heading">
   <h1 id="experiment-heading">Experiment workspace</h1>
   <p>
-    Generate or load an instance, review a native NN experiment, then analyze and inspect validated
-    results.
+    Generate or load an instance, review a native NN or GA experiment, then analyze and inspect
+    validated results.
   </p>
   {#if !view.connected}
     <form class="app-card" onsubmit={connect}>
@@ -277,7 +277,10 @@
             inspecting={!!view.operations.inspection.busy}
             instanceId={view.resultInstance?.instance.instance_id ?? ''}
             implementations={view.capabilities.implementations
-              .filter((i) => i.available === true && i.algorithm === 'nn')
+              .filter(
+                (i) =>
+                  i.available === true && i.algorithm === view.selectedConfiguration?.algorithm,
+              )
               .map((i) => String(i.implementation))}
             references={view.artifacts.filter((a) => a.kind === 'json')}
             {analyze}

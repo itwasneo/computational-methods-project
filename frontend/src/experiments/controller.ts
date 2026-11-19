@@ -601,7 +601,7 @@ export class ExperimentController {
       )
         throw new Error('Job review mismatch.');
       const algorithm = previous.plan.configuration.algorithm;
-      if (algorithm !== 'nn')
+      if (algorithm !== 'nn' && algorithm !== 'ga')
         throw new Error(`${algorithm.toUpperCase()} rerun is not supported in this editor.`);
       const snapshot = await this.call(
         '/instances/snapshot',
