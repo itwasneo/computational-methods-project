@@ -9,7 +9,7 @@ test('viewer preview owns deterministic synthetic coordinates and a valid permut
   assert.deepEqual(first.coordinates, second.coordinates);
   assert.equal(first.coordinates.length / 2, 128);
   assert.equal(new Set(first.route).size, 128);
-  assert.ok(first.route.every(id => id < 128));
+  assert.ok(first.route.every((id) => id < 128));
   first.coordinates[0] = 99;
   assert.notEqual(createPreview().coordinates[0], 99);
 });

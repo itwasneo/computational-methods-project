@@ -23,13 +23,43 @@ def ingest(client, ws, paths, *, expected_state="ready"):
     assert started.status_code == 202, started.text
     context["dataset_id"] = started.json()["dataset_id"]
     deadline = monotonic() + 20
+    status = {}
     while monotonic() < deadline:
-        status = client.post("/api/datasets/status", json=context).json()
+        response = client.post("/api/datasets/status", json=context)
+        status = response.json()
+        if response.status_code == 409 and status.get("code") == "catalog_busy" and status.get("retryable") is True:
+            sleep(.01)  # Publication contention is transient, not changed source evidence.
+            continue
+        assert response.status_code == 200, response.text
         if status["state"] != "loading":
             break
         sleep(.01)
-    assert status["state"] == expected_state, status
+    assert status.get("state") == expected_state, status
     return {**context, "revision": status["revision"]}, catalog, by_name
+
+
+@pytest.mark.parametrize("status_code,code,retryable", [
+    (409, "catalog_busy", True), (409, "stale_revision", True), (500, "internal_error", False),
+])
+def test_ingest_helper_handles_only_documented_transient_catalog_contention(tmp_path, status_code, code, retryable):
+    from types import SimpleNamespace
+
+    def response(status_code, body):
+        return SimpleNamespace(status_code=status_code, text=json.dumps(body), json=lambda: body)
+
+    responses = iter([
+        response(200, {"revision": "catalog-r", "items": [{"display_name": "runs.jsonl", "artifact_handle": "h"}]}),
+        response(202, {"dataset_id": "d"}),
+        response(status_code, {"code": code, "retryable": retryable}),
+        response(200, {"state": "ready", "revision": "r"}),
+    ])
+    client = SimpleNamespace(post=lambda *_args, **_kwargs: next(responses))
+    if code == "catalog_busy":
+        context, _, _ = ingest(client, {"workspace_id": "w"}, [tmp_path / "runs.jsonl"])
+        assert context["revision"] == "r"
+    else:
+        with pytest.raises(AssertionError, match=code):
+            ingest(client, {"workspace_id": "w"}, [tmp_path / "runs.jsonl"])
 
 
 def query(client, context, table, **options):

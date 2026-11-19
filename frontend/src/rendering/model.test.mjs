@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {spawnSync} from 'node:child_process';
-import {fixture, bounds, Scene} from './model.mjs';
+import { spawnSync } from 'node:child_process';
+import { fixture, bounds, Scene } from './model.mjs';
 
 test('fixtures are deterministic float64 and cover degenerate bounds', () => {
   for (const kind of ['uniform', 'clustered', 'duplicates', 'collinear', 'coincident']) {
@@ -12,8 +12,9 @@ test('fixtures are deterministic float64 and cover degenerate bounds', () => {
     const scene = new Scene(points);
     assert.ok([...scene.display].every(Number.isFinite));
   }
-  assert.deepEqual(bounds(fixture(10, 'coincident')), {x: 0, y: 0, span: 1});
-  assert.throws(() => fixture(1)); assert.throws(() => fixture(2, 'unknown'));
+  assert.deepEqual(bounds(fixture(10, 'coincident')), { x: 0, y: 0, span: 1 });
+  assert.throws(() => fixture(1));
+  assert.throws(() => fixture(2, 'unknown'));
 });
 
 test('projection never replaces canonical float64 or aliases its input', () => {
@@ -37,24 +38,31 @@ test('spatial picks match a brute-force oracle before and after edits', () => {
       for (let j = 0; j < scene.points.length / 2; j++) {
         const [px, py] = scene.normalized(j);
         const distance = Math.hypot(px - x, py - y);
-        if (distance <= radius) oracle.push({id: j, distance});
+        if (distance <= radius) oracle.push({ id: j, distance });
       }
       oracle.sort((a, b) => a.distance - b.distance || a.id - b.id);
-      assert.deepEqual(scene.pick(x, y, radius), oracle.map(hit => hit.id));
+      assert.deepEqual(
+        scene.pick(x, y, radius),
+        oracle.map((hit) => hit.id),
+      );
     }
   }
 });
 
 test('coincident city IDs remain individually selectable in stable order', () => {
   const scene = new Scene(fixture(1000, 'coincident'));
-  assert.deepEqual(scene.pick(0, 0, 0), Array.from({length: 1000}, (_, i) => i));
+  assert.deepEqual(
+    scene.pick(0, 0, 0),
+    Array.from({ length: 1000 }, (_, i) => i),
+  );
   scene.update(100, [1, 1]);
   assert.deepEqual(scene.pick(1, 1, 0), [100]);
   assert.equal(scene.pick(0, 0, 0).length, 999);
 });
 
 test('moving one city does not retain empty grid cells or copy display storage', () => {
-  const scene = new Scene(fixture(2, 'coincident')), buffer = scene.display;
+  const scene = new Scene(fixture(2, 'coincident')),
+    buffer = scene.display;
   for (let i = 0; i < 10000; i++) scene.update(1, [i, i]);
   assert.equal(scene.grid.size, 2);
   assert.equal(scene.display, buffer);
@@ -62,7 +70,12 @@ test('moving one city does not retain empty grid cells or copy display storage',
 
 test('large finite pick positions terminate, including unsafe cell indices', () => {
   // A separate process ensures a regression cannot hang the test runner itself.
-  const probe = spawnSync(process.execPath, ['--input-type=module', '-e', `
+  const probe = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
     import assert from 'node:assert/strict';
     import {Scene, fixture} from ${JSON.stringify(new URL('./model.mjs', import.meta.url).href)};
     const scene = new Scene(fixture(1000));
@@ -72,7 +85,10 @@ test('large finite pick positions terminate, including unsafe cell indices', () 
       assert.deepEqual(scene.pick(x, y, 0.01), [0]);
     }
     assert.deepEqual(scene.pick(Number.MAX_VALUE, Number.MAX_VALUE, 0), []);
-  `], {timeout: 5000, encoding: 'utf8'});
+  `,
+    ],
+    { timeout: 5000, encoding: 'utf8' },
+  );
   assert.ifError(probe.error);
   assert.equal(probe.status, 0, probe.stderr);
 });
@@ -85,10 +101,14 @@ test('extreme initial bounds stay finite and unsupported edits are atomic', () =
   shifted.update(0, [limit, limit]); // Subtraction overflows, but the scaled projection is representable.
   assert.ok(shifted.display.every(Number.isFinite));
   assert.deepEqual(shifted.pick(...shifted.normalized(0), 0), [0]);
-  const scene = new Scene(fixture(10)), before = structuredClone({points: scene.points, display: scene.display, grid: scene.grid});
-  for (const coordinates of [[limit, limit], [Infinity, 0]]) {
+  const scene = new Scene(fixture(10)),
+    before = structuredClone({ points: scene.points, display: scene.display, grid: scene.grid });
+  for (const coordinates of [
+    [limit, limit],
+    [Infinity, 0],
+  ]) {
     assert.throws(() => scene.update(0, coordinates), /projection|finite/);
-    assert.deepEqual({points: scene.points, display: scene.display, grid: scene.grid}, before);
+    assert.deepEqual({ points: scene.points, display: scene.display, grid: scene.grid }, before);
   }
   assert.throws(() => scene.update(-1, [0, 0]), /city ID/);
   assert.throws(() => scene.pick(0, 0, -1), /radius/);
