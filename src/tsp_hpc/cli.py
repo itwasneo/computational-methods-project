@@ -12,7 +12,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         prog="tsp-hpc",
         description=(
             "TSP heuristics and HPC experiment tools. "
-            "Run registered serial campaigns from manifests (NN currently available)."
+            "Run registered serial campaigns from manifests."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
