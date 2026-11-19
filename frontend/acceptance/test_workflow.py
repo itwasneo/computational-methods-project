@@ -83,6 +83,44 @@ def servers(tmp_path, *, enabled=True, control=None):
                 except subprocess.TimeoutExpired: process.kill(); process.wait()
 
 
+def test_multicore_review_executes_real_native_work_and_restores_resources(tmp_path):
+    with servers(tmp_path) as (secret, _, output), sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto("http://127.0.0.1:5173")
+        page.get_by_label("Pairing secret", exact=True).fill(secret)
+        page.get_by_role("button", name="Connect", exact=True).click()
+        page.get_by_label("Cities", exact=True).fill("32")
+        page.get_by_role("button", name="Generate instance", exact=True).click()
+        expect(page.get_by_text("Instance ready: 32 cities", exact=False)).to_be_visible()
+        page.get_by_role("combobox", name="Execution backend", exact=True).select_option("multicore")
+        threads = min(2, int(page.get_by_label("Solver threads", exact=True).get_attribute("max")))
+        page.get_by_label("Solver threads", exact=True).fill(str(threads))
+        expect(page.get_by_label("visited-scan-threaded-v1", exact=True)).to_be_checked()
+        expect(page.get_by_label("Record best-so-far history", exact=True)).to_be_disabled()
+        page.get_by_label("Repetitions", exact=True).fill("1")
+        page.get_by_role("button", name="Review experiment", exact=True).click()
+        expect(page.get_by_role("button", name="Run reviewed experiment", exact=True)).to_be_enabled()
+        page.get_by_role("button", name="Run reviewed experiment", exact=True).click()
+        expect(page.get_by_role("heading", name="Selected job: completed")).to_be_visible(timeout=90000)
+        expect(page.get_by_text("trials: 2 rows", exact=False)).to_be_visible()
+        source = next((output / ".tsp-local/jobs").glob("*/results.jsonl"))
+        records = [json.loads(line) for line in source.read_text().splitlines()]
+        for record in records[:-1]:
+            assert record["effective_execution"]["backend"] == "multicore"
+            assert record["runtime"]["solver_threads"] == threads
+            assert record["native_execution"]["verified"] is True
+            assert record["outcome"] == "completed"
+        page.get_by_role("button", name="Review fresh rerun", exact=True).click()
+        expect(page.get_by_role("button", name="Run reviewed experiment", exact=True)).to_be_enabled()
+        expect(page.get_by_role("combobox", name="Execution backend", exact=True)).to_have_value("multicore")
+        expect(page.get_by_label("Solver threads", exact=True)).to_have_value(str(threads))
+        page.get_by_role("combobox", name="Execution backend", exact=True).select_option("serial")
+        expect(page.get_by_role("button", name="Run reviewed experiment", exact=True)).to_have_count(0)
+        expect(page.get_by_label("Solver threads", exact=True)).to_have_value("1")
+        browser.close()
+
+
 def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
     control = {}
     with servers(tmp_path, control=control) as (secret, workspace, output), sync_playwright() as playwright:

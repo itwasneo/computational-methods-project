@@ -83,10 +83,20 @@ def test_graceful_stop_is_not_terminal_until_worker_exits(job_client, execution_
         os.close(fd)
 
 
-def test_graceful_stop_preserves_complete_native_trial_prefix(job_client, execution_session):
+@pytest.fixture(params=["serial", "multicore"])
+def resource_options(request):
+    if request.param == "serial":
+        return {}
+    from tsp_hpc.solvers.resources import available_threads
+    return {"backend": "multicore", "threads_per_worker": min(2, available_threads()),
+            "implementations": ["visited-scan-threaded-v1"], "record_history": False}
+
+
+def test_graceful_stop_preserves_complete_native_trial_prefix(job_client, execution_session, resource_options):
     _, _, _, _, output = execution_session
     instance = job_client.snapshot(n_cities=1024)
-    plan = job_client.review(instance, budget={"start_cities": list(range(128))}, repetitions=list(range(32)), record_history=False)
+    plan = job_client.review(instance, budget={"start_cities": list(range(128))}, repetitions=list(range(32)),
+                             **{**resource_options, "record_history": False})
     identifier = job_client.submit(plan)["job"]["job_id"]
     job_client.wait(identifier, lambda job: job["recorded_trials"] > 0)
     # A progress notification can race the request; refresh optimistic revisions.
@@ -124,19 +134,21 @@ def test_stop_now_requires_confirmation_and_only_reports_exit_after_pidfd_observ
         os.close(fd)
 
 
-def test_stop_now_interrupts_native_work_without_inventing_partial_trial(job_client, execution_session):
+def test_stop_now_interrupts_native_work_without_inventing_partial_trial(job_client, execution_session, resource_options):
     _, app, _, _, output = execution_session
     instance = job_client.snapshot(n_cities=4096)
-    plan = job_client.review(instance, budget={"start_cities": list(range(128))}, record_history=False)
+    plan = job_client.review(instance, budget={"start_cities": list(range(128))},
+                             **{**resource_options, "record_history": False})
     identifier = job_client.submit(plan)["job"]["job_id"]
     fd = active_fd(job_client, app, identifier)
     try:
         deadline = monotonic() + 30
         cache = output / ".tsp-local/cache"
-        while not list(cache.rglob("*visited_scan*.nbc")) and monotonic() < deadline:
+        pattern = "*threaded.chunk_kernel*.nbc" if resource_options else "*visited_scan*.nbc"
+        while not list(cache.rglob(pattern)) and monotonic() < deadline:
             assert not exited(fd)
             sleep(.01)
-        assert list(cache.rglob("*visited_scan*.nbc")), "native warm-up did not publish its private cache"
+        assert list(cache.rglob(pattern)), "native warm-up did not publish its private cache"
         # The fixed-work multi-start NN call is one native invocation, not a
         # Python polling loop. This is cancellation acceptance, not a benchmark.
         sleep(.05)
@@ -180,14 +192,14 @@ def test_wall_resource_ceiling_is_external_failure_not_solver_termination(job_cl
         os.close(fd)
 
 
-def test_recovery_adopts_surviving_worker_holds_pending_and_requires_fresh_campaign(tmp_path, paired_session, native_client_factory):
+def test_recovery_adopts_surviving_worker_holds_pending_and_requires_fresh_campaign(tmp_path, paired_session, native_client_factory, resource_options):
     workspace, output = tmp_path / "read", tmp_path / "write"
     workspace.mkdir(); output.mkdir()
     process = fd = None
     try:
         with paired_session(workspace, enable_execution=True, execution_root=output) as (client, app, ws, _, _):
             api = native_client_factory(client, app, ws)
-            plan = api.review()
+            plan = api.review(**resource_options)
             first = api.submit(plan)["job"]
             fd = freeze(api, app, first["job_id"])
             second = api.submit(plan, "pending")["job"]

@@ -309,7 +309,8 @@ class JobQueue:
         with self._lock:
             self._guard()
             job = self._find(identifier)
-            value = {"job": self._public(job), "plan": self.request(job)["plan"]["public"]}
+            from tsp_hpc.interface.planning import public_review
+            value = {"job": self._public(job), "plan": public_review(self.request(job)["plan"])}
             if len(encode(value)) > self.limits.max_response_bytes:
                 raise InterfaceError("resource_limit", "Accepted plan response exceeds its bound.", 413)
             return value

@@ -16,6 +16,7 @@ from tsp_hpc.interface.errors import InterfaceError
 
 @dataclass(frozen=True)
 class ExecutionLimits:
+    max_solver_threads: int = 8
     max_cities: int = 4096
     max_logical_searches: int = 128
     max_repetitions: int = 32

@@ -22,7 +22,7 @@ def test_production_registry_exposes_real_solvers_and_detached_capabilities():
     registry = default_registry()
     descriptions = registry.capabilities()
     assert [entry["implementation"] for entry in descriptions] == [
-        "visited-scan-v1", "remaining-array-v1", "serial-generational-v1",
+        "visited-scan-v1", "remaining-array-v1", "serial-generational-v1", "visited-scan-threaded-v1",
     ]
     assert registry.resolve("nn", timed=True, record_history=True).implementation == "visited-scan-v1"
     ga = registry.resolve("ga", timed=True, record_history=True)
@@ -49,7 +49,7 @@ def test_registered_factory_executes_real_adapter(mode):
     for item in default_registry().capabilities():
         if item["algorithm"] != "nn":
             continue
-        spec = default_registry().resolve("nn", implementation=item["implementation"], distance_mode=mode)
+        spec = default_registry().resolve("nn", implementation=item["implementation"], distance_mode=mode, backend=item["backend"])
         adapter = spec.factory(prepared)
         result = adapter.solve(instance, seed=7, budget={"start_cities": [2, 0]}, parameters={})
         assert result.best_cost == 4

@@ -36,17 +36,20 @@ class SolverAdapter(Protocol):
 class SolverSpec:
     algorithm: str
     implementation: str
-    factory: Callable[["PreparedDistances"], SolverAdapter]
+    factory: Callable[..., SolverAdapter]  # Multicore factories also accept threads=.
     logical_mode: Literal["batch", "independent"]
     supports_time: bool = False
     supports_history: bool = False
     native: bool = True
+    backend: Literal["serial", "multicore"] = "serial"
 
     def __post_init__(self):
         if type(self.algorithm) is not str or self.algorithm not in VARIANTS:
             raise ValueError("registration requires an agreed algorithm")
         if type(self.implementation) is not str or not self.implementation.strip():
             raise ValueError("registration requires a non-blank implementation")
+        if self.backend not in ("serial", "multicore"):
+            raise ValueError("unsupported registered backend")
         if not callable(self.factory):
             raise TypeError("adapter factory must be callable")
         expected = "batch" if self.algorithm == "nn" else "independent"
@@ -61,7 +64,7 @@ class SolverSpec:
 
     def description(self):
         return {"algorithm": self.algorithm, "variant": self.variant,
-                "implementation": self.implementation, "backend": "serial",
+                "implementation": self.implementation, "backend": self.backend,
                 "distance_kinds": ["euclidean_2d"], "distance_modes": ["dense", "on_demand"],
                 "logical_mode": self.logical_mode, "supports_time": self.supports_time,
                 "supports_history": self.supports_history, "native": self.native}
@@ -89,8 +92,8 @@ class SolverRegistry:
                 backend: str = "serial", distance_kind: str = "euclidean_2d",
                 distance_mode: str = "on_demand", timed: bool = False,
                 record_history: bool = False) -> SolverSpec:
-        if backend != "serial":
-            raise ValueError("runner supports only serial execution")
+        if backend not in ("serial", "multicore"):
+            raise ValueError("unsupported execution backend")
         if distance_kind != "euclidean_2d" or distance_mode not in ("dense", "on_demand"):
             raise ValueError("unsupported execution distance convention/representation")
         if type(algorithm) is not str or algorithm not in self._defaults:
@@ -102,6 +105,8 @@ class SolverRegistry:
             spec = self._entries[algorithm, name]
         except KeyError:
             raise ValueError(f"unavailable {algorithm} implementation: {name!r}") from None
+        if spec.backend != backend:
+            raise ValueError("implementation does not support the requested backend")
         if timed and not spec.supports_time:
             raise ValueError("implementation does not support time budgets")
         if record_history and not spec.supports_history:
@@ -118,7 +123,7 @@ def validate_adapter_metadata(solver, prepared, spec):
     from tsp_hpc.reproducibility.identity import canonical_json
     metadata = solver.metadata
     expected = {**prepared.metadata, "algorithm": spec.algorithm, "variant": spec.variant,
-                "implementation": spec.implementation, "backend": "serial"}
+                "implementation": spec.implementation, "backend": spec.backend}
     if type(metadata) is not dict or metadata.keys() != expected.keys() | {"solver_warmup_time_s"}:
         raise ValueError("adapter must report the shared preparation/warm-up metadata")
     if canonical_json({key: metadata[key] for key in expected}) != canonical_json(expected):
@@ -132,7 +137,9 @@ def validate_adapter_metadata(solver, prepared, spec):
 @lru_cache(maxsize=1)
 def default_registry() -> SolverRegistry:
     from tsp_hpc.solvers.ga.solver import solver_spec as ga_solver_spec
-    from tsp_hpc.solvers.nn.solver import DEFAULT_IMPLEMENTATION as NN_DEFAULT, solver_specs
-
+    from tsp_hpc.solvers.nn.solver import DEFAULT_IMPLEMENTATION, solver_specs
+    from tsp_hpc.solvers.nn.threaded import IMPLEMENTATION, ThreadedNearestNeighbourSolver
     ga = ga_solver_spec()
-    return SolverRegistry((*solver_specs(), ga), defaults={"nn": NN_DEFAULT, "ga": ga.implementation})
+    threaded_nn = SolverSpec("nn", IMPLEMENTATION, ThreadedNearestNeighbourSolver, "batch", backend="multicore")
+    return SolverRegistry((*solver_specs(), ga, threaded_nn),
+                          defaults={"nn": DEFAULT_IMPLEMENTATION, "ga": ga.implementation})

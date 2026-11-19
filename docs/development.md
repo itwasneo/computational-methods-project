@@ -92,7 +92,7 @@ conformance, fault-injection and installed-process coverage even when workflows 
 | `solvers` | Configuration, registry, results, stopping/history, validation and conformance |
 | `solvers/nn` | Adapter and explicitly named native implementations |
 | `solvers/ga` | Serial GA adapter, native generation steps and permutation operators |
-| `experiments` | Manifest planning and serial execution |
+| `experiments` | Manifest planning and sequential trial orchestration over registered execution backends |
 | `analysis` | Record validation, lazy sources, tables/comparisons and reports |
 | `interface` | Authority, snapshots, preflight, durable jobs/worker, publication/query adapters |
 | `frontend/src/session.ts`, `application.ts`, `navigation.ts` | App-owned authority/catalog context and durable-resource navigation |
@@ -114,9 +114,9 @@ analysis or HTTP service. `solvers.configuration` normalizes science independent
 the installed registry so historical records remain readable.
 
 `SolverRegistry` contains immutable `SolverSpec` entries and explicit defaults.
-`default_registry()` registers NN's `visited-scan-v1` and `remaining-array-v1`, and
-GA's `serial-generational-v1`. It performs no filesystem/plugin discovery.
-Add concrete registrations there, never placeholders
+`default_registry()` registers serial NN (`visited-scan-v1` and `remaining-array-v1`),
+serial GA (`serial-generational-v1`), and fixed-work multicore NN (`visited-scan-threaded-v1`).
+It performs no filesystem/plugin discovery. Add concrete registrations there, never placeholders
 or imports that silently fall back. Test-only scripted GA/SA adapters are non-native
 orchestration fixtures, not algorithms or advertised capabilities.
 
@@ -124,7 +124,7 @@ An adapter must:
 
 1. Accept `PreparedDistances`, validate the objective/instance binding and warm only
    its selected kernels on synthetic state, outside search timing.
-2. Expose detached `{**prepared.metadata, algorithm, variant, backend="serial",
+2. Expose detached `{**prepared.metadata, algorithm, variant, backend,
    implementation, solver_warmup_time_s}` metadata. Native adapters also expose a
    nonempty `native_dispatchers` tuple of the selected warmed CPU dispatchers.
 3. Implement the [shared solve signature](contracts.md#logical-solver-interface),
@@ -138,6 +138,12 @@ NN's logical mode is `batch`; independent populations/chains use `independent`.
 `TrialPlan.invocations()` owns ordering and seeds. A native declaration requires warmed
 nopython signatures with serial strict-math options, not a baseline alias around another
 callable. Unsupported objectives/backends/time/history requests must fail explicitly.
+
+Multicore factories additionally accept `threads=` and expose that configured limit
+as `.threads`; the runner validates it against requested resources. Current multicore
+NN uses bounded GIL-free native calls, not `prange`; see the [resource and reference
+contracts](exact-and-multicore.md). Unsupported timed/history combinations are tested
+for explicit rejection, not advertised as implemented.
 
 The pytest-independent conformance helper provides a direct check:
 

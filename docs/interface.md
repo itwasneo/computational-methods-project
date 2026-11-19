@@ -19,7 +19,9 @@ Start both local services with one command:
 uv run --locked --extra interface python tools/local_app.py
 ```
 
-This owner command explicitly enables serial jobs. It creates a read workspace at
+This owner command explicitly enables local jobs, with one active worker process.
+The browser configures serial or fixed-work multicore NN. API clients can also run
+serial GA. The launcher creates a read workspace at
 `data/generated/app-inputs` and a separate private execution root at
 `results/app-output`. Override them with `--workspace PATH --execution-root PATH`;
 roots must be disjoint. Put saved instances/references or CLI result shards in the read
@@ -43,8 +45,12 @@ pidfds/procfs and enabled JIT. Numerical-only installations need no web dependen
    **Download canonical instance** saves exact CLI-compatible bytes, including large seeds.
 2. **Configure:** select native NN implementations, dense/on-demand distance modes,
    explicit ordered starts, repetitions and solver seed. Time limits/history are optional.
+   Serial execution is the default. For fixed-work multicore NN choose **Execution backend**
+   and **Solver threads**; time/history controls are unavailable for that backend. See
+   [resource limits and native concurrency](exact-and-multicore.md).
    Defaults use 256 cities, eight starts, five repetitions and both modes: ten trials
-   for one implementation. The UI does not advertise test-only GA/SA adapters.
+   for one implementation. GA jobs submitted through the API can be inspected, but the NN editor cannot
+   review a fresh GA rerun; use the API for that workflow.
 3. **Review:** **Review experiment** validates the shared plan without running it.
    Inspect resolved configuration, identities/seeds, estimates and job ceiling, then
    **Run reviewed experiment**. Configuration edits or choosing a new instance invalidate

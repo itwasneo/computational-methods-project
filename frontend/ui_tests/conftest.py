@@ -81,6 +81,8 @@ class MockApi:
         self.grant = 0
         self.jobs = [captured("completed")["job"]]
         self.preflight = captured("preflight")
+        self.capabilities = captured("capabilities")
+        self.accepted_review = captured("accepted_review")
         self.page_size = 100
         page.route("**/api/**", self.handle)
 
@@ -134,7 +136,7 @@ class MockApi:
             self.catalog_revision = f"catalog-{len(self.calls)}"
             value = {"revision": self.catalog_revision}
         elif path == "/runs/capabilities":
-            value = captured("capabilities")
+            value = deepcopy(self.capabilities)
         elif path in ("/instances/generate", "/instances/load", "/instances/snapshot"):
             if path == "/instances/load":
                 assert body["artifact_revision"] == self.catalog_revision
@@ -151,7 +153,7 @@ class MockApi:
         elif path == "/queue/status":
             value = captured("queue")
         elif path == "/jobs/review":
-            value = captured("accepted_review")
+            value = deepcopy(self.accepted_review)
             value["job"] = deepcopy(next(job for job in self.jobs if job["job_id"] == body["job_id"]))
         elif path == "/jobs/submit":
             value = captured("submitted")
