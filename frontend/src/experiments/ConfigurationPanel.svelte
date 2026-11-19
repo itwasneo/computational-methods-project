@@ -4,6 +4,7 @@
   import type { ExperimentController, ExperimentState } from './controller';
   import type { ScientificConfiguration, DistanceMode } from '../contracts';
   import OperationStatus from '../components/OperationStatus.svelte';
+  import { gaDefaults, gaWork, restoreGa } from './ga';
   import { reveal } from '../focus';
   let {
     view,
@@ -14,11 +15,17 @@
     untrack(() => view.capabilities?.output_root?.root_id ?? ''),
   );
   const saved = store.read();
+  let algorithm = $state<'nn' | 'ga'>(saved?.algorithm ?? 'nn');
+  let ga = $state({ ...(saved?.ga ?? gaDefaults) });
+  const supports = (a: string, b: string) =>
+    view.capabilities?.implementations.some(
+      (i) => i.algorithm === a && i.backend === b && i.available,
+    );
   let backend = $state<'serial' | 'multicore'>(saved?.backend ?? 'serial');
   let threads = $state(saved?.threads ?? 1);
   const availableImplementations = () =>
     view.capabilities?.implementations
-      .filter((i) => i.algorithm === 'nn' && i.available === true && i.backend === backend)
+      .filter((i) => i.algorithm === algorithm && i.available === true && i.backend === backend)
       .map((i) => String(i.implementation)) ?? [];
   const initialChoices = untrack(availableImplementations);
   const missingSaved = saved?.implementations.some((id) => !initialChoices.includes(id));
@@ -43,11 +50,13 @@
     originalSnapshot = $state(saved?.originalSnapshot ?? '');
   function saveDraft() {
     store.save({
+      algorithm,
+      ga: algorithm === 'ga' ? ga : undefined,
       backend,
       threads,
       implementations,
       modes,
-      starts,
+      starts: algorithm === 'nn' ? starts : '',
       repetitions,
       solverSeed,
       timed,
@@ -59,6 +68,19 @@
       originalSnapshot,
       snapshot: view.snapshot?.instance_snapshot_id ?? saved?.snapshot ?? null,
     });
+  }
+  function algorithmChanged(event: Event) {
+    algorithm = (event.currentTarget as HTMLSelectElement).value as 'ga' | 'nn';
+    backend = supports(algorithm, 'serial') || algorithm === 'ga' ? 'serial' : 'multicore';
+    threads = 1;
+    if (backend === 'multicore') {
+      timed = false;
+      history = false;
+    }
+    original = null;
+    implementations = availableImplementations().slice(0, 1);
+    inputError = '';
+    edited();
   }
   function backendChanged(event: Event) {
     backend = (event.currentTarget as HTMLSelectElement).value as 'serial' | 'multicore';
@@ -103,7 +125,13 @@
     originalSnapshot = view.snapshot?.instance_snapshot_id ?? '';
     implementations = configuration.implementations.filter((id): id is string => id !== null);
     modes = [...configuration.distance_modes];
-    starts = (configuration.budget.start_cities as number[]).join(',');
+    if (configuration.algorithm === 'ga') {
+      algorithm = 'ga';
+      ga = restoreGa(configuration);
+    } else {
+      algorithm = 'nn';
+      starts = (configuration.budget.start_cities as number[]).join(',');
+    }
     repetitions = configuration.repetitions.length;
     solverSeed = configuration.solver_seed;
     timed = configuration.budget.time_limit_s !== undefined;
@@ -121,7 +149,12 @@
     inputError = '';
     saveDraft();
     try {
-      const tokens = starts.trim() ? starts.split(',').map((v) => v.trim()) : [];
+      if (!/^(0|[1-9][0-9]{0,19})$/.test(solverSeed) || BigInt(solverSeed) > (1n << 64n) - 1n)
+        throw new Error('Solver seed must be a decimal uint64.');
+      if (timed && (!Number.isFinite(seconds) || seconds <= 0))
+        throw new Error('Time limit must be a positive number of seconds.');
+      const tokens =
+        algorithm === 'nn' && starts.trim() ? starts.split(',').map((v) => v.trim()) : [];
       if (tokens.some((v) => !/^(0|[1-9][0-9]*)$/.test(v)))
         throw new Error('Starts must be comma-separated nonnegative integer city IDs.');
       const start_cities = tokens.map(Number);
@@ -144,16 +177,24 @@
         !modes.length
       )
         throw new Error('Select available implementations and at least one distance mode.');
-      const base = originalSnapshot === view.snapshot?.instance_snapshot_id ? original : null;
-      const sameStarts =
-        base && JSON.stringify(base.budget.start_cities) === JSON.stringify(start_cities);
+      const base =
+        originalSnapshot === view.snapshot?.instance_snapshot_id &&
+        original?.algorithm === algorithm
+          ? original
+          : null;
+      const work =
+        algorithm === 'ga'
+          ? gaWork(ga, timed ? seconds : null, view.capabilities?.limits.max_logical_searches ?? 0)
+          : {
+              parameters: {},
+              budget: { start_cities, ...(timed ? { time_limit_s: seconds } : {}) },
+              logical_search_ids: null,
+            };
       const configuration: ScientificConfiguration = {
-        algorithm: 'nn',
+        algorithm,
         backend,
         threads_per_worker: threads,
-        parameters: base?.parameters ?? {},
-        budget: { start_cities, ...(timed ? { time_limit_s: seconds } : {}) },
-        logical_search_ids: sameStarts ? base.logical_search_ids : null,
+        ...work,
         implementations,
         distance_modes: modes,
         repetitions:
@@ -177,12 +218,12 @@
 </script>
 
 <section class="app-card" aria-labelledby="configuration-heading">
-  <h2 id="configuration-heading">2. Configure NN comparison</h2>
+  <h2 id="configuration-heading">2. Configure experiment</h2>
   {#if missingSaved}<p>
       Unavailable saved implementations were deselected. Choose an available implementation and
       review again.
     </p>{/if}
-  {#if !available.length}<p>No native NN implementation is available.</p>
+  {#if !available.length}<p>No available implementation matches this selection.</p>
     <pre>{JSON.stringify(view.capabilities?.implementations, null, 2)}</pre>{/if}
   <p>
     Valid non-secret configuration drafts are remembered in this tab when storage is available.
@@ -196,18 +237,22 @@
       Restore saved input snapshot
     </button>{/if}
   <form onsubmit={review} oninput={edited} onchange={edited}>
-    <fieldset disabled={!view.snapshot || blocked || !available.length}>
+    <fieldset disabled={!view.snapshot || blocked}>
       <div class="form-grid">
+        <label>
+          Algorithm
+          <select bind:value={algorithm} onchange={algorithmChanged}>
+            <option value="nn" disabled={!supports('nn', 'serial') && !supports('nn', 'multicore')}>
+              Nearest neighbour (NN)
+            </option>
+            <option value="ga" disabled={!supports('ga', 'serial')}>Genetic algorithm (GA)</option>
+          </select>
+        </label>
         <label>
           Execution backend
           <select bind:value={backend} onchange={backendChanged}>
-            <option value="serial">Serial</option>
-            <option
-              value="multicore"
-              disabled={!view.capabilities?.implementations.some(
-                (i) => i.backend === 'multicore' && i.available === true,
-              )}
-            >
+            <option value="serial" disabled={!supports(algorithm, 'serial')}>Serial</option>
+            <option value="multicore" disabled={algorithm !== 'nn' || !supports('nn', 'multicore')}>
               Multicore NN (fixed work)
             </option>
           </select>
@@ -244,10 +289,65 @@
             On-demand
           </label>
         </div>
-        <label>
-          Ordered start cities
-          <input bind:value={starts} aria-describedby="starts-help" />
-        </label>
+        {#if algorithm === 'nn'}<label>
+            Ordered start cities
+            <input bind:value={starts} aria-describedby="starts-help" />
+          </label>{:else}
+          <label>
+            Ordered population IDs <input
+              required
+              bind:value={ga.populations}
+              aria-describedby="population-help"
+            />
+          </label>
+          <label>
+            Population size <input type="number" min="2" required bind:value={ga.population_size} />
+          </label>
+          <label>
+            Tournament size <input type="number" min="1" required bind:value={ga.tournament_size} />
+          </label>
+          <label>
+            Elite count <input
+              type="number"
+              min="0"
+              max={ga.population_size - 1}
+              required
+              bind:value={ga.elite_count}
+            />
+          </label>
+          <label>
+            Crossover probability <input
+              type="number"
+              min="0"
+              max="1"
+              step="any"
+              required
+              bind:value={ga.crossover_probability}
+            />
+          </label>
+          <label>
+            Mutation probability <input
+              type="number"
+              min="0"
+              max="1"
+              step="any"
+              required
+              bind:value={ga.mutation_probability}
+            />
+          </label>
+          <label>
+            <input type="checkbox" bind:checked={ga.generationLimit} />
+            Limit generations per population
+          </label>
+          {#if ga.generationLimit}<label>
+              Maximum generations <input
+                type="number"
+                min="0"
+                required
+                bind:value={ga.generations}
+              />
+            </label>{/if}
+        {/if}
         <label>
           Repetitions
           <input
@@ -263,17 +363,21 @@
           <input required pattern={'0|[1-9][0-9]{0,19}'} bind:value={solverSeed} />
         </label>
       </div>
-      <p id="starts-help">
-        Comma-separated city IDs. Both modes use the same input and ordered starts. Empty starts
-        mean zero work. NN is deterministic.
-      </p>
+      {#if algorithm === 'ga'}<p id="population-help">
+          Comma-separated IDs, one independent population per ID. Limits apply to each population.
+          Zero generations evaluates the initial population; disable the generation limit for a
+          time-only run.
+        </p>{:else}<p id="starts-help">
+          Comma-separated city IDs. Both modes use the same input and ordered starts. Empty starts
+          mean zero work. NN is deterministic.
+        </p>{/if}
       <label>
         <input type="checkbox" bind:checked={timed} disabled={backend === 'multicore'} />
         Add a per-invocation time limit
       </label>
       {#if timed}<label>
           Seconds
-          <input type="number" min="0.000001" step="any" required bind:value={seconds} />
+          <input type="number" min="0" step="any" required bind:value={seconds} />
         </label>
         <p>
           Timed runs compare quality under a budget, not speed ratios. Safe checkpoints can
@@ -293,13 +397,12 @@
             <input type="number" min="2" max="100000" required bind:value={points} />
           </label>
         </div>{/if}
-      <button>Review experiment</button>
+      <button disabled={!available.length}>Review experiment</button>
     </fieldset>
   </form>
   {#if original && originalSnapshot === view.snapshot?.instance_snapshot_id}<p>
-      Restored the original configuration. Existing repetition IDs and logical IDs are preserved
-      while their corresponding count and starts remain unchanged. Changing them creates new IDs;
-      inspect the exact reviewed plan.
+      Restored the original configuration. Repetition IDs are preserved while the count is
+      unchanged. Inspect the exact ordered work and seeds in the reviewed plan.
     </p>{/if}
   {#if inputError}<p role="alert">{inputError}</p>{/if}
   <OperationStatus operation={view.operations.review} />

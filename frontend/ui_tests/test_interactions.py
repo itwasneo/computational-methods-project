@@ -26,15 +26,50 @@ def test_failed_rerun_invalidates_previous_review(ui):
     assert not any(path == "/jobs/submit" for path, _ in api.calls)
 
 
-def test_ga_job_rerun_never_authorizes_an_unrepresentable_review(ui):
+def test_api_ga_rerun_round_trips_time_only_ids_and_nonstandard_repetitions(ui):
+    page, api = ui
+    api.capabilities['implementations'].append({**api.capabilities['implementations'][0],
+        'algorithm': 'ga', 'implementation': 'serial-generational-v1',
+        'variant': 'ga-tournament-ox-swap-elitist-v1', 'logical_mode': 'independent'})
+    config = api.accepted_review['plan']['configuration']
+    config.update(algorithm='ga', implementations=['serial-generational-v1'],
+        parameters={'population_size': 7, 'tournament_size': 4, 'elite_count': 0,
+                    'crossover_probability': 0.5, 'mutation_probability': 0.25},
+        budget={'time_limit_s': 0.125}, logical_search_ids=['beta', 'alpha'], repetitions=[2, 9])
+    api.connect(); api.select_job()
+    page.get_by_role('button', name='Review fresh rerun').click()
+    run = page.get_by_role('button', name='Run reviewed experiment', exact=True)
+    expect(run).to_be_enabled()
+    expect(page.get_by_label('Limit generations per population')).not_to_be_checked()
+    expect(page.get_by_label('Ordered population IDs')).to_have_value('beta,alpha')
+    page.reload(); api.connect()
+    expect(run).to_have_count(0)
+    expect(page.get_by_role('combobox', name='Algorithm', exact=True)).to_have_value('ga')
+    page.get_by_role('button', name='Restore saved input snapshot').click()
+    page.get_by_role('button', name='Review experiment', exact=True).click()
+    expect(run).to_be_enabled()
+    submitted = lambda: next(body['configuration'] for path, body in reversed(api.calls) if path == '/runs/preflight')
+    assert submitted() == config
+    page.get_by_label('Add a per-invocation time limit').uncheck()
+    page.get_by_role('button', name='Review experiment', exact=True).click()
+    expect(page.get_by_text('GA requires a generation limit, a time limit, or both.')).to_be_visible()
+    expect(run).to_have_count(0)
+    page.get_by_label('Limit generations per population').check()
+    page.get_by_label('Maximum generations').fill('0')
+    page.get_by_role('button', name='Review experiment', exact=True).click()
+    expect(run).to_be_enabled()
+    assert submitted() == {**config, 'budget': {'max_generations': 0}}
+
+
+def test_unsupported_sa_job_never_authorizes_an_unrepresentable_review(ui):
     page, api = ui
     api.connect(); api.prepare_review(); api.select_job()
-    api.accepted_review['plan']['configuration'].update(algorithm='ga',
-        implementations=['serial-generational-v1'], budget={'max_generations': 3},
-        logical_search_ids=['population-1'])
+    api.accepted_review['plan']['configuration'].update(algorithm='sa',
+        implementations=['unavailable-sa'], budget={'max_proposals': 3},
+        logical_search_ids=['chain-1'])
     before = len(api.calls)
     page.get_by_role('button', name='Review fresh rerun').click()
-    expect(page.get_by_text('GA rerun is not supported in this editor.', exact=True)).to_be_visible()
+    expect(page.get_by_text('SA rerun is not supported in this editor.', exact=True)).to_be_visible()
     expect(page.get_by_role('button', name='Run reviewed experiment')).to_have_count(0)
     assert [path for path, _ in api.calls[before:]] == ['/jobs/review']
 
