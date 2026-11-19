@@ -34,6 +34,8 @@ uv run --locked --extra interface pytest -W error
 uv build --no-sources
 pnpm --dir frontend install --frozen-lockfile
 pnpm --dir frontend run check
+pnpm --dir frontend run lint
+pnpm --dir frontend run format:check
 pnpm --dir frontend run test
 pnpm --dir frontend run build
 ```
@@ -61,9 +63,22 @@ They cover generation, exact export, reviewed comparisons, lost acknowledgements
 verified geometry/history, cancellation, restart-held dispatch and fresh reruns.
 They are functional browser tests, not browser-performance gates.
 
-`tools/interface_schema.py` generates `frontend/src/wire-schema.json` from Python DTOs
-for runtime response validation. Regenerate it after contract changes with
-`uv run --locked python tools/interface_schema.py`; a Python test rejects schema drift.
+For fast mounted-Svelte interactions, run `uv run --locked --extra interface pytest
+frontend/ui_tests -q -W error`. These tests start Vite on an available ephemeral port and
+intercept the API using shared DTO captures; they do not run workers or establish scientific
+results. They cover failure recovery, shared authority/catalogs, drafts, navigation,
+renderer lifetime, keyboard behavior, responsive layout and axe checks. Set
+`TSP_UI_BROWSER=firefox` or `TSP_UI_BROWSER=webkit` to exercise another installed engine.
+CI installs each engine and its OS dependencies; Chromium additionally checks software-WebGL
+lifecycle. This does not replace manual screen-reader/zoom review or certify WCAG conformance.
+
+`tools/interface_schema.py` generates both `frontend/src/wire-schema.json` and
+`frontend/src/wire-types.ts` from Python DTOs. Regenerate after contract changes with
+`uv run --locked python tools/interface_schema.py`; a Python test rejects drift in either.
+`contracts.ts` re-exports generated types, and the typed endpoint registry binds routes,
+request bodies and response validators. Generated artifacts are excluded from formatting.
+Use `pnpm --dir frontend run format` for handwritten frontend source.
+See [frontend architecture](frontend-architecture.md) for state ownership and lifecycle rules.
 
 Functional test timings are not performance evidence. Keep distinct unit, scientific
 conformance, fault-injection and installed-process coverage even when workflows overlap.
@@ -80,7 +95,8 @@ conformance, fault-injection and installed-process coverage even when workflows 
 | `experiments` | Manifest planning and serial execution |
 | `analysis` | Record validation, lazy sources, tables/comparisons and reports |
 | `interface` | Authority, snapshots, preflight, durable jobs/worker, publication/query adapters |
-| `frontend/src/results` | Shared transport/session and read-only saved-results controller/table |
+| `frontend/src/session.ts`, `application.ts`, `navigation.ts` | App-owned authority/catalog context and durable-resource navigation |
+| `frontend/src/results` | Bounded transport and read-only saved-results controller/table |
 | `frontend/src/experiments` | Instance/plan/job orchestration, verified geometry and shared analysis presentation |
 | `frontend/src/rendering` | Float64 model and WebGL2 display primitives |
 
@@ -181,8 +197,9 @@ not certification of an arbitrary release or container.
 
 [ci.yml](../.github/workflows/ci.yml) owns tool versions and commands. Its Python job
 runs the locked interface-enabled warnings-as-errors suite and distribution builds;
-its rendering-named job runs syntax checks, all frontend tests, Svelte/TypeScript checks
-and Vite build. A separate browser-application job runs the real end-to-end acceptance
+its rendering-named job runs syntax, lint/format, frontend unit and Svelte/TypeScript checks
+and Vite build. A browser matrix exercises mounted UI interactions in Chromium, Firefox and
+WebKit. A separate browser-application job runs the real end-to-end acceptance
 suite. Captured payloads compile against Python/TypeScript contracts.
 
 Actions are commit-pinned with read-only permissions and no persisted checkout

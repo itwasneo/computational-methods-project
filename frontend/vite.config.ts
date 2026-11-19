@@ -1,12 +1,12 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from "vite";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { defineConfig } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { apiBoundary, backendOrigin } from './dev-api.ts';
 
 export default defineConfig({
   plugins: [apiBoundary(), svelte()],
   server: {
-    host: "127.0.0.1",
+    host: '127.0.0.1',
     port: 5173,
     strictPort: true,
     cors: false,
@@ -26,5 +26,5 @@ export default defineConfig({
     },
   },
   // Preview is static-only; do not inherit a proxy without configureServer guards.
-  preview: { host: "127.0.0.1", cors: false, proxy: {} },
+  preview: { host: '127.0.0.1', cors: false, proxy: {} },
 });
