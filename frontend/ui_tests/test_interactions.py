@@ -26,6 +26,19 @@ def test_failed_rerun_invalidates_previous_review(ui):
     assert not any(path == "/jobs/submit" for path, _ in api.calls)
 
 
+def test_ga_job_rerun_never_authorizes_an_unrepresentable_review(ui):
+    page, api = ui
+    api.connect(); api.prepare_review(); api.select_job()
+    api.accepted_review['plan']['configuration'].update(algorithm='ga',
+        implementations=['serial-generational-v1'], budget={'max_generations': 3},
+        logical_search_ids=['population-1'])
+    before = len(api.calls)
+    page.get_by_role('button', name='Review fresh rerun').click()
+    expect(page.get_by_text('GA rerun is not supported in this editor.', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Run reviewed experiment')).to_have_count(0)
+    assert [path for path, _ in api.calls[before:]] == ['/jobs/review']
+
+
 def test_unrelated_error_preserves_analysis_and_verified_result(ui):
     page, api = ui
     api.connect(); api.prepare_review(); api.select_job()

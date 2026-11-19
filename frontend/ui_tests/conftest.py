@@ -82,6 +82,7 @@ class MockApi:
         self.jobs = [captured("completed")["job"]]
         self.preflight = captured("preflight")
         self.capabilities = captured("capabilities")
+        self.accepted_review = captured("accepted_review")
         self.page_size = 100
         page.route("**/api/**", self.handle)
 
@@ -152,7 +153,7 @@ class MockApi:
         elif path == "/queue/status":
             value = captured("queue")
         elif path == "/jobs/review":
-            value = captured("accepted_review")
+            value = deepcopy(self.accepted_review)
             value["job"] = deepcopy(next(job for job in self.jobs if job["job_id"] == body["job_id"]))
         elif path == "/jobs/submit":
             value = captured("submitted")
