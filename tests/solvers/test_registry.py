@@ -23,14 +23,15 @@ def test_production_registry_exposes_real_solvers_and_detached_capabilities():
     descriptions = registry.capabilities()
     assert [entry["implementation"] for entry in descriptions] == [
         "visited-scan-v1", "remaining-array-v1", "serial-generational-v1", "visited-scan-threaded-v1",
+        "serial-reversal-v1",
     ]
     assert registry.resolve("nn", timed=True, record_history=True).implementation == "visited-scan-v1"
     ga = registry.resolve("ga", timed=True, record_history=True)
     assert ga.implementation == "serial-generational-v1" and ga.logical_mode == "independent"
     descriptions[0]["distance_modes"].clear()
     assert registry.capabilities()[0]["distance_modes"] == ["dense", "on_demand"]
-    with pytest.raises(ValueError, match="unavailable"):
-        registry.resolve("sa")
+    sa = registry.resolve("sa", timed=True, record_history=True)
+    assert sa.implementation == "serial-reversal-v1" and sa.logical_mode == "independent"
 
 
 @pytest.mark.parametrize("changes", [

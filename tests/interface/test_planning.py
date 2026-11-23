@@ -53,7 +53,7 @@ def test_capabilities_and_preflight_do_not_prepare_warm_generate_or_solve(execut
     before = sorted(str(p) for p in output.rglob("*"))
     body = request(execution_session, identifier)
     capabilities = client.post("/api/runs/capabilities", json=context).json()
-    assert {item["algorithm"] for item in capabilities["implementations"]} == {"nn", "ga"}
+    assert {item["algorithm"] for item in capabilities["implementations"]} == {"nn", "ga", "sa"}
     assert all(item["available"] for item in capabilities["implementations"])
     result = client.post("/api/runs/preflight", json=body)
     assert result.status_code == 200, result.text
@@ -74,7 +74,7 @@ def test_capabilities_and_preflight_do_not_prepare_warm_generate_or_solve(execut
 
 @pytest.mark.parametrize("config,code", [
     (configuration("ga", implementations=["unknown"]), "unsupported_execution"),
-    (configuration("sa"), "unsupported_execution"),
+    (configuration("sa", implementations=["unknown"]), "unsupported_execution"),
     (configuration(implementations=["unknown"]), "unsupported_execution"),
     (configuration(implementations=[None, "visited-scan-v1"]), "invalid_plan"),
     (configuration(budget={"start_cities": [4]}), "invalid_plan"),

@@ -194,6 +194,7 @@ def test_unavailable_capabilities_are_failure_records_without_setup(tmp_path, mo
         experiment["algorithm"] = unsupported
         experiment.pop("variant")
         experiment["budget"] = {"max_proposals": 0}
+        experiment["executions"][0]["implementation"] = "__unavailable__"
     elif unsupported == "multicore":
         experiment["executions"][0]["backend"] = "multicore"
     elif unsupported == "implementation":

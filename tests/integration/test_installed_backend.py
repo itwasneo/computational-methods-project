@@ -133,7 +133,7 @@ class NativeServer:
                   "implementations": [None], "distance_modes": ["on_demand"], "repetitions": [0], "solver_seed": str(2**64 - 1),
                   "max_matrix_bytes": 0, "record_history": True, "history_policy": None, **changes}
         caps = self.post("/api/runs/capabilities")
-        assert {entry["algorithm"] for entry in caps["implementations"]} == {"nn", "ga"}
+        assert {entry["algorithm"] for entry in caps["implementations"]} == {"nn", "ga", "sa"}
         return self.post("/api/runs/preflight", instance_snapshot_id=snapshot, configuration=config,
                          capabilities_revision=caps["capabilities_revision"])
 

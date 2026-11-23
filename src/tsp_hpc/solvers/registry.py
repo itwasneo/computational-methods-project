@@ -139,7 +139,9 @@ def default_registry() -> SolverRegistry:
     from tsp_hpc.solvers.ga.solver import solver_spec as ga_solver_spec
     from tsp_hpc.solvers.nn.solver import DEFAULT_IMPLEMENTATION, solver_specs
     from tsp_hpc.solvers.nn.threaded import IMPLEMENTATION, ThreadedNearestNeighbourSolver
+    from tsp_hpc.solvers.sa.solver import solver_spec as sa_solver_spec
     ga = ga_solver_spec()
+    sa = sa_solver_spec()
     threaded_nn = SolverSpec("nn", IMPLEMENTATION, ThreadedNearestNeighbourSolver, "batch", backend="multicore")
-    return SolverRegistry((*solver_specs(), ga, threaded_nn),
-                          defaults={"nn": DEFAULT_IMPLEMENTATION, "ga": ga.implementation})
+    return SolverRegistry((*solver_specs(), ga, threaded_nn, sa),
+                          defaults={"nn": DEFAULT_IMPLEMENTATION, "ga": ga.implementation, "sa": sa.implementation})
