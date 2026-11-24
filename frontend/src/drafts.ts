@@ -1,7 +1,11 @@
 import { wireGuard } from './wire.ts';
 import type { DistanceMode, ScientificConfiguration } from './contracts.ts';
 
+import { validGaFields, type GaFields } from './experiments/ga.ts';
+
 export interface ConfigurationDraft {
+  algorithm?: 'ga' | 'nn';
+  ga?: GaFields;
   backend?: 'serial' | 'multicore';
   threads?: number;
   implementations: string[];
@@ -38,9 +42,12 @@ export function isConfigurationDraft(value: unknown): value is ConfigurationDraf
   const draft = value as Record<string, unknown>;
   return (
     Object.keys(draft)
-      .filter((key) => key !== 'backend' && key !== 'threads')
+      .filter((key) => !['backend', 'threads', 'algorithm', 'ga'].includes(key))
       .sort()
       .join(',') === fields.join(',') &&
+    (draft.algorithm === undefined || draft.algorithm === 'nn' || draft.algorithm === 'ga') &&
+    (draft.ga === undefined || validGaFields(draft.ga)) &&
+    (draft.algorithm !== 'ga' || (draft.ga !== undefined && draft.backend === 'serial')) &&
     (draft.backend === undefined || draft.backend === 'serial' || draft.backend === 'multicore') &&
     (draft.threads === undefined ||
       (typeof draft.threads === 'number' &&

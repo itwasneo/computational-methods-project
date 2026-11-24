@@ -1,6 +1,6 @@
 # Local interface
 
-The browser connects generation, configuration, native NN jobs, verified tours and
+The browser connects generation, configuration, native NN and GA jobs, verified tours and
 shared analysis. Python owns scientific validation, execution and statistics; browser
 charts present server observations without computing new scientific summaries.
 
@@ -20,8 +20,7 @@ uv run --locked --extra interface python tools/local_app.py
 ```
 
 This owner command explicitly enables local jobs, with one active worker process.
-The browser configures serial or fixed-work multicore NN. API clients can also run
-serial GA. The launcher creates a read workspace at
+The browser and API configure serial GA, serial NN, and fixed-work multicore NN. The launcher creates a read workspace at
 `data/generated/app-inputs` and a separate private execution root at
 `results/app-output`. Override them with `--workspace PATH --execution-root PATH`;
 roots must be disjoint. Put saved instances/references or CLI result shards in the read
@@ -43,14 +42,19 @@ pidfds/procfs and enabled JIT. Numerical-only installations need no web dependen
    seed and dimensions, then **Generate instance**. Alternatively select an authorized
    instance JSON and **Load instance**. The backend creates an immutable snapshot;
    **Download canonical instance** saves exact CLI-compatible bytes, including large seeds.
-2. **Configure:** select native NN implementations, dense/on-demand distance modes,
-   explicit ordered starts, repetitions and solver seed. Time limits/history are optional.
-   Serial execution is the default. For fixed-work multicore NN choose **Execution backend**
-   and **Solver threads**; time/history controls are unavailable for that backend. See
-   [resource limits and native concurrency](exact-and-multicore.md).
-   Defaults use 256 cities, eight starts, five repetitions and both modes: ten trials
-   for one implementation. GA jobs submitted through the API can be inspected, but the NN editor cannot
-   review a fresh GA rerun; use the API for that workflow.
+2. **Configure:** choose one algorithm per reviewed job, implementations, distance modes,
+   repetitions and a decimal uint64 solver seed. You can reuse the same input snapshot for both algorithms.
+   - **Nearest neighbour:** enter ordered start cities. Serial is the default; fixed-work multicore
+     NN also accepts a thread count, but not a time limit or history. See [resource limits](exact-and-multicore.md).
+   - **Genetic algorithm:** select serial GA. Enter unique comma-separated population IDs (in logical order),
+     population/tournament sizes, elite count, and crossover/mutation probabilities. Each ID is an independent
+     population with its own derived seed, not a thread or repetition. Set a generation limit, a time limit,
+     or both. Zero generations evaluates the initial population; for a time-only run, uncheck the generation
+     limit. For a small first run, try two IDs (`a,b`), population size 5, three generations and one repetition.
+     With both distance modes selected this produces two trials, each running both populations.
+   - Serial runs can record history. Editing the algorithm, budget or resources invalidates review.
+     A fresh rerun of a supported API- or UI-created job restores its configuration for review, not automatic
+     execution. NN starts and GA generations are different work units, not a basis for speedup claims.
 3. **Review:** **Review experiment** validates the shared plan without running it.
    Inspect resolved configuration, identities/seeds, estimates and job ceiling, then
    **Run reviewed experiment**. Configuration edits or choosing a new instance invalidate

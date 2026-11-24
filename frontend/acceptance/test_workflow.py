@@ -121,6 +121,60 @@ def test_multicore_review_executes_real_native_work_and_restores_resources(tmp_p
         browser.close()
 
 
+def test_ga_populations_execute_inspect_and_restore_exact_work(tmp_path):
+    with servers(tmp_path) as (secret, _, output), sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto('http://127.0.0.1:5173')
+        page.get_by_label('Pairing secret', exact=True).fill(secret)
+        page.get_by_role('button', name='Connect', exact=True).click()
+        page.get_by_label('Cities', exact=True).fill('12')
+        page.get_by_role('button', name='Generate instance', exact=True).click()
+        algorithm = page.get_by_role('combobox', name='Algorithm', exact=True)
+        algorithm.select_option('ga')
+        expect(page.get_by_label('serial-generational-v1')).to_be_checked()
+        page.get_by_label('Ordered population IDs').fill('zeta,alpha')
+        page.get_by_label('Population size', exact=True).fill('5')
+        page.get_by_label('Maximum generations').fill('3')
+        page.get_by_label('Repetitions', exact=True).fill('1')
+        page.get_by_label('Solver seed (uint64)').fill(str(2**64 - 1))
+        page.get_by_label('Record best-so-far history').check()
+        page.get_by_label('Sampling interval (seconds)').fill('0')
+        reviews = []
+        page.on('request', lambda req: reviews.append(req.post_data_json['configuration'])
+                if req.url.endswith('/runs/preflight') else None)
+        page.get_by_role('button', name='Review experiment', exact=True).click()
+        page.get_by_role('button', name='Run reviewed experiment').click()
+        expect(page.get_by_role('heading', name='Selected job: completed')).to_be_visible(timeout=90000)
+        expect(page.get_by_text('trials: 2 rows', exact=False)).to_be_visible()
+        records = [json.loads(line) for line in next((output / '.tsp-local/jobs').glob('*/results.jsonl')).read_text().splitlines()]
+        trials = [r for r in records if r['record_type'] == 'trial']
+        assert len(trials) == 2
+        for trial in trials:
+            assert trial['outcome'] == 'completed' and trial['native_execution']['verified']
+            logical = trial['logical_results']
+            assert [entry['logical_id'] for entry in logical] == ['zeta', 'alpha']
+            assert logical[0]['seed'] != logical[1]['seed']
+            for entry in logical:
+                result = entry['result']
+                assert result['work']['ga_generations_completed'] == 3
+                assert result['work']['full_tour_evaluations'] == 17
+                assert len(result['history']) == 8
+        page.get_by_role('button', name='Inspect attempt', exact=False).first.click()
+        expect(page.get_by_role('heading', name='Verified final result')).to_be_visible()
+        page.get_by_role('button', name='Review fresh rerun').click()
+        run = page.get_by_role('button', name='Run reviewed experiment')
+        expect(run).to_be_enabled()
+        expect(algorithm).to_have_value('ga')
+        expect(page.get_by_label('Ordered population IDs')).to_have_value('zeta,alpha')
+        expect(page.get_by_label('Solver seed (uint64)')).to_have_value(str(2**64 - 1))
+        assert len(reviews) == 2 and reviews[0] == reviews[1]
+        algorithm.select_option('nn')
+        expect(run).to_have_count(0)
+        expect(page.get_by_label('Ordered start cities')).to_be_visible()
+        browser.close()
+
+
 def test_generate_compare_inspect_history_and_fresh_rerun(tmp_path):
     control = {}
     with servers(tmp_path, control=control) as (secret, workspace, output), sync_playwright() as playwright:
