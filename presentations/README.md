@@ -8,6 +8,6 @@ These are archived presentations, not operating instructions. Use the
 [project documentation](../README.md#documentation) for commands and contracts.
 
 Open HTML files directly in a browser; they work offline. Use **← / →**,
-**Page Up / Page Down** or **Space** to navigate, **Home / End** to jump, and **F**
-for fullscreen. To regenerate the PDF, print the HTML with its page size, no
-margins and no browser headers/footers; each slide is one 16:9 page.
+**Page Up / Page Down** or **Space** to navigate and **Home / End** to jump.
+**F** toggles fullscreen only in the research presentation. To regenerate its PDF, print
+at the HTML page size with no margins or browser headers/footers (one 16:9 page per slide).

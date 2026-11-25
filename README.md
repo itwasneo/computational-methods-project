@@ -1,28 +1,30 @@
 # Computational Methods Project: TSP Heuristics and HPC
 
-Study nearest-neighbour (NN), genetic algorithms (GA) and simulated annealing (SA)
-for the Traveling Salesman Problem.
+Available solvers for the Traveling Salesman Problem: two serial nearest-neighbour (NN)
+implementations, fixed-work multicore NN and a serial genetic algorithm (GA).
+Simulated annealing (SA) can be planned in a manifest but has no registered solver.
 
 **Research question:** How do implementation choices, memory behavior and parallel
 execution affect solution quality under limited computational budgets?
 
-Python, NumPy and Numba provide the numerical core. A shared runner records saved
-inputs, logical random streams, independently validated solutions and phase timings;
-analysis keeps failed, incomplete and duplicate attempts explicit. The objective is
-**unrounded Euclidean distance** on complete symmetric 2D instances. Rounded benchmark
-reference costs are not interchangeable with this objective.
+The NumPy/Numba solvers use **unrounded Euclidean distance** (`euclidean_2d`) on complete
+symmetric 2D instances. Artifacts and [exact references](docs/exact-and-multicore.md#tiny-exact-reference)
+also support rounded `tsplib_euc_2d`. Compare costs only within the same convention.
+The runner saves seeds, validated tours and phase timings; analysis flags failed, incomplete and duplicate attempts.
 
 ## Quick start
 
-Use Python 3.12 and uv from the repository root:
+Run the scientific tests from the repository root with Python 3.12 and uv. Leave Numba JIT enabled:
 
 ```bash
 uv sync --locked
 uv run --locked tsp-hpc --help
-uv run --locked pytest -W error
+uv run --locked pytest -W error tests/problem tests/solvers tests/experiments tests/analysis tests/reproducibility
 ```
 
-For the interactive workflow, install the interface dependencies and launch both services:
+The launcher and saved-results view work on macOS and Linux. Native browser jobs and the
+[full Python test suite](docs/development.md#install-test-and-build) require Linux with pidfds
+and readable procfs. To [launch the app](docs/interface.md#start-the-application), use Node 24 and pnpm 10.32.1:
 
 ```bash
 uv sync --locked --extra interface
@@ -30,20 +32,14 @@ pnpm --dir frontend install --frozen-lockfile
 uv run --locked --extra interface python tools/local_app.py
 ```
 
-Use Node 24/pnpm 10.32.1. Supply a private pairing secret at the prompt and open
-http://127.0.0.1:5173. Generate an instance, select NN distance modes, review/run,
-and inspect shared comparisons and verified tours—no manual manifest or ID copying.
-See [application operation](docs/interface.md#start-the-application), including explicit
-execution authority, output locations and recovery.
+Open http://127.0.0.1:5173 and pair with the secret you entered at the terminal prompt.
+On Linux, generate an instance, review and run an NN or GA job, then inspect the result.
+On macOS, run from the CLI and [browse saved shards](docs/interface.md#browser-local-results).
+Standalone `serve` is read-only by default; the launcher explicitly enables jobs.
 
-For scripted CLI work, follow [Run a manifest](docs/usage.md#run-a-manifest),
-then [Analyze result shards](docs/usage.md#analyze-result-shards).
-Use a fresh output path for each attempt; result shards are never appended or overwritten.
-For direct Python calls, see [Run nearest-neighbour](docs/usage.md#run-nearest-neighbour).
-
-The standalone `serve` command is read-only by default; the app launcher explicitly
-opts into jobs with disjoint read/output roots. Algorithm availability comes from the
-solver registry and API capabilities, not the scientific specifications.
+For a CLI example, [run the square NN manifest](docs/usage.md#run-a-manifest) and
+[analyze its four trials](docs/usage.md#analyze-result-shards). Use a new output path each time.
+For Python, see [NN](docs/usage.md#run-nearest-neighbour) and [serial GA](docs/usage.md#run-serial-ga).
 
 ## Documentation
 

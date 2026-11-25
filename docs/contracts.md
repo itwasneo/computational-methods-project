@@ -16,7 +16,7 @@ Asymmetric distances, missing edges, arbitrary explicit-weight input matrices, g
 
 Derive the city count from `coordinates.shape[0]`; do not maintain a conflicting independent count. Treat instance arrays as read-only throughout a run. Builders may normalize coordinate inputs to this representation once, before timing search; kernels must not repeatedly convert or copy them.
 
-A loader maps external city labels to contiguous internal IDs in a deterministic order and retains the inverse mapping in provenance. Solver tours always use internal IDs. Source filenames, checksums, instance-generation seeds, and reference optima belong in instance provenance, not in numerical kernels. Reference values must identify their distance convention and whether they are certified optima or merely best-known costs.
+The artifact loader uses coordinate row order as city IDs; it accepts neither external labels nor an inverse label map. The descriptor records the checksum and generation seed. [Reference costs](usage.md#explicit-reference-costs) are separate and must identify the objective and reference kind.
 
 ### Distance conventions and representations
 
@@ -98,7 +98,7 @@ The [budget and stopping rules](algorithm-baselines.md#budgets-and-stopping) def
 
 `tsp_hpc.solvers.results.SolverResult` owns a read-only tour snapshot and uses immutable `WorkCounters` (`.to_dict()` returns a detached dictionary). The constructor validates structure, not the objective against an instance. Phase fields `search_time_s` and `validation_time_s` follow the [API timing boundaries](usage.md#timing-and-results); they are not an end-to-end provenance envelope.
 
-Use these common counters, with zero for algorithms to which they do not apply:
+The result schema accepts exactly four work counters. Use zero for counters that do not apply:
 
 | Counter | Meaning |
 | --- | --- |
@@ -107,7 +107,7 @@ Use these common counters, with zero for algorithms to which they do not apply:
 | `sa_proposals_evaluated` | SA proposals for which the acceptance decision completed, including rejected proposals |
 | `full_tour_evaluations` | Full objective evaluations performed during search, including initialization; excludes JIT warm-up and post-search validation/recomputation |
 
-Incremental move-delta evaluations are not full-tour evaluations. Additional diagnostic counters are permitted if their meanings are documented. For a logical batch of searches, aggregate counters across those searches, not execution threads. Counters are not a claim that a GA generation and an SA proposal have equal computational cost.
+Sum work across logical searches, not threads. Incremental move deltas are not full-tour evaluations; one GA generation and one SA proposal do not represent equal work.
 
 An immutable `ProgressPoint` contains search-relative `elapsed_s`, a `work` snapshot and a complete tour's `best_cost`. Times/counters are nondecreasing; best costs do not increase beyond validation tolerance. Recording must not consume randomness or change search decisions. Its overhead is charged to search and can change work completed under a deadline.
 

@@ -6,7 +6,9 @@ charts present server observations without computing new scientific summaries.
 
 ## Start the application
 
-Use Python 3.12, Node 24 and pnpm 10.32.1. From the checkout, install once:
+The launcher and [saved-results view](#browser-local-results) work on macOS and Linux.
+Native browser jobs require Linux pidfds, readable procfs and enabled Numba JIT; on macOS,
+[run campaigns from the CLI](usage.md#run-a-manifest). Install from the checkout with Python 3.12, Node 24 and pnpm 10.32.1:
 
 ```bash
 uv sync --locked --extra interface
@@ -33,8 +35,7 @@ stops both services, holding pending jobs and interrupting active work safely.
 
 The launcher uses the checkout's Vite development server on 5173 and API on 8000;
 occupied ports fail. Use `127.0.0.1`, not `localhost`. This is a local checkout app,
-not bundled frontend delivery from an installed wheel. Native jobs require Linux
-pidfds/procfs and enabled JIT. Numerical-only installations need no web dependencies.
+not bundled frontend delivery from an installed wheel. Numerical-only installations need no web dependencies.
 
 ## Run and compare an experiment
 
@@ -97,8 +98,8 @@ kinds remain declarations; the interface does not prove optimality.
 
 - Cancel queued work, request stopping after a trial, or explicitly confirm immediate
   interruption. Stop intent is not terminal evidence until the backend verifies exit.
-- Disconnect/reload does not cancel jobs. Type `pair` in the owner terminal with a new
-  secret before reconnecting; switching tabs shares the same in-memory grant.
+- Disconnecting or reloading does not cancel jobs. To reconnect, type `pair` in the owner
+  terminal and supply a new secret. App views share a grant within one browser tab, not across tabs.
 - A lost submission acknowledgement or request timeout offers **Retry original submission**,
   never an automatic new campaign. Non-secret preflight/key/root retry metadata is retained
   in tab session storage when available; credentials remain memory-only. A retry for a
@@ -124,15 +125,15 @@ kinds remain declarations; the interface does not prove optimality.
 
 ## Browser local results
 
-The **Saved results** tab shares pairing with Experiments. Select existing JSONL shards
+The **Saved results** view shares pairing with Experiments within the same browser tab. Select existing JSONL shards
 and optionally an actual expected manifest (not an instance/reference JSON), then **Load**.
 Whole-dataset filters/sorting and paged rows preserve incomplete/duplicate/usable flags.
 Refresh invalidates obsolete datasets; ready sources are checked on queries, not by
-background polling. This tab reads CLI shards; verified job tours are in Experiments.
+background polling. This view reads CLI shards; verified job tours are in Experiments.
 
-For read-only operation, run `tsp-hpc serve --workspace PATH --port 8000` without execution
-flags and start `pnpm --dir frontend run dev` separately. Pair in Experiments, then use
-Saved results. `vite preview` is static-only and has no API proxy.
+For read-only operation, run `uv run --locked --extra interface tsp-hpc serve --workspace PATH`
+with an existing directory. Start `pnpm --dir frontend run dev` in a second terminal, open
+http://127.0.0.1:5173 and pair in Experiments. `vite preview` is static-only and has no API proxy.
 
 The separate **Viewer preview** is labelled synthetic and never substitutes for a real
 result. Shared viewer controls support pan/zoom/fit, coincident-city picking, fullscreen,
@@ -151,9 +152,8 @@ uv run --locked --extra interface tsp-hpc serve \
 ```
 
 Both execution flags are required. HTTP cannot enable execution, change roots,
-choose commands/imports/PIDs, or write to the read workspace. Local workers require
-native JIT, Linux pidfds and readable procfs ownership metadata; capabilities probe
-actual kernel permissions. These requirements do not restrict the standalone CLI.
+choose commands/imports/PIDs, or write to the read workspace. Capabilities probe the
+worker’s kernel permissions. Native CLI runs also require JIT, but not Linux pidfds or procfs.
 
 ### Pairing and transport
 
@@ -179,9 +179,9 @@ Bodies are bounded to **16 KiB**, including chunked bodies; concurrency is cappe
 **32**. JSON must be UTF-8 and finite, with no duplicate keys, escaped unpaired
 surrogates or nesting beyond 64 levels. Strict models reject extra fields and scalar
 coercion. Responses use no-store/no-sniff/frame-denial headers and sanitized errors.
-Authorization is rechecked at handler admission after body parsing. Bounded handlers
-and rotation serialize; an admitted operation may finish before its grant is revoked.
-Background ingestion and scientific work run outside that admission lock.
+Handlers recheck authorization after body parsing. Rotation waits for admitted handlers,
+including analysis queries and final-tour verification. Background ingestion and solver
+workers run outside that lock.
 
 ### Workspace and private storage
 
@@ -211,10 +211,12 @@ regular files, including owner-created hard links. Keep untrusted writers out.
 [Fixtures](../examples/interface-contracts/) exercise both languages. Static types
 are not runtime validation, authority or scientific evidence.
 
-All fields are required, including nullable ones. Use `api_version: 1` and a
-`request_id`; responses echo the ID or generate one for invalid input. Workspace
-requests carry `workspace_id`; execution requests add the current `session_id`
-(`RunContext`). Dataset requests bind `dataset_id` and its ready `revision`.
+POST bodies require `api_version: 1` and `request_id`. Responses echo the ID or generate one
+for invalid input. Send required nullable fields as `null` when unused.
+Preflight configuration may omit `backend` (default `serial`) and `threads_per_worker` (default `1`).
+Workspace-scoped POSTs require `workspace_id`; execution requests also require `session_id`.
+To create a dataset, send `artifact_catalog_revision`, `result_handles` and `expected_manifest_handle`
+(`null` for no manifest). Use `dataset_id` for status; add `revision` for queries on a ready dataset.
 All routes below are POST unless marked GET.
 
 | Route | Request → response |
@@ -259,8 +261,8 @@ Trial rows are keyed by **attempt ID**, not configuration or campaign. Query fie
 `attempt_id`, `instance_id`, `implementation`, `n_cities`, `algorithm`, `outcome`,
 `best_cost`, `search_time_s`.
 
-- Filters use typed equality: OR within a column, AND across columns; absent/empty
-  filters are unrestricted. Duplicate columns are rejected; duplicate values normalize.
+- `filters` is required: use `[]` for no filters. A column with `values: []` imposes no restriction.
+  Match any value within a column and all filtered columns. Repeat values are ignored; repeat columns are invalid.
   Null is legal only for implementation/cost/time. Strings are case-sensitive.
 - Sort one column numerically or by Unicode code point, nulls last in either direction;
   ties/default ordering use ascending attempt IDs. Cost/time accept finite float64
@@ -421,6 +423,7 @@ Every endpoint uses `ErrorResponse`: version/request ID, stable `code`, sanitize
 400 covers invalid fields/JSON; 403 authority; 404 missing objects/routes; 409 stale
 context, unavailable state, busy queues or conflicts; 413 resource bounds; 422 invalid
 artifacts/plans; 503 unavailable workspace/execution; 500 internal errors. Unsupported
-methods/content types use 405/415. `result_unavailable` is 409 before valid publication
-or 404 for a missing exact attempt. Reload stale context; never substitute data or
-create a new submission key merely to retry a lost acknowledgement.
+methods/content types use 405/415. For details or geometry, an unpublished job returns
+`409 result_unavailable`. A missing attempt in a ready dataset returns `404 result_unavailable`;
+an attempt outside the selected job returns `409 snapshot_mismatch`. Reload stale context;
+retry a lost acknowledgement with the original submission key.

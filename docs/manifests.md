@@ -8,7 +8,7 @@ This reference owns the CPU search schema, identity encoding and logical RNG pro
 | --- | --- |
 | `tsp_hpc.reproducibility.identity.coordinate_checksum(coordinates)` | Fingerprint canonical coordinate content |
 | `make_instance_id(coordinates, distance_kind="euclidean_2d")` | Generate a stable content-based instance ID |
-| `describe_instance(instance, instance_seed=None)` | Describe an existing `TSPInstance` for a manifest; preserve its supplied ID |
+| `describe_instance(instance, *, instance_seed=None)` | Describe an existing `TSPInstance` for a manifest; preserve its supplied ID |
 | `tsp_hpc.experiments.manifests.Manifest(document)` | Validate a JSON-compatible dictionary and snapshot resolved defaults |
 | `Manifest.from_json(text)` / `Manifest.from_file(path)` | Load strict JSON; reject duplicate keys and non-finite values |
 | `manifest.to_dict()` | Return a detached, normalized document |
@@ -16,7 +16,7 @@ This reference owns the CPU search schema, identity encoding and logical RNG pro
 | `tsp_hpc.reproducibility.random_streams.derive_stream(root_seed, role, *logical_ids)` | Plan a role-specific stream without consuming RNG state |
 | `stream.generator()` | Create fresh, privately owned NumPy `Generator(PCG64(seed))` state |
 
-[The example manifest](../examples/manifests/fixed-work.json) describes the unit square with city rows `[(0, 0), (1, 0), (1, 1), (0, 1)]`. Its checksum matches those exact `float64` coordinates. It expands to seven plans: one NN, two GA repetitions, and two SA repetitions each under serial and multicore execution. These are toy configurations, not tuned parameters or equal-compute comparisons.
+[fixed-work.json](../examples/manifests/fixed-work.json) is a planning example: one NN plan, two GA plans and four SA plans (two repetitions × two backends). Its `unit-square` alias is not the saved square’s content ID, and SA has no registered solver. For four executable NN trials, [run `nn-fixed-work.json`](usage.md#run-a-manifest).
 
 Run this from the repository root in the installed environment:
 
@@ -162,7 +162,7 @@ The instance-reference ID includes logical instance ID, coordinate checksum, siz
 
 The experiment's `solver_seed` is the user-supplied root, `trial_seed` is an intermediate namespace seed, and each logical search's `stream.seed` is its effective seed. GA/SA calls receive the logical population/chain seed, not the root or intermediate seed. NN can receive the trial seed with its complete ordered start list; it does not use randomness.
 
-For GA's parallel operator stream assignments, derive from the **population stream's seed** using `("initialization", slot)` and `("offspring", generation, slot)`; generation numbering starts at one. This prevents offspring scheduling order from selecting the random stream. A distinct `"warmup"` role separates warm-up from measured streams. The generic `"island"` role can reserve future island streams, but does not enable an island algorithm or MPI execution.
+`serial-generational-v1` advances one `Generator(PCG64(population_seed))` through initialization and all generations in slot order. Warm-up uses a separate `PCG64(0)`. Per-slot `("initialization", slot)` and `("offspring", generation, slot)` streams derived from the population seed (generations start at one) are for parallel GA planning only, not serial replay.
 
 Parameters, budgets and collection size are deliberately absent from seed derivation. This provides paired initial streams across parameter/budget comparisons; adding a chain does not reseed existing chains. Different algorithms or draw-consumption patterns need not follow the same trajectories. Changing actual instance identity/content, solver root seed, repetition, role or logical ID changes the corresponding streams.
 

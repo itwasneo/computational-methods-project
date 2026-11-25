@@ -1,7 +1,6 @@
 # Exact references and fixed-work multicore NN
 
-These features extend the existing scientific pipeline; they do not add GA/SA,
-remote execution, simultaneous campaign workers, or search checkpoint/resume.
+Use exhaustive references to check tiny instances and native threads to parallelize NN starts within a trial.
 
 ## Tiny exact reference
 
@@ -38,8 +37,7 @@ with Path('results/square-reference.json').open('x') as stream:
               indent=2, allow_nan=False)
 ```
 
-This is a Python validation/reference API, not a fourth registered production
-heuristic or an unrestricted HTTP computation. Reference declarations remain
+This Python reference is not a registered heuristic or an HTTP endpoint. Reference declarations remain
 owner-supplied evidence; analysis does not turn arbitrary `kind: exact` files into
 certified optima.
 
@@ -133,9 +131,8 @@ Capabilities publish the effective `limits.max_solver_threads`; review also retu
 with equivalent defaults without rewriting private submission bytes or reauthorizing
 old preflights. Old queued work is still subject to the existing code/runtime binding.
 
-The local application remains Linux-only; this does not implement macOS worker
-supervision. There is no change to admission idempotency, held restart behavior,
-immutable inputs, exact exports, source binding or publication validation.
+Threaded NN runs from the CLI on macOS with JIT enabled. [Native browser jobs](interface.md#start-the-application)
+additionally require Linux pidfds and readable procfs.
 
 ## Profiling and scaling pilot
 
@@ -147,9 +144,10 @@ uv run --locked python tools/multicore_pilot.py /tmp/tsp-nn-pilot \
   --cities 256 1024 --starts 64 --threads 1 2 4 --repetitions 3
 ```
 
-On a two-CPU allocation use `--threads 1 2`. The tool fails rather than silently
-reducing unsupported requests or overwriting outputs. It limits its own process
-and child-thread affinity to the selected CPU set and disables nested native pools.
+On a two-CPU allocation use `--threads 1 2`. The pilot rejects unsupported thread counts
+and existing output directories, but caps `--starts` at each instance’s city count.
+It limits nested libraries to one thread. Where CPU affinity is available, it pins to as
+many allowed CPUs as the largest requested thread count; otherwise it runs unpinned.
 It creates canonical inputs, manifests, native JSONL records and shared-validation
 checks. A separate warmed serial `cProfile` run identifies the native-call boundary;
 it cannot profile individual instructions inside compiled code. Profiling is excluded

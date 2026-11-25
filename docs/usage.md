@@ -42,12 +42,14 @@ use `InstanceRecord.descriptor`. Canonical artifact IDs are not interchangeable 
 planner aliases. No filename discovery, regeneration or TSPLIB loading occurs.
 `--max-matrix-bytes` overrides the matrix-only ceiling without changing representation.
 
-The Python entry point is `tsp_hpc.experiments.runner.run_manifest(manifest, *,
-instance_paths, output_path, max_matrix_bytes=..., registry=None)`, returning the saved
-summary. Malformed arguments, unknown bindings or duplicate plans (including resolved
-aliases) fail before output creation. Missing inputs, unavailable capabilities and
-solver/validation errors become failed trials; subsequent trials continue. CLI exits:
-**0** all trials completed, **1** any failed trial, **2** invocation/preflight/shard-I/O
+`tsp_hpc.experiments.runner.run_manifest(manifest, *, instance_paths, output_path,
+max_matrix_bytes=..., registry=None, campaign_id=None, checkpoint=None, on_trial=None)`
+returns the saved summary. `checkpoint()` runs before each trial; `on_trial(attempt_id, counts)`
+runs after its record is written and synced. Invalid arguments, unknown bindings and duplicate
+plans (including resolved aliases) fail before output creation. Missing inputs, unavailable
+capabilities and solver/validation errors fail that trial, not later trials.
+
+CLI exits: **0** all trials completed, **1** any failed trial, **2** invocation/preflight/shard-I/O
 error. Interrupts propagate and preserve the written prefix.
 
 Each trial reloads input and prepares/warms fresh adapters (**`fresh-per-trial`**).
@@ -77,7 +79,7 @@ existing parent; raw shards are unchanged.
 | `summary.csv` | Group counts (attempt/failed/no-solution/incomplete/duplicate/usable), count/min/median/mean/max/sample deviation |
 | `comparisons.csv` | With a baseline: paired attempts, baseline/target duration ratio or rejection reason |
 | `gaps.csv` | With references: matched usable attempts, reference kind/source/cost and gaps |
-| `progress.csv` | Recorded logical observations, search clocks, cumulative incumbent/work and eligibility |
+| `progress.csv` | Only when history recording was requested; contains recorded observations (possibly none) |
 | `time-to-target.csv` | With `--target INSTANCE_ID=COST`: observed crossings, censoring and exclusions |
 | `report.json` | Source hashes, analysis runtime, configuration, diagnostics, figures and limitations |
 | PNG figures | Runtime/quality summaries and applicable ratios/gaps/history observations |
@@ -89,9 +91,13 @@ different instances/settings. Statistics are descriptive; singleton sample devia
 are blank, not zero. Overflow-safe aggregates retain large finite values.
 
 Exit codes: **0** no detected issues, **1** failed/incomplete/missing/duplicate observations
-or blocked comparisons, **2** invalid records/options or I/O errors. Above
-`--max-plot-groups` (default 40), figures are omitted with a note; tables remain complete.
-Review paths/provenance before sharing reports.
+or blocked comparisons, **2** invalid records/options or I/O errors. `--max-plot-groups` (default 40)
+skips summary plots if too many groups have usable trials. It skips history plots separately
+if too many usable attempts have recorded points. Tables remain complete.
+
+Trials run one at a time; fixed-work NN can use threads within a trial. The CLI help and report
+notes say “serial” in both cases. Check `backend` and `threads_per_worker` in `trials.csv`.
+Review paths and provenance before sharing reports.
 
 ### Validation and comparison rules
 
@@ -409,11 +415,27 @@ affect execution identity, not scientific work. Register optimized kernels along
 baseline; changed search rules require a different variant. Never execute multicore plans
 as serial merely because the planner accepts them.
 
-The production registry additionally exposes fixed-work multicore
-`visited-scan-threaded-v1`. It requires `backend: multicore`, one process and an
-explicit supported thread count; time/history requests are rejected. See
-[exact references, native-thread resources and the scaling pilot](exact-and-multicore.md)
-for direct reference generation, manifest examples and local application controls.
+For fixed-work multicore NN, specify `backend: multicore` and `implementation: visited-scan-threaded-v1`.
+It uses one process; `threads_per_worker` defaults to 1. Time limits and history are unsupported.
+See [thread limits and the scaling pilot](exact-and-multicore.md).
+
+## Run serial GA
+
+```python
+from tsp_hpc.problem.distances import prepare_distances
+from tsp_hpc.problem.instances import fixture
+from tsp_hpc.solvers.ga.solver import GeneticAlgorithmSolver
+
+instance = fixture("square").instance
+solver = GeneticAlgorithmSolver(prepare_distances(instance, mode="on_demand"))
+result = solver.solve(instance, seed=42, budget={"max_generations": 3},
+                      parameters={"population_size": 5, "elite_count": 1})
+assert result.work.full_tour_evaluations == 17  # 5 initial tours + 3 × 4 offspring
+```
+
+For a [CLI run](#run-a-manifest), copy the [square NN manifest](../examples/manifests/nn-fixed-work.json).
+Set `algorithm` to `ga`, use the `budget` and `parameters` above, and keep one serial
+execution with `implementation` set to `serial-generational-v1`.
 
 ## Distance preparation and compiled callers
 
