@@ -26,7 +26,9 @@ for `esbuild`. Recheck dependency advisories, licenses and notices before distri
 
 ## Install, test and build
 
-From the repository root:
+The full Python suite runs native workers: use Linux with pidfds, readable procfs, enabled
+Numba JIT and the `interface` extra. For the scientific tests alone, see the [quick start](../README.md#quick-start).
+Run these commands from the repository root:
 
 ```bash
 uv sync --locked --extra interface
@@ -41,16 +43,15 @@ pnpm --dir frontend run build
 ```
 
 uv creates an editable `.venv`; the `src/` layout needs no `PYTHONPATH`. Builds go to
-ignored `dist/`. Without `--extra interface`, optional HTTP tests skip. Use
-`uv sync --locked --no-dev` for numerical-only work, or add `--group analysis` for
-reports. `uv sync --locked` restores the default development environment.
+ignored `dist/`. Use `uv sync --locked --no-dev` for numerical-only work, or add
+`--group analysis` for reports. `uv sync --locked` restores the default development environment.
 
 Tests mirror packages under `tests/`; for example, select NN checks with
 `uv run --locked pytest tests/solvers/nn -W error`. Integration tests exercise native
 kernels/caches, installed wheels, CLI reports, actual local workers and crash recovery.
 Frontend tests cover contracts, client/state, a real loopback Vite proxy and rendering
 primitives. No cluster account, GPU or browser measurement campaign is required.
-For real browser acceptance (free local ports 5173/8000 required):
+For the full browser acceptance suite, use the same Linux worker prerequisites and free ports 5173/8000:
 
 ```bash
 uv run --locked python -m playwright install chromium
@@ -129,8 +130,9 @@ An adapter must:
    nonempty `native_dispatchers` tuple of the selected warmed CPU dispatchers.
 3. Implement the [shared solve signature](contracts.md#logical-solver-interface),
    validating direct calls with shared parameter/budget/history/seed normalization.
-4. Create `SearchControl` immediately before initialization. Use fresh logical RNG
-   state per invocation; preserve RNG/cooling/population state across safe checkpoints.
+4. Start timing before search initialization. Use `SearchControl` for deadlines or history;
+   fixed-work NN without history times search directly. Keep RNG state local to each invocation
+   and preserve it across checkpoints.
 5. Return owned results, actual work and independently verified final costs. Follow
    the [sampling rules](contracts.md#solver-results-and-progress) without consuming RNG.
 
@@ -172,7 +174,7 @@ Ordinary `uv build` output has no verified source claim. For installed campaigns
 produce a wheel from a **clean committed checkout** using Git, Python 3.12 and uv:
 
 ```bash
-python3.12 tools/build_verified_wheel.py --output dist/verified
+uv run --locked python tools/build_verified_wheel.py --output dist/verified
 uv export --locked --no-dev --group analysis --no-emit-project \
   --format requirements-txt --output-file dist/verified/dependencies.txt
 uv venv --python 3.12 dist/wheel-env
