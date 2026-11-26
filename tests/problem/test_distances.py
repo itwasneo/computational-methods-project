@@ -1,8 +1,10 @@
 """Unrounded reference agreement, compiled callers, and explicit preparation."""
 
 from dataclasses import FrozenInstanceError
+from fractions import Fraction
 from itertools import permutations
 import math
+import random
 
 from numba import njit
 import numpy as np
@@ -19,6 +21,33 @@ from tsp_hpc.problem.instances import fixture, fixture_names, uniform_instance, 
 from tsp_hpc.problem.objective import COST_ATOL, COST_RTOL, NumericalError, edge_cost, tour_cost
 
 MODES = ("dense", "on_demand")
+
+
+def test_midpoint_decisions_against_exact_rational_squares():
+    # Exercise word carries, unequal exponents, subnormals and binade changes.
+    rng = random.Random(773)
+    for _ in range(512):
+        a = math.ldexp(rng.uniform(.5, 1), rng.randrange(0, 54))
+        b = math.ldexp(a*rng.random(), -rng.choice([0, 1, 16, 33, 65, 1074]))
+        h = math.hypot(a, b)
+        for lower in (h, math.nextafter(h, 0.)):
+            upper = math.nextafter(lower, math.inf)
+            midpoint = (Fraction(lower) + Fraction(upper)) / 2
+            diff = Fraction(a)**2 + Fraction(b)**2 - midpoint**2
+            assert module._norm_above_midpoint(a, b, lower) == (
+                diff > 0 or (diff == 0 and float(midpoint) == upper))
+
+
+def test_exact_pythagorean_midpoints_and_their_neighbors():
+    # Construct exact 3:4:5 triangles with hypotenuse halfway between two
+    # consecutive floats. Both parity choices and a one-ulp perturbation matter.
+    for odd in (2**53 + 3, 2**53 + 13):  # odd multiples of 5
+        lower = math.ldexp(odd // 2, -52)
+        a = math.ldexp(4 * (odd // 5), -53)
+        b = math.ldexp(3 * (odd // 5), -53)
+        assert not module._norm_above_midpoint(a, math.nextafter(b, 0.), lower)
+        assert module._norm_above_midpoint(a, b, lower) == bool((odd // 2) % 2)
+        assert module._norm_above_midpoint(a, math.nextafter(b, math.inf), lower)
 
 
 def problem(points):

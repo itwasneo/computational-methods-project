@@ -20,41 +20,81 @@ DEFAULT_MAX_MATRIX_BYTES = 256 * 1024 * 1024
 
 
 @njit(cache=True, fastmath=False)
-def _square_error(x, square):
-    # Dekker split: recover the low part of x*x without requiring hardware FMA.
-    t = 134217729.0 * x
-    hi = t - (t - x)
-    lo = x - hi
-    return ((hi * hi - square) + (2.0 * hi) * lo) + lo * lo
+def _wide_product(x, y):
+    """Exact product of two nonnegative (< 2**56) integers as high/low words."""
+    mask = np.uint64(0xffffffff)
+    x, y = np.uint64(x), np.uint64(y)
+    xh, yh = x >> 32, y >> 32
+    xl, yl = x & mask, y & mask
+    low = xl * yl
+    cross = xh * yl + xl * yh + (low >> 32)
+    return xh * yh + (cross >> 32), (cross << 32) | (low & mask)
+
+
+@njit(cache=True, fastmath=False)
+def _norm_above_midpoint(a, b, lower):
+    """Would nearest-even rounding of hypot(a,b) select the float above lower?"""
+    # lower and its successor have midpoint M * 2**unit, exactly. Since
+    # lower approximates the norm and a is the larger component, a is at
+    # most one binade smaller: A = a / 2**unit is also an exact integer.
+    f, exponent = math.frexp(lower)
+    significand = int(math.ldexp(f, 53))
+    unit = exponent - 54
+    m = 2 * significand + 1
+    ai = int(math.ldexp(a, -unit))
+    if ai >= m:
+        return ai > m or b > 0 or significand % 2 == 1
+    # Compare b² to (midpoint-a)*(midpoint+a), with no floating subtraction.
+    rh, rl = _wide_product(m - ai, m + ai)
+    bf, be = math.frexp(b)
+    bi = int(math.ldexp(bf, 53))
+    lh, ll = _wide_product(bi, bi)
+    # Express b² in midpoint units. At most b has fractional bits in these
+    # units; retain a sticky bit when shifting right for an exact comparison.
+    shift = 2 * (be - 53 - unit)
+    sticky = False
+    if shift > 0:  # b <= a, so at most a few bits; product still fits.
+        lh, ll = (lh << shift) | (ll >> (64 - shift)), ll << shift
+    elif shift < 0:
+        bits = -shift
+        if bits >= 128:
+            return False  # positive integer RHS; scaled b² is less than one
+        if bits >= 64:
+            sticky = ll != 0
+            ll, lh = lh, np.uint64(0)
+            bits -= 64
+        if bits:
+            sticky = sticky or (ll << (64 - bits)) != 0
+            ll, lh = (ll >> bits) | (lh << (64 - bits)), lh >> bits
+    if lh != rh:
+        return lh > rh
+    if ll != rl:
+        return ll > rl
+    return sticky or significand % 2 == 1
 
 
 @njit(cache=True, fastmath=False)
 def _rounded_edge(dx, dy):
-    # libc hypot (used by Numba) and Python's compensated hypot can differ by
-    # one ulp, enough to change an integer edge at a half-unit boundary.
-    largest = max(abs(dx), abs(dy))
-    if largest < 0.25:
+    a, b = max(abs(dx), abs(dy)), min(abs(dx), abs(dy))
+    if a < 0.25:
         return 0.0
-    if largest > MAX_EXACT_INTEGER:
+    if a > MAX_EXACT_INTEGER:
         raise NumericalError("rounded edge exceeds the exact float64 integer range")
-    _, exponent = math.frexp(largest)
-    scale = math.ldexp(1.0, -exponent)
-    # Accumulate scaled squares with compensated products/sums, then correct
-    # the sqrt using its residual (the technique used by CPython math.hypot).
-    acc, products, additions = 1.0, 0.0, 0.0
-    for x in (dx * scale, dy * scale):
-        square = x*x
-        products += _square_error(x, square)
-        new = acc + square
-        additions += (acc - new) + square
-        acc = new
-    h = math.sqrt((acc - 1.0) + (products + additions))
-    square = h*h
-    new = acc - square
-    additions += (acc - new) - square
-    products -= _square_error(h, square)
-    residual = (new - 1.0) + (products + additions)
-    distance = (h + residual / (2.0*h)) / scale
+    # In this bounded range the dominant square is normal and neither square
+    # overflows. Rounding the squares, their sum and sqrt perturbs the norm by
+    # less than four ulps. Only near a decision boundary does that matter.
+    distance = math.sqrt(a*a + b*b)
+    upper = math.nextafter(distance, math.inf)
+    if b and abs(distance - math.floor(distance) - 0.5) <= 4 * (upper - distance):
+        while _norm_above_midpoint(a, b, distance):
+            distance = upper
+            upper = math.nextafter(distance, math.inf)
+        lower = math.nextafter(distance, 0.0)
+        while not _norm_above_midpoint(a, b, lower):
+            distance = lower
+            lower = math.nextafter(distance, 0.0)
+    elif not b:
+        distance = a
     if distance > MAX_EXACT_INTEGER:
         raise NumericalError("rounded edge exceeds the exact float64 integer range")
     whole = math.floor(distance)
