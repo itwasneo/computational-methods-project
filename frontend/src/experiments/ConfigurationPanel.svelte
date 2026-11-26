@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { configurationDraftStore } from '../drafts';
+  import { configurationDraftStore, draftStartOverride } from '../drafts';
   import type { ExperimentController, ExperimentState } from './controller';
   import type { ScientificConfiguration, DistanceMode } from '../contracts';
   import OperationStatus from '../components/OperationStatus.svelte';
@@ -37,8 +37,21 @@
       ).filter((id): id is string => typeof id === 'string' && initialChoices.includes(id)),
     ),
     modes = $state<DistanceMode[]>(saved?.modes ?? ['dense', 'on_demand']);
-  let starts = $state(saved?.starts ?? '0,1,2,3,4,5,6,7'),
-    repetitions = $state(saved?.repetitions ?? 5),
+  let startOverride = $state<string | null>(draftStartOverride(saved));
+  let starts = $derived(
+    startOverride ??
+      Array.from(
+        {
+          length: Math.min(
+            8,
+            view.snapshot?.instance.n_cities ?? 0,
+            view.capabilities?.limits.max_logical_searches ?? 8,
+          ),
+        },
+        (_, i) => i,
+      ).join(','),
+  );
+  let repetitions = $state(saved?.repetitions ?? 5),
     solverSeed = $state(saved?.solverSeed ?? '123');
   let timed = $state(saved?.timed ?? false),
     seconds = $state(saved?.seconds ?? 1),
@@ -49,14 +62,17 @@
     original = $state.raw<ScientificConfiguration | null>(saved?.original ?? null),
     originalSnapshot = $state(saved?.originalSnapshot ?? '');
   function saveDraft() {
+    const previous = store.read();
+    const nn = algorithm === 'nn' ? startOverride : draftStartOverride(previous);
     store.save({
       algorithm,
-      ga: algorithm === 'ga' ? ga : undefined,
+      ga: algorithm === 'ga' ? ga : previous?.ga,
       backend,
       threads,
       implementations,
       modes,
-      starts: algorithm === 'nn' ? starts : '',
+      starts: nn ?? '',
+      startsMode: nn === null ? 'auto' : 'explicit',
       repetitions,
       solverSeed,
       timed,
@@ -130,7 +146,7 @@
       ga = restoreGa(configuration);
     } else {
       algorithm = 'nn';
-      starts = (configuration.budget.start_cities as number[]).join(',');
+      startOverride = (configuration.budget.start_cities as number[]).join(',');
     }
     repetitions = configuration.repetitions.length;
     solverSeed = configuration.solver_seed;
@@ -291,7 +307,11 @@
         </div>
         {#if algorithm === 'nn'}<label>
             Ordered start cities
-            <input bind:value={starts} aria-describedby="starts-help" />
+            <input
+              value={starts}
+              oninput={(e) => (startOverride = e.currentTarget.value)}
+              aria-describedby="starts-help"
+            />
           </label>{:else}
           <label>
             Ordered population IDs <input
