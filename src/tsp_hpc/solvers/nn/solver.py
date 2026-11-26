@@ -1,6 +1,6 @@
 """Serial fixed-set nearest-neighbour baseline, nn-fixed-starts-v1.
 
-Only unrounded Euclidean instances are supported. Time/history are explicit;
+Use the input's declared Euclidean edge rule. Time/history are explicit;
 random starts, persistence and parallel execution are never added implicitly.
 """
 
@@ -34,7 +34,7 @@ def solver_specs():
     """Explicit adapter registrations; constructing them does not warm kernels."""
     from tsp_hpc.solvers.registry import SolverSpec
     return tuple(SolverSpec("nn", name, partial(NearestNeighbourSolver, implementation=name), "batch",
-                            supports_time=True, supports_history=True)
+                            supports_time=True, supports_history=True, distance_kinds=("euclidean_2d", "tsplib_euc_2d"))
                  for name in implementation_names())
 
 
@@ -66,15 +66,13 @@ def warmup_nearest_neighbour(*, implementation: str = DEFAULT_IMPLEMENTATION) ->
     matrix.flags.writeable = False
     starts = np.array([0, 1], dtype=np.int64)
     for use_dense in (False, True):
-        kernel(coordinates, matrix, use_dense, starts)
+        kernel(coordinates, matrix, use_dense, starts, False)
     verify_dispatchers((kernel,))
 
 
 def _request(instance, seed, budget, parameters, record_history, history_policy):
     if not isinstance(instance, TSPInstance):
         raise TypeError("instance must be a TSPInstance")
-    if instance.distance_kind != "euclidean_2d":
-        raise ValueError("NN supports only unrounded euclidean_2d instances")
     validate_coordinates(instance.coordinates)
     validate_seed(seed)
     policy = normalize_history(record_history, history_policy)
@@ -97,7 +95,7 @@ def _run(prepared, starts, kernel, budget, record_history, policy) -> SolverResu
     if "time_limit_s" not in budget and not record_history:
         # Preserve the original fixed-work kernel call and workspace allocation.
         start = perf_counter()
-        tour, cost, completed = kernel(prepared.coordinates, prepared.matrix, prepared.use_dense, starts)
+        tour, cost, completed = kernel(prepared.coordinates, prepared.matrix, prepared.use_dense, starts, prepared.rounded)
         search_time = perf_counter() - start
         work = WorkCounters(nn_starts_completed=completed, full_tour_evaluations=completed)
     else:
@@ -110,7 +108,7 @@ def _run(prepared, starts, kernel, budget, record_history, policy) -> SolverResu
             if reason is not None:
                 break
             candidate, candidate_cost, _ = kernel(
-                prepared.coordinates, prepared.matrix, prepared.use_dense, starts[index:index + 1])
+                prepared.coordinates, prepared.matrix, prepared.use_dense, starts[index:index + 1], prepared.rounded)
             if cost is None or candidate_cost < cost:
                 tour, cost = candidate, candidate_cost
             work = WorkCounters(nn_starts_completed=index + 1, full_tour_evaluations=index + 1)

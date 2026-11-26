@@ -184,7 +184,8 @@ def _execution(record, search, requested, search_id):
             raise ValueError("effective execution changes the requested configuration")
         if record["execution_id"] != stable_id("execution", {"search_id": search_id, "execution": effective}):
             raise ValueError("effective execution identity mismatch")
-        if (record["schema_version"] < 3 and search["algorithm"] != "nn") or (record["schema_version"] < 3 and effective["backend"] != "serial") or search["instance"]["distance_kind"] != "euclidean_2d":
+        if record["schema_version"] < 3 and (search["algorithm"] != "nn" or effective["backend"] != "serial"
+                                             or search["instance"]["distance_kind"] != "euclidean_2d"):
             raise ValueError("unsupported effective runner capability")
         if record.get("logical_results") and record["outcome"] != "completed":
             _resource_observation(record, search, effective)
@@ -352,6 +353,9 @@ def _logical_results(record, plan):
     tour = value["best_tour"]
     if tour is not None and (type(tour) is not list or any(type(city) is not int for city in tour)):
         raise ValueError("invalid aggregate tour")
+    if value['best_cost'] is not None and plan.search['instance']['distance_kind'] == 'tsplib_euc_2d':
+        from tsp_hpc.problem.objective import rounded_integer_cost
+        rounded_integer_cost(value['best_cost'])
     normalized = {**value, "best_cost": None if value["best_cost"] is None else require_number(value["best_cost"])}
     if canonical_json(normalized) != canonical_json(expected):
         raise ValueError("aggregate result disagrees with logical-order reduction")

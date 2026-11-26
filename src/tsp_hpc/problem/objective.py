@@ -22,11 +22,11 @@ class NumericalError(ArithmeticError):
     """A derived distance or total is outside the supported numerical range."""
 
 
-def rounded_reference_cost(value: object) -> int:
-    """Validate a declared rounded total before converting large JSON ints to float."""
+def rounded_integer_cost(value: object) -> int:
+    """Validate a rounded total before converting large JSON ints to float."""
     if (type(value) not in (int, float) or not 0 <= value <= MAX_EXACT_INTEGER
             or value != int(value)):
-        raise ValueError("rounded reference cost must be an exactly representable non-negative integer")
+        raise ValueError("rounded cost must be an exactly representable non-negative integer")
     return int(value)
 
 

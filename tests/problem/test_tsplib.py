@@ -11,7 +11,7 @@ from tsp_hpc.cli import main
 from tsp_hpc.problem.exact import exact_reference
 from tsp_hpc.problem.instances import instance_from_json, load_instance
 from tsp_hpc.problem.objective import edge_cost, tour_cost
-from tsp_hpc.problem.tsplib import MAX_SOURCE_BYTES, load_tsplib, tsplib_reference
+from tsp_hpc.problem.tsplib import MAX_SOURCE_BYTES, load_tsplib, load_tsplib_tour, tsplib_reference
 
 FIXTURE = Path(__file__).resolve().parents[2] / 'examples/instances/half-unit.tsp'
 
@@ -38,8 +38,28 @@ def test_cli_import_roundtrip_keeps_original_hash_and_per_edge_half_up_cost(tmp_
 @pytest.mark.parametrize('mode', ['dense', 'on_demand'])
 def test_import_is_never_silently_run_with_unrounded_native_distances(mode):
     from tsp_hpc.problem.distances import prepare_distances
-    with pytest.raises(ValueError, match='unrounded'):
-        prepare_distances(load_tsplib(FIXTURE).instance, mode=mode)
+    prepared = prepare_distances(load_tsplib(FIXTURE).instance, mode=mode)
+    assert prepared.metadata['distance_kind'] == 'tsplib_euc_2d'
+    assert prepared.tour_cost(np.arange(3, dtype=np.int64)) == 3
+
+
+def test_published_route_maps_ids_and_closes_only_once():
+    record = load_tsplib(FIXTURE)
+    tour = load_tsplib_tour(FIXTURE.with_suffix('.opt.tour'), record)
+    assert tour.tolist() == [2, 0, 1] and tour_cost(record.instance, tour) == 3
+
+
+@pytest.mark.parametrize('old,new', [
+    ('TYPE: TOUR', 'TYPE: TSP'), ('half-unit.opt.tour', 'other.opt.tour'),
+    ('DIMENSION: 3', 'DIMENSION: 4'), ('3 1 2', '1 1 2'), ('3 1 2', '0 1 2'),
+    ('3 1 2', '4 1 2'), ('3 1 2', '1 2'), ('3 1 2', '3 1 2 3'),
+    ('-1', ''), ('-1', '-1 1'), ('EOF', 'EOF\nDATA'),
+])
+def test_tour_parser_rejects_mismatched_or_incomplete_routes(tmp_path, old, new):
+    path = tmp_path / 'input.tour'
+    path.write_text(FIXTURE.with_suffix('.opt.tour').read_text().replace(old, new))
+    with pytest.raises(ValueError):
+        load_tsplib_tour(path, load_tsplib(FIXTURE))
 
 
 def test_formatting_and_coordinate_row_order_only_change_source_identity(tmp_path):

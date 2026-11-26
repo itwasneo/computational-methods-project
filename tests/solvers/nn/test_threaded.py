@@ -63,10 +63,10 @@ def test_completion_order_is_not_the_tie_breaker(monkeypatch):
     instance = fixture("coincident").instance
     adapter = ThreadedNearestNeighbourSolver(prepare_distances(instance, mode="on_demand"), min(2, available_threads()))
     native = module.chunk_kernel
-    def delayed(coordinates, matrix, dense, starts):
+    def delayed(coordinates, matrix, dense, starts, rounded):
         if starts[0] == 3:
             time.sleep(.03)
-        return native(coordinates, matrix, dense, starts)
+        return native(coordinates, matrix, dense, starts, rounded)
     monkeypatch.setattr(module, "chunk_kernel", delayed)
     result = adapter.solve(instance, seed=0, parameters={}, budget={"start_cities": [3, 2, 1, 0]})
     assert result.best_tour.tolist() == [3, 0, 1, 2]

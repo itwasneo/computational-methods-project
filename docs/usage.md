@@ -456,8 +456,9 @@ can overflow a total; [numerical failures](contracts.md#distance-conventions-and
 propagate rather than becoming partial usable solutions.
 
 Compiled callers pass primitive arrays/scalars to `distance_tour_kernel(coordinates,
-matrix, use_dense, tour)`, `distance_edge_kernel(..., a, b)` or
-`coordinate_edge_kernel(coordinates, a, b)`. Kernels trust canonical finite arrays,
+matrix, use_dense, tour, prepared.rounded)`, `distance_edge_kernel(..., a, b, prepared.rounded)` or
+`coordinate_edge_kernel(coordinates, a, b, prepared.rounded)`. Omission of the final flag is
+only for existing unrounded callers; always pass it when consuming a prepared instance. Kernels trust canonical finite arrays,
 valid indices/permutations and the prepared matrix/flag pairing, not arbitrary weights.
 Validate at the Python boundary; retain numerical guards and `fastmath=False`.
 Keep complete construction/operator loops compiled instead of dispatching each proposal

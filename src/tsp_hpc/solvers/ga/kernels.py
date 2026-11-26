@@ -7,10 +7,10 @@ from tsp_hpc.solvers.ga.operators import copy_elites, initialize_tour, make_offs
 
 
 @njit(cache=True, fastmath=False)
-def initialize_candidate(coordinates, matrix, use_dense, tour, best, best_cost, rng):
+def initialize_candidate(coordinates, matrix, use_dense, rounded, tour, best, best_cost, rng):
     """Initialize and evaluate one slot, a safe deadline checkpoint."""
     initialize_tour(tour, rng)
-    cost = distance_tour_kernel(coordinates, matrix, use_dense, tour)
+    cost = distance_tour_kernel(coordinates, matrix, use_dense, tour, rounded)
     if cost < best_cost:
         best[:] = tour
         best_cost = cost
@@ -18,7 +18,7 @@ def initialize_candidate(coordinates, matrix, use_dense, tour, best, best_cost, 
 
 
 @njit(cache=True, fastmath=False)
-def advance_generation(coordinates, matrix, use_dense, population, costs, next_population,
+def advance_generation(coordinates, matrix, use_dense, rounded, population, costs, next_population,
                        next_costs, tournament_size, elite_count, crossover_probability,
                        mutation_probability, copied, best, best_cost, rng):
     """Fill the next population atomically, retaining the earliest equal-cost best."""
@@ -27,7 +27,7 @@ def advance_generation(coordinates, matrix, use_dense, population, costs, next_p
         child = next_population[slot]
         make_offspring(population, costs, tournament_size, crossover_probability,
                        mutation_probability, child, copied, rng)
-        cost = distance_tour_kernel(coordinates, matrix, use_dense, child)
+        cost = distance_tour_kernel(coordinates, matrix, use_dense, child, rounded)
         next_costs[slot] = cost
         if cost < best_cost:
             best[:] = child

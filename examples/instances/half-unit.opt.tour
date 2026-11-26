@@ -1,0 +1,8 @@
+NAME: half-unit.opt.tour
+TYPE: TOUR
+COMMENT: Project-authored hand-checked cycle, not external benchmark data.
+DIMENSION: 3
+TOUR_SECTION
+3 1 2
+-1
+EOF
