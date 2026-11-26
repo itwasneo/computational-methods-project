@@ -70,8 +70,8 @@ intercept the API using shared DTO captures; they do not run workers or establis
 results. They cover failure recovery, shared authority/catalogs, drafts, navigation,
 renderer lifetime, keyboard behavior, responsive layout and axe checks. Set
 `TSP_UI_BROWSER=firefox` or `TSP_UI_BROWSER=webkit` to exercise another installed engine.
-CI installs each engine and its OS dependencies; Chromium additionally checks software-WebGL
-lifecycle. This does not replace manual screen-reader/zoom review or certify WCAG conformance.
+Relevant PRs use Chromium; manual full CI also installs Firefox and WebKit.
+Chromium additionally checks software-WebGL lifecycle. This does not replace manual screen-reader/zoom review or certify WCAG conformance.
 
 `tools/interface_schema.py` generates both `frontend/src/wire-schema.json` and
 `frontend/src/wire-types.ts` from Python DTOs. Regenerate after contract changes with
@@ -203,12 +203,20 @@ not certification of an arbitrary release or container.
 
 ## CI and repository hygiene
 
-[ci.yml](../.github/workflows/ci.yml) owns tool versions and commands. Its Python job
-runs the locked interface-enabled warnings-as-errors suite and distribution builds;
-its rendering-named job runs syntax, lint/format, frontend unit and Svelte/TypeScript checks
-and Vite build. A browser matrix exercises mounted UI interactions in Chromium, Firefox and
-WebKit. A separate browser-application job runs the real end-to-end acceptance
-suite. Captured payloads compile against Python/TypeScript contracts.
+[CI](../.github/workflows/ci.yml) runs on pull requests into `master`, not separately on
+branch pushes or after merge. `Python checks` always runs the locked warnings-as-errors
+suite and distribution builds. It also [classifies the merge diff](../.github/ci_scope.py)
+so no separate runner is needed to decide what to test.
+
+- Solver-only and docs-only PRs use just the Python job.
+- Frontend and shared contract edits add type, lint/format, unit and build checks. Changes
+  only to frontend unit tests or lint/formatter settings need no browser installation.
+- UI, API, launcher, worker, runner, registry or integration toolchain changes run Chromium
+  mounted interactions and a real browser/API/native-worker test suite. For UI edits these
+  share one runner with the frontend checks; Playwright is installed once.
+- Before a release or for a browser-specific change, use **Actions → CI → Run workflow**
+  (or `gh workflow run ci.yml --ref BRANCH`). This runs all checks, including mounted
+  interactions in Firefox and WebKit. Native end-to-end tests still run once, in Chromium.
 
 Actions are commit-pinned with read-only permissions and no persisted checkout
 credentials or cluster secrets. CI caches dependencies, not `.venv` or native JIT
