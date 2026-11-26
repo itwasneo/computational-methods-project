@@ -268,6 +268,23 @@ def test_references_are_objective_specific_and_exact_is_not_best_known(tmp_path,
         load_references(path)
 
 
+def test_rounded_reference_uses_integer_units_not_relative_tolerance(tmp_path, rows, example):
+    # Exercise gap arithmetic independently of solver support for this objective.
+    data = read_shards([save(tmp_path / 'runs.jsonl', rows)])
+    data.trials['distance_kind'] = 'tsplib_euc_2d'
+    data.trials['best_cost'] = float(2**40 - 1)
+    ref = reference(example[2], cost=2**40)
+    ref['references'][0]['distance_kind'] = 'tsplib_euc_2d'
+    with pytest.raises(ValueError, match='below'):
+        reference_gaps(data, ref)
+    ref['references'][0]['kind'] = 'best_known'
+    assert (reference_gaps(data, ref)['absolute_gap'] == -1).all()
+    for invalid in [2**53 + 1, 3.5]:
+        ref['references'][0]['cost'] = invalid
+        with pytest.raises(ValueError, match='rounded'):
+            reference_gaps(data, ref)
+
+
 def test_zero_reference_has_absolute_gap_not_division_by_zero(tmp_path, rows, example):
     data = read_shards([save(tmp_path / "runs.jsonl", rows)])
     # A declared best-known zero reference is deliberately not an exact certificate.

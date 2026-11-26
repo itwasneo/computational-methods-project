@@ -19,6 +19,7 @@ from tsp_hpc.analysis.validation import (
     require_text, require_uuid, trial_row, validate_summary,
 )
 from tsp_hpc.experiments.manifests import Manifest
+from tsp_hpc.problem.objective import rounded_reference_cost
 from tsp_hpc.reproducibility.identity import canonical_json
 
 MAX_RECORD_BYTES = 64 * 1024 * 1024
@@ -322,7 +323,8 @@ def reference_gaps(analysis: Analysis, document: dict) -> pd.DataFrame:
             raise ValueError("invalid reference kind or objective")
         if type(ref["coordinate_checksum"]) is not str or re.fullmatch(r"[0-9a-f]{64}", ref["coordinate_checksum"]) is None:
             raise ValueError("invalid reference checksum")
-        ref = {**ref, "cost": require_number(ref["cost"])}
+        validate_cost = rounded_reference_cost if ref["distance_kind"] == "tsplib_euc_2d" else require_number
+        ref = {**ref, "cost": validate_cost(ref["cost"])}
         if ref["instance_id"] in references:
             raise ValueError("duplicate reference for instance")
         references[ref["instance_id"]] = ref
@@ -341,7 +343,8 @@ def reference_gaps(analysis: Analysis, document: dict) -> pd.DataFrame:
         if not row["usable"]:
             continue
         gap = row["best_cost"] - ref["cost"]
-        if ref["kind"] == "exact" and gap < -(1e-12 + 1e-10 * abs(ref["cost"])):
+        tolerance = 0 if ref["distance_kind"] == "tsplib_euc_2d" else 1e-12 + 1e-10 * abs(ref["cost"])
+        if ref["kind"] == "exact" and gap < -tolerance:
             raise ValueError("reported solution is below the declared exact optimum")
         percent = None if ref["cost"] == 0 else 100.0 * (gap / ref["cost"])
         if percent is not None and not math.isfinite(percent):

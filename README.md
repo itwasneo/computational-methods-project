@@ -45,6 +45,7 @@ For Python, see [NN](docs/usage.md#run-nearest-neighbour) and [serial GA](docs/u
 
 | Reference | Contents |
 | --- | --- |
+| [TSPLIB coordinate import](docs/tsplib.md) | Offline symmetric EUC_2D artifacts and objective-specific reference costs (not native solver execution) |
 | [Usage](docs/usage.md) | CLI workflow, analysis, records/provenance and Python APIs |
 | [Shared contracts](docs/contracts.md) | Data, objective, results, validation and fair comparisons |
 | [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA rules, operators, budgets and checkpoints |

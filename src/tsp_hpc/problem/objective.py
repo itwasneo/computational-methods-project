@@ -22,6 +22,14 @@ class NumericalError(ArithmeticError):
     """A derived distance or total is outside the supported numerical range."""
 
 
+def rounded_reference_cost(value: object) -> int:
+    """Validate a declared rounded total before converting large JSON ints to float."""
+    if (type(value) not in (int, float) or not 0 <= value <= MAX_EXACT_INTEGER
+            or value != int(value)):
+        raise ValueError("rounded reference cost must be an exactly representable non-negative integer")
+    return int(value)
+
+
 def _require_instance(instance: TSPInstance) -> None:
     if not isinstance(instance, TSPInstance):
         raise TypeError("instance must be a TSPInstance")
