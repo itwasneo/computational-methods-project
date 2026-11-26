@@ -29,7 +29,7 @@ For cities `i` and `j`, let `r = hypot(x[i] - x[j], y[i] - y[j])`, evaluated in 
 | `euclidean_2d` | `r`, without rounding; the default for generated instances |
 | `tsplib_euc_2d` | `floor(r + 0.5)`, applied to **each edge**, not to the completed tour; TSPLIB `EUC_2D` reference compatibility |
 
-Do not use ties-to-even rounding for `EUC_2D`. Interpret `floor(r + 0.5)` as mathematical half-up rounding of the computed `r`; avoid premature floating-point rounding of the intermediate addition at half-integer or large-integer boundaries. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. Declaring this convention does not imply a TSPLIB importer or support for arbitrary TSPLIB formats.
+Do not use ties-to-even rounding for `EUC_2D`. Interpret `floor(r + 0.5)` as mathematical half-up rounding of the computed `r`; avoid premature floating-point rounding of the intermediate addition at half-integer or large-integer boundaries. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. The [offline TSPLIB importer](tsplib.md) accepts a limited coordinate subset only; this does not enable rounded native solver execution.
 
 The runner may prepare either:
 

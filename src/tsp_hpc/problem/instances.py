@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import platform
+import re
 
 import numpy as np
 
@@ -59,6 +60,14 @@ def _object(value: object, keys: set[str], name: str) -> dict:
 
 
 def _parameters(generator: str, value: object) -> dict:
+    if generator == "tsplib-euc-2d-v1":
+        item = _object(value, {"name", "source_sha256", "n_cities"}, "TSPLIB import parameters")
+        if type(item["name"]) is not str or not re.fullmatch(r"[!-~](?:[ -~]{0,126}[!-~])?", item["name"]):
+            raise ValueError("invalid TSPLIB NAME")
+        if type(item["source_sha256"]) is not str or not re.fullmatch(r"[0-9a-f]{64}", item["source_sha256"]):
+            raise ValueError("invalid TSPLIB source SHA-256")
+        _integer(item["n_cities"], 2, "n_cities")
+        return dict(item)
     if generator == "fixture-v1":
         item = _object(value, {"name"}, "fixture parameters")
         if type(item["name"]) is not str or item["name"] not in _FIXTURES:
@@ -90,9 +99,9 @@ def _provenance(value: object) -> dict:
     if type(generator) is not str:
         raise TypeError("generator must be a string")
     parameters = _parameters(generator, item["parameters"])
-    if generator == "fixture-v1":
+    if generator in ("fixture-v1", "tsplib-euc-2d-v1"):
         if item["seed"] is not None or item["bit_generator"] is not None:
-            raise ValueError("deterministic fixtures have no RNG seed or bit generator")
+            raise ValueError("deterministic fixtures and imports have no RNG seed or bit generator")
     else:
         validate_seed(item["seed"])
         if item["bit_generator"] != BIT_GENERATOR:
@@ -139,6 +148,8 @@ class InstanceRecord:
         actual_id = make_instance_id(self.instance.coordinates, self.instance.distance_kind)
         if self.instance.instance_id != actual_id:
             raise ValueError("instance ID does not match its coordinate content")
+        if provenance["generator"] == "tsplib-euc-2d-v1" and self.instance.distance_kind != "tsplib_euc_2d":
+            raise ValueError("imported EUC_2D coordinates require the rounded TSPLIB objective")
         if provenance["generator"] == "fixture-v1":
             expected = np.array(_FIXTURES[parameters["name"]], dtype=np.float64)
             if actual_id != make_instance_id(expected, self.instance.distance_kind):

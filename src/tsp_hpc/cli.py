@@ -17,6 +17,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command")
+    tsplib = commands.add_parser("import-tsplib", help="convert a local TSPLIB EUC_2D coordinate file to a rounded instance artifact")
+    tsplib.add_argument("input", help="local .tsp file; no downloads")
+    tsplib.add_argument("--output", required=True, help="new canonical instance JSON path")
     run = commands.add_parser("run", help="execute a sequential manifest campaign")
     run.add_argument("manifest", help="manifest JSON path")
     run.add_argument("--instance", action="append", default=[], metavar="ID=PATH",
@@ -60,6 +63,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                                    enable_execution=args.enable_execution, execution_root=args.execution_root)
         except (InterfaceError, ValueError) as error:
             parser.exit(2, f"tsp-hpc: {error}\n")
+    if args.command == "import-tsplib":
+        from tsp_hpc.problem.instances import save_instance
+        from tsp_hpc.problem.tsplib import load_tsplib
+        try:
+            record = load_tsplib(args.input)
+            save_instance(record, args.output)
+        except (ValueError, OSError) as error:
+            parser.exit(2, f"tsp-hpc: {error}\\n")
+        print(f"{record.instance.instance_id} (tsplib_euc_2d); artifact: {args.output}")
+        return 0
     from tsp_hpc.experiments.manifests import Manifest
     if args.command == "analyze":
         try:
