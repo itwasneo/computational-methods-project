@@ -61,6 +61,32 @@ def test_api_ga_rerun_round_trips_time_only_ids_and_nonstandard_repetitions(ui):
     assert submitted() == {**config, 'budget': {'max_generations': 0}}
 
 
+@pytest.mark.parametrize('custom', ['2,0', ''])
+def test_nn_starts_default_fits_snapshot_and_explicit_work_survives_ga_reload(ui, custom):
+    page, api = ui
+    api.capabilities['implementations'].append({**api.capabilities['implementations'][0],
+        'algorithm': 'ga', 'implementation': 'serial-generational-v1',
+        'variant': 'ga-tournament-ox-swap-elitist-v1', 'logical_mode': 'independent'})
+    api.connect()
+    page.get_by_role('button', name='Generate instance', exact=True).click()
+    starts = page.get_by_label('Ordered start cities')
+    expect(starts).to_have_value('0,1,2,3')
+    review = page.get_by_role('button', name='Review experiment', exact=True)
+    run = page.get_by_role('button', name='Run reviewed experiment')
+    review.click(); expect(run).to_be_enabled()
+    starts.fill(custom); expect(run).to_have_count(0)
+    algorithm = page.get_by_role('combobox', name='Algorithm', exact=True)
+    algorithm.select_option('ga')
+    page.reload(); api.connect()
+    page.get_by_role('button', name='Restore saved input snapshot').click()
+    expect(algorithm).to_have_value('ga')
+    algorithm.select_option('nn')
+    expect(starts).to_have_value(custom)
+    expect(run).to_have_count(0)
+    review.click(); expect(run).to_be_enabled()
+    assert api.preflight['configuration']['budget']['start_cities'] == ([2, 0] if custom else [])
+
+
 def test_unsupported_sa_job_never_authorizes_an_unrepresentable_review(ui):
     page, api = ui
     api.connect(); api.prepare_review(); api.select_job()

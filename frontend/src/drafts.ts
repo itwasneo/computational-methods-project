@@ -11,6 +11,7 @@ export interface ConfigurationDraft {
   implementations: string[];
   modes: DistanceMode[];
   starts: string;
+  startsMode?: 'auto' | 'explicit';
   repetitions: number;
   solverSeed: string;
   timed: boolean;
@@ -42,9 +43,12 @@ export function isConfigurationDraft(value: unknown): value is ConfigurationDraf
   const draft = value as Record<string, unknown>;
   return (
     Object.keys(draft)
-      .filter((key) => !['backend', 'threads', 'algorithm', 'ga'].includes(key))
+      .filter((key) => !['backend', 'threads', 'algorithm', 'ga', 'startsMode'].includes(key))
       .sort()
       .join(',') === fields.join(',') &&
+    (draft.startsMode === undefined ||
+      draft.startsMode === 'auto' ||
+      draft.startsMode === 'explicit') &&
     (draft.algorithm === undefined || draft.algorithm === 'nn' || draft.algorithm === 'ga') &&
     (draft.ga === undefined || validGaFields(draft.ga)) &&
     (draft.algorithm !== 'ga' || (draft.ga !== undefined && draft.backend === 'serial')) &&
@@ -83,6 +87,17 @@ export function isConfigurationDraft(value: unknown): value is ConfigurationDraf
       (typeof draft.snapshot === 'string' && draft.snapshot.length <= 128))
   );
 }
+/** Old GA drafts used '' as an inactive placeholder; legacy NN lists are explicit. */
+export function draftStartOverride(draft: ConfigurationDraft | null): string | null {
+  if (
+    !draft ||
+    draft.startsMode === 'auto' ||
+    (draft.startsMode === undefined && draft.algorithm === 'ga' && draft.starts === '')
+  )
+    return null;
+  return draft.starts;
+}
+
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem'>;
 function browserStorage(): DraftStorage | null {
   try {
