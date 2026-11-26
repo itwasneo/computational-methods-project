@@ -8,7 +8,7 @@ import re
 import numpy as np
 
 from tsp_hpc.problem.instances import InstanceRecord, _record
-from tsp_hpc.problem.objective import rounded_reference_cost
+from tsp_hpc.problem.objective import rounded_integer_cost
 
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_CITIES = 4096
@@ -19,12 +19,8 @@ _OPTIONAL = {"NODE_COORD_TYPE": {"TWOD_COORDS"}, "EDGE_WEIGHT_FORMAT": {"FUNCTIO
              "DISPLAY_DATA_TYPE": {"COORD_DISPLAY", "NO_DISPLAY"}}
 
 
-def load_tsplib(path: str | Path) -> InstanceRecord:
-    """Read a local ASCII .tsp, retaining original byte hash and node-ID ordering.
-
-    No fetching, decompression, matrix construction, or inference of a reference cost.
-    Source node ID k maps to canonical city index k-1 regardless of row order.
-    """
+def _read_section(path, section, required, optional):
+    """Share byte bounds, header validation and section boundary for both local formats."""
     with Path(path).open('rb') as stream:
         raw = stream.read(MAX_SOURCE_BYTES + 1)
     if len(raw) > MAX_SOURCE_BYTES:
@@ -35,23 +31,29 @@ def load_tsplib(path: str | Path) -> InstanceRecord:
         line = text.strip()
         if not line:
             continue
-        if line == 'NODE_COORD_SECTION':
+        if line == section:
             break
         key, sep, value = line.partition(':')
         key, value = key.strip(), value.strip()
         if key == 'COMMENT' and sep:
             continue
-        if not sep or (key not in _REQUIRED and key not in _OPTIONAL):
+        if not sep or (key not in required and key not in optional):
             raise ValueError(f"unsupported TSPLIB header or section at line {number}")
         if key in headers or not value:
             raise ValueError(f"duplicate or empty TSPLIB {key} header")
-        if key in _OPTIONAL and value not in _OPTIONAL[key]:
+        if key in optional and value not in optional[key]:
             raise ValueError(f"unsupported TSPLIB {key}: {value}")
         headers[key] = value
     else:
-        raise ValueError("missing TSPLIB NODE_COORD_SECTION")
-    if not _REQUIRED.issubset(headers):
-        raise ValueError("missing required TSPLIB header(s): " + ', '.join(sorted(_REQUIRED - headers.keys())))
+        raise ValueError(f"missing TSPLIB {section}")
+    if not required.issubset(headers):
+        raise ValueError("missing required TSPLIB header(s): " + ', '.join(sorted(required - headers.keys())))
+    return headers, lines, raw
+
+
+def load_tsplib(path: str | Path) -> InstanceRecord:
+    """Read a local ASCII .tsp. Source node k maps to city k-1 regardless of row order."""
+    headers, lines, raw = _read_section(path, 'NODE_COORD_SECTION', _REQUIRED, _OPTIONAL)
     if headers['TYPE'] != 'TSP' or headers['EDGE_WEIGHT_TYPE'] != 'EUC_2D':
         raise ValueError("only symmetric TYPE: TSP with EDGE_WEIGHT_TYPE: EUC_2D is supported")
     dimension = headers['DIMENSION']
@@ -89,6 +91,37 @@ def load_tsplib(path: str | Path) -> InstanceRecord:
         'name': headers['NAME'], 'source_sha256': hashlib.sha256(raw).hexdigest(), 'n_cities': n}, None)
 
 
+def load_tsplib_tour(path: str | Path, record: InstanceRecord) -> np.ndarray:
+    """Read a single matching TYPE: TOUR (.opt.tour); this does not prove optimality."""
+    if not isinstance(record, InstanceRecord) or record.provenance['generator'] != 'tsplib-euc-2d-v1':
+        raise ValueError('a TSPLIB EUC_2D import is required')
+    headers, lines, _ = _read_section(path, 'TOUR_SECTION', {'TYPE', 'NAME', 'DIMENSION'}, {})
+    n = record.instance.n_cities
+    name = record.provenance['parameters']['name']
+    if (headers['TYPE'] != 'TOUR' or headers['DIMENSION'] != str(n)
+            or headers['NAME'] not in (name, name + '.tour', name + '.opt.tour')):
+        raise ValueError('TSPLIB tour type/name/dimension does not match instance')
+    cities, seen = [], set()
+    terminated = eof = False
+    for _, text in lines:
+        for token in text.split():
+            if terminated and not eof and token == 'EOF':
+                eof = True
+                continue
+            if terminated:
+                raise ValueError('unexpected content after TSPLIB tour terminator')
+            if token == '-1':
+                terminated = True
+                continue
+            if not _INTEGER.fullmatch(token) or not 1 <= int(token) <= n or int(token) in seen:
+                raise ValueError('invalid, duplicate or out-of-range TSPLIB tour node')
+            seen.add(int(token))
+            cities.append(int(token) - 1)
+    if not terminated or len(cities) != n:
+        raise ValueError('expected one complete TSPLIB tour followed by -1')
+    return np.array(cities, dtype=np.int64)
+
+
 def tsplib_reference(record: InstanceRecord, *, cost: int, kind: str, source: str) -> dict:
     """Bind an explicitly sourced reference declaration, never promote a feasible tour."""
     if not isinstance(record, InstanceRecord) or record.provenance['generator'] != 'tsplib-euc-2d-v1':
@@ -97,4 +130,4 @@ def tsplib_reference(record: InstanceRecord, *, cost: int, kind: str, source: st
         raise ValueError("declare exact or best_known and cite the reference source")
     descriptor = record.descriptor
     return {**{k: descriptor[k] for k in ('instance_id', 'coordinate_checksum', 'distance_kind')},
-            'cost': rounded_reference_cost(cost), 'kind': kind, 'source': source}
+            'cost': rounded_integer_cost(cost), 'kind': kind, 'source': source}

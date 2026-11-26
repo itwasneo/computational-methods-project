@@ -149,9 +149,9 @@ def test_selected_kernel_is_warmed_and_executed(monkeypatch):
     calls = []
     phase = "warmup"
     original = nn._resolve_implementation
-    def observed_kernel(coordinates, matrix, use_dense, starts):
+    def observed_kernel(coordinates, matrix, use_dense, starts, rounded):
         calls.append(phase)
-        return nn._search_kernel(coordinates, matrix, use_dense, starts)
+        return nn._search_kernel(coordinates, matrix, use_dense, starts, rounded)
     def resolve(name):
         return observed_kernel if name == "test-only" else original(name)
     monkeypatch.setattr(nn, "_resolve_implementation", resolve)
@@ -234,11 +234,12 @@ def test_invalid_requests_fail_before_preparation(changes, error, monkeypatch):
         nn.solve(fixture("square").instance, **arguments)
 
 
-def test_invalid_instance_and_rounded_convention_even_for_empty_work():
-    for instance, error in ((None, TypeError),
-                            (fixture("square", distance_kind="tsplib_euc_2d").instance, ValueError)):
-        with pytest.raises(error):
-            nn.solve(instance, seed=0, budget={"start_cities": []}, parameters={})
+def test_instance_validation_even_for_empty_work():
+    with pytest.raises(TypeError):
+        nn.solve(None, seed=0, budget={"start_cities": []}, parameters={})
+    result = nn.solve(fixture('square', distance_kind='tsplib_euc_2d').instance,
+                      seed=0, budget={'start_cities': []}, parameters={})
+    assert result.status == 'no_solution'
     with pytest.raises(TypeError):
         nn.NearestNeighbourSolver(None)
 

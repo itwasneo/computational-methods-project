@@ -23,8 +23,8 @@ IMPLEMENTATION = "visited-scan-threaded-v1"
 
 
 @njit(cache=True, fastmath=False, nogil=True)
-def chunk_kernel(coordinates, matrix, use_dense, starts):
-    return search_kernel(coordinates, matrix, use_dense, starts)
+def chunk_kernel(coordinates, matrix, use_dense, starts, rounded):
+    return search_kernel(coordinates, matrix, use_dense, starts, rounded)
 
 
 @dataclass(frozen=True, eq=False)
@@ -43,7 +43,7 @@ class ThreadedNearestNeighbourSolver:
         matrix = np.array([[0., 1.], [1., 0.]], dtype=np.float64)
         coordinates.flags.writeable = matrix.flags.writeable = False
         for dense in (False, True):
-            chunk_kernel(coordinates, matrix, dense, np.array([0, 1], dtype=np.int64))
+            chunk_kernel(coordinates, matrix, dense, np.array([0, 1], dtype=np.int64), self.prepared.rounded)
         verify_dispatchers(self.native_dispatchers)
         object.__setattr__(self, "solver_warmup_time_s", perf_counter() - start)
 
@@ -73,7 +73,7 @@ class ThreadedNearestNeighbourSolver:
                   for i in range(count)]
         prepared = self.prepared
         def run(chunk):
-            return chunk_kernel(prepared.coordinates, prepared.matrix, prepared.use_dense, chunk)
+            return chunk_kernel(prepared.coordinates, prepared.matrix, prepared.use_dense, chunk, prepared.rounded)
         with ThreadPoolExecutor(max_workers=self.threads, thread_name_prefix="tsp-nn") as pool:
             # map returns in logical chunk order, not completion order.
             results = list(pool.map(run, chunks))

@@ -35,7 +35,7 @@ def test_production_registry_exposes_real_solvers_and_detached_capabilities():
 
 @pytest.mark.parametrize("changes", [
     {"implementation": "missing"}, {"backend": "multicore"},
-    {"distance_kind": "tsplib_euc_2d"}, {"distance_mode": "auto"},
+    {"distance_kind": "geo"}, {"distance_mode": "auto"},
 ])
 def test_unavailable_capabilities_fail_explicitly(changes):
     with pytest.raises(ValueError):

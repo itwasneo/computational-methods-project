@@ -20,7 +20,7 @@ The artifact loader uses coordinate row order as city IDs; it accepts neither ex
 
 ### Distance conventions and representations
 
-**Execution scope:** unrounded `euclidean_2d`. Compiled distance preparation and solver execution reject `tsplib_euc_2d`; data, artifacts, manifests and the independent reference retain it for compatibility. Never reinterpret a rounded request or compare unrounded costs with integer-rounded benchmark optima.
+**Execution scope:** the registered NN and GA implementations support both `euclidean_2d` and `tsplib_euc_2d`, for dense and on-demand distances. Rounded edges govern candidate selection, fitness, histories and validation, not just reporting. Never reinterpret a rounded request or compare unrounded costs with integer-rounded benchmark optima.
 
 For cities `i` and `j`, let `r = hypot(x[i] - x[j], y[i] - y[j])`, evaluated in `float64`.
 
@@ -29,7 +29,7 @@ For cities `i` and `j`, let `r = hypot(x[i] - x[j], y[i] - y[j])`, evaluated in 
 | `euclidean_2d` | `r`, without rounding; the default for generated instances |
 | `tsplib_euc_2d` | `floor(r + 0.5)`, applied to **each edge**, not to the completed tour; TSPLIB `EUC_2D` reference compatibility |
 
-Do not use ties-to-even rounding for `EUC_2D`. Interpret `floor(r + 0.5)` as mathematical half-up rounding of the computed `r`; avoid premature floating-point rounding of the intermediate addition at half-integer or large-integer boundaries. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. The [offline TSPLIB importer](tsplib.md) accepts a limited coordinate subset only; this does not enable rounded native solver execution.
+Do not use ties-to-even rounding for `EUC_2D`. Interpret `floor(r + 0.5)` as mathematical half-up rounding of the computed `r`; avoid premature floating-point rounding of the intermediate addition at half-integer or large-integer boundaries. Both conventions have zero diagonal, symmetric non-negative edge costs, and `float64` storage and accumulation. The [offline TSPLIB importer](tsplib.md) accepts a limited coordinate subset only; native solvers consume the resulting rounded artifact, not the original text file.
 
 The runner may prepare either:
 

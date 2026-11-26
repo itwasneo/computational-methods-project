@@ -22,7 +22,7 @@ _DISPATCHERS = (initialize_candidate, advance_generation)
 
 def solver_spec():
     return SolverSpec("ga", DEFAULT_IMPLEMENTATION, GeneticAlgorithmSolver, "independent",
-                      supports_time=True, supports_history=True)
+                      supports_time=True, supports_history=True, distance_kinds=("euclidean_2d", "tsplib_euc_2d"))
 
 
 def _warmup():
@@ -43,8 +43,8 @@ def _warmup():
         best_cost = float("inf")
         for slot, tour in enumerate(population):
             costs[slot], best_cost = initialize_candidate(
-                coordinates, matrix, use_dense, tour, best, best_cost, rng)
-        advance_generation(coordinates, matrix, use_dense, population, costs, next_population,
+                coordinates, matrix, use_dense, False, tour, best, best_cost, rng)
+        advance_generation(coordinates, matrix, use_dense, False, population, costs, next_population,
                            next_costs, 2, 1, 1.0, 1.0, copied, best, best_cost, rng)
     verify_dispatchers(_DISPATCHERS)
 
@@ -59,7 +59,7 @@ def _search(prepared, seed, budget, parameters, control):
     size = parameters["population_size"]
     elites = parameters["elite_count"]
     generation_limit = budget.get("max_generations")
-    distances = prepared.coordinates, prepared.matrix, prepared.use_dense
+    distances = prepared.coordinates, prepared.matrix, prepared.use_dense, prepared.rounded
     rng = np.random.Generator(np.random.PCG64(seed))
     population = np.empty((size, n), dtype=np.int64)
     costs = np.empty(size, dtype=np.float64)

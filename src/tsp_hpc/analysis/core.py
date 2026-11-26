@@ -19,7 +19,7 @@ from tsp_hpc.analysis.validation import (
     require_text, require_uuid, trial_row, validate_summary,
 )
 from tsp_hpc.experiments.manifests import Manifest
-from tsp_hpc.problem.objective import rounded_reference_cost
+from tsp_hpc.problem.objective import rounded_integer_cost
 from tsp_hpc.reproducibility.identity import canonical_json
 
 MAX_RECORD_BYTES = 64 * 1024 * 1024
@@ -323,7 +323,7 @@ def reference_gaps(analysis: Analysis, document: dict) -> pd.DataFrame:
             raise ValueError("invalid reference kind or objective")
         if type(ref["coordinate_checksum"]) is not str or re.fullmatch(r"[0-9a-f]{64}", ref["coordinate_checksum"]) is None:
             raise ValueError("invalid reference checksum")
-        validate_cost = rounded_reference_cost if ref["distance_kind"] == "tsplib_euc_2d" else require_number
+        validate_cost = rounded_integer_cost if ref["distance_kind"] == "tsplib_euc_2d" else require_number
         ref = {**ref, "cost": validate_cost(ref["cost"])}
         if ref["instance_id"] in references:
             raise ValueError("duplicate reference for instance")

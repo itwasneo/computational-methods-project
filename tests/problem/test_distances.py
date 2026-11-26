@@ -1,8 +1,10 @@
 """Unrounded reference agreement, compiled callers, and explicit preparation."""
 
 from dataclasses import FrozenInstanceError
+from fractions import Fraction
 from itertools import permutations
 import math
+import random
 
 from numba import njit
 import numpy as np
@@ -19,6 +21,33 @@ from tsp_hpc.problem.instances import fixture, fixture_names, uniform_instance, 
 from tsp_hpc.problem.objective import COST_ATOL, COST_RTOL, NumericalError, edge_cost, tour_cost
 
 MODES = ("dense", "on_demand")
+
+
+def test_midpoint_decisions_against_exact_rational_squares():
+    # Exercise word carries, unequal exponents, subnormals and binade changes.
+    rng = random.Random(773)
+    for _ in range(512):
+        a = math.ldexp(rng.uniform(.5, 1), rng.randrange(0, 54))
+        b = math.ldexp(a*rng.random(), -rng.choice([0, 1, 16, 33, 65, 1074]))
+        h = math.hypot(a, b)
+        for lower in (h, math.nextafter(h, 0.)):
+            upper = math.nextafter(lower, math.inf)
+            midpoint = (Fraction(lower) + Fraction(upper)) / 2
+            diff = Fraction(a)**2 + Fraction(b)**2 - midpoint**2
+            assert module._norm_above_midpoint(a, b, lower) == (
+                diff > 0 or (diff == 0 and float(midpoint) == upper))
+
+
+def test_exact_pythagorean_midpoints_and_their_neighbors():
+    # Construct exact 3:4:5 triangles with hypotenuse halfway between two
+    # consecutive floats. Both parity choices and a one-ulp perturbation matter.
+    for odd in (2**53 + 3, 2**53 + 13):  # odd multiples of 5
+        lower = math.ldexp(odd // 2, -52)
+        a = math.ldexp(4 * (odd // 5), -53)
+        b = math.ldexp(3 * (odd // 5), -53)
+        assert not module._norm_above_midpoint(a, math.nextafter(b, 0.), lower)
+        assert module._norm_above_midpoint(a, b, lower) == bool((odd // 2) % 2)
+        assert module._norm_above_midpoint(a, math.nextafter(b, math.inf), lower)
 
 
 def problem(points):
@@ -67,14 +96,30 @@ def test_generated_edges_and_random_tours(builder):
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_rounded_instances_rejected_before_warmup_or_allocation(mode, monkeypatch):
-    instance = fixture("square", distance_kind="tsplib_euc_2d").instance
-    def fail(*args, **kwargs):
-        raise AssertionError("unsupported convention must fail before preparation")
-    monkeypatch.setattr(module, "warmup_distance_kernels", fail)
-    monkeypatch.setattr(module.np, "empty", fail)
-    with pytest.raises(ValueError, match="only unrounded euclidean_2d"):
-        prepare_distances(instance, mode=mode)
+def test_rounded_edge_boundaries_and_closure(mode):
+    points = [(0, 0), (np.nextafter(.5, 0), 0), (.5, 0), (np.nextafter(.5, 1), 0),
+              (5865.277089690506, 5153.210738088601), (1.5, 0), (0, 0)]
+    instance = TSPInstance('rounded', np.array(points), 'tsplib_euc_2d')
+    prepared = prepare_distances(instance, mode=mode)
+    for i in range(len(points)):
+        for j in range(len(points)):
+            assert prepared.edge_cost(i, j) == edge_cost(instance, i, j)
+    tour = np.arange(len(points), dtype=np.int64)
+    assert prepared.tour_cost(tour) == tour_cost(instance, tour)
+
+
+@pytest.mark.parametrize('mode', MODES)
+def test_rounded_cost_checks_before_integer_precision_loss(mode):
+    def instance(points):
+        return TSPInstance('large', np.array(points, dtype=np.float64), 'tsplib_euc_2d')
+    limit = instance([(0, 0), (2**52, 0)])
+    assert prepare_distances(limit, mode=mode).tour_cost(np.arange(2, dtype=np.int64)) == 2**53
+    too_long = instance([(0, 0), (2**52, 0), (0, 1)])
+    with pytest.raises(NumericalError, match='rounded tour total'):
+        prepare_distances(too_long, mode=mode).tour_cost(np.arange(3, dtype=np.int64))
+    too_far = instance([(0, 0), (1e300, 0)])
+    with pytest.raises(NumericalError, match='rounded edge'):
+        prepare_distances(too_far, mode=mode).edge_cost(0, 1)
 
 
 @pytest.mark.parametrize("mode", MODES)

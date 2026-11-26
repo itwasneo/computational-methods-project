@@ -15,7 +15,7 @@ from tsp_hpc.problem.objective import NumericalError
 
 
 @njit(cache=True, fastmath=False)
-def search_kernel(coordinates, matrix, use_dense, starts):
+def search_kernel(coordinates, matrix, use_dense, starts, rounded):
     """Scan all city IDs at every step, skipping visited cities before scoring."""
     if len(starts) == 0:
         return np.empty(0, dtype=np.int64), 0.0, 0
@@ -37,7 +37,7 @@ def search_kernel(coordinates, matrix, use_dense, starts):
             # Ascending city IDs plus strict improvement implement the tie rule.
             for city in range(n):
                 if not visited[city]:
-                    cost = distance_edge_kernel(coordinates, matrix, use_dense, current, city)
+                    cost = distance_edge_kernel(coordinates, matrix, use_dense, current, city, rounded)
                     if cost < nearest_cost:
                         nearest = city
                         nearest_cost = cost
@@ -46,7 +46,7 @@ def search_kernel(coordinates, matrix, use_dense, starts):
             candidate[position] = nearest
             visited[nearest] = True
             current = nearest
-        cost = distance_tour_kernel(coordinates, matrix, use_dense, candidate)
+        cost = distance_tour_kernel(coordinates, matrix, use_dense, candidate, rounded)
         if completed == 0 or cost < best_cost:
             best_cost = cost
             for city in range(n):

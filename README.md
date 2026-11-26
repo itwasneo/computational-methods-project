@@ -7,9 +7,9 @@ Simulated annealing (SA) can be planned in a manifest but has no registered solv
 **Research question:** How do implementation choices, memory behavior and parallel
 execution affect solution quality under limited computational budgets?
 
-The NumPy/Numba solvers use **unrounded Euclidean distance** (`euclidean_2d`) on complete
-symmetric 2D instances. Artifacts and [exact references](docs/exact-and-multicore.md#tiny-exact-reference)
-also support rounded `tsplib_euc_2d`. Compare costs only within the same convention.
+The NumPy/Numba solvers use the instance's declared objective: unrounded `euclidean_2d`
+for generated instances by default, or per-edge rounded `tsplib_euc_2d` for [imported
+benchmarks](docs/tsplib.md). Compare costs only within the same convention.
 The runner saves seeds, validated tours and phase timings; analysis flags failed, incomplete and duplicate attempts.
 
 ## Quick start
@@ -45,7 +45,7 @@ For Python, see [NN](docs/usage.md#run-nearest-neighbour) and [serial GA](docs/u
 
 | Reference | Contents |
 | --- | --- |
-| [TSPLIB coordinate import](docs/tsplib.md) | Offline symmetric EUC_2D artifacts and objective-specific reference costs (not native solver execution) |
+| [TSPLIB coordinate import](docs/tsplib.md) | Offline symmetric EUC_2D artifacts and objective-specific reference costs and native NN/GA benchmark checks |
 | [Usage](docs/usage.md) | CLI workflow, analysis, records/provenance and Python APIs |
 | [Shared contracts](docs/contracts.md) | Data, objective, results, validation and fair comparisons |
 | [Algorithm specifications](docs/algorithm-baselines.md) | NN/GA/SA rules, operators, budgets and checkpoints |

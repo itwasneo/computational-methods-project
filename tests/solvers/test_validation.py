@@ -51,6 +51,16 @@ def test_sa_checks_empty_neighborhood_and_precedence(proposals, full, limit, rea
           {"max_proposals": limit, "time_limit_s": 1}, reason, n=n, valid=valid)
 
 
+@pytest.mark.parametrize('wrong', [1.5, 2**53 + 1, True])
+def test_decode_rounded_incumbent_rejects_inexact_raw_json(wrong):
+    search = {'algorithm': 'nn', 'parameters': {}, 'budget': {'start_cities': [0]},
+              'instance': {'n_cities': 2, 'distance_kind': 'tsplib_euc_2d'}, 'record_history': False}
+    work = WorkCounters(full_tour_evaluations=1, nn_starts_completed=1)
+    value = encode_result(SolverResult('ok', np.arange(2, dtype=np.int64), 1., work, 'work_limit'))
+    with pytest.raises((TypeError, ValueError)):
+        decode_result({**value, 'best_cost': wrong}, search, search_time_s=1)
+
+
 def test_nn_actual_work_and_algorithm_counter_separation():
     check("nn", WorkCounters(nn_starts_completed=1, full_tour_evaluations=1),
           {"start_cities": [0, 1], "time_limit_s": 1}, "time_limit")

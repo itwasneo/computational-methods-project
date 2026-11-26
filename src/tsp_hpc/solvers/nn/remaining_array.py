@@ -15,7 +15,7 @@ from tsp_hpc.problem.objective import NumericalError
 
 
 @njit(cache=True, fastmath=False)
-def search_kernel(coordinates, matrix, use_dense, starts):
+def search_kernel(coordinates, matrix, use_dense, starts, rounded):
     """Scan only active candidates; break ties by city ID, never array position."""
     if len(starts) == 0:
         return np.empty(0, dtype=np.int64), 0.0, 0
@@ -39,7 +39,7 @@ def search_kernel(coordinates, matrix, use_dense, starts):
             nearest_cost = math.inf
             for slot in range(active):
                 city = remaining[slot]
-                cost = distance_edge_kernel(coordinates, matrix, use_dense, current, city)
+                cost = distance_edge_kernel(coordinates, matrix, use_dense, current, city, rounded)
                 # Swap-removal destroys sorted order. Explicit ID comparison
                 # preserves the baseline's exact (cost, city ID) selection.
                 if cost < nearest_cost or (cost == nearest_cost and city < nearest):
@@ -52,7 +52,7 @@ def search_kernel(coordinates, matrix, use_dense, starts):
             active -= 1
             remaining[nearest_slot] = remaining[active]
             current = nearest
-        cost = distance_tour_kernel(coordinates, matrix, use_dense, candidate)
+        cost = distance_tour_kernel(coordinates, matrix, use_dense, candidate, rounded)
         if completed == 0 or cost < best_cost:
             best_cost = cost
             for city in range(n):

@@ -42,6 +42,7 @@ class SolverSpec:
     supports_history: bool = False
     native: bool = True
     backend: Literal["serial", "multicore"] = "serial"
+    distance_kinds: tuple[str, ...] = ("euclidean_2d",)
 
     def __post_init__(self):
         if type(self.algorithm) is not str or self.algorithm not in VARIANTS:
@@ -50,6 +51,10 @@ class SolverSpec:
             raise ValueError("registration requires a non-blank implementation")
         if self.backend not in ("serial", "multicore"):
             raise ValueError("unsupported registered backend")
+        if (type(self.distance_kinds) is not tuple or not self.distance_kinds
+                or any(k not in ("euclidean_2d", "tsplib_euc_2d") for k in self.distance_kinds)
+                or len(set(self.distance_kinds)) != len(self.distance_kinds)):
+            raise ValueError("invalid registered distance kinds")
         if not callable(self.factory):
             raise TypeError("adapter factory must be callable")
         expected = "batch" if self.algorithm == "nn" else "independent"
@@ -65,7 +70,7 @@ class SolverSpec:
     def description(self):
         return {"algorithm": self.algorithm, "variant": self.variant,
                 "implementation": self.implementation, "backend": self.backend,
-                "distance_kinds": ["euclidean_2d"], "distance_modes": ["dense", "on_demand"],
+                "distance_kinds": list(self.distance_kinds), "distance_modes": ["dense", "on_demand"],
                 "logical_mode": self.logical_mode, "supports_time": self.supports_time,
                 "supports_history": self.supports_history, "native": self.native}
 
@@ -94,7 +99,7 @@ class SolverRegistry:
                 record_history: bool = False) -> SolverSpec:
         if backend not in ("serial", "multicore"):
             raise ValueError("unsupported execution backend")
-        if distance_kind != "euclidean_2d" or distance_mode not in ("dense", "on_demand"):
+        if distance_mode not in ("dense", "on_demand"):
             raise ValueError("unsupported execution distance convention/representation")
         if type(algorithm) is not str or algorithm not in self._defaults:
             raise ValueError(f"unavailable algorithm: {algorithm!r}")
@@ -105,6 +110,8 @@ class SolverRegistry:
             spec = self._entries[algorithm, name]
         except KeyError:
             raise ValueError(f"unavailable {algorithm} implementation: {name!r}") from None
+        if distance_kind not in spec.distance_kinds:
+            raise ValueError("unsupported execution distance convention")
         if spec.backend != backend:
             raise ValueError("implementation does not support the requested backend")
         if timed and not spec.supports_time:
@@ -140,6 +147,7 @@ def default_registry() -> SolverRegistry:
     from tsp_hpc.solvers.nn.solver import DEFAULT_IMPLEMENTATION, solver_specs
     from tsp_hpc.solvers.nn.threaded import IMPLEMENTATION, ThreadedNearestNeighbourSolver
     ga = ga_solver_spec()
-    threaded_nn = SolverSpec("nn", IMPLEMENTATION, ThreadedNearestNeighbourSolver, "batch", backend="multicore")
+    threaded_nn = SolverSpec("nn", IMPLEMENTATION, ThreadedNearestNeighbourSolver, "batch", backend="multicore",
+                             distance_kinds=("euclidean_2d", "tsplib_euc_2d"))
     return SolverRegistry((*solver_specs(), ga, threaded_nn),
                           defaults={"nn": DEFAULT_IMPLEMENTATION, "ga": ga.implementation})

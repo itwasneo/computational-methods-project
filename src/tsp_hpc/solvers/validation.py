@@ -9,6 +9,7 @@ import math
 
 import numpy as np
 
+from tsp_hpc.problem.objective import rounded_integer_cost
 from tsp_hpc.solvers.results import ProgressPoint, SolverResult, WorkCounters
 
 RESULT_FIELDS = {"status", "best_tour", "best_cost", "work", "termination_reason", "history"}
@@ -65,6 +66,9 @@ def validate_result(result, search):
         raise ValueError("solution status disagrees with completed evaluations")
     if solution and len(result.best_tour) != search["instance"]["n_cities"]:
         raise ValueError("result tour size disagrees with instance")
+    rounded = search['instance'].get('distance_kind') == 'tsplib_euc_2d'
+    if rounded and solution:
+        rounded_integer_cost(result.best_cost)
     reason = result.termination_reason
     limit = search["budget"].get("time_limit_s")
     if reason == "work_limit":
@@ -85,6 +89,12 @@ def validate_result(result, search):
         for index, point in enumerate(result.history):
             if not _state(point.work, search)[1]:
                 raise ValueError("history lacks a complete evaluated incumbent")
+            if rounded:
+                rounded_integer_cost(point.best_cost)
+                if index and point.best_cost > result.history[index - 1].best_cost:
+                    raise ValueError('rounded incumbent cost increased')
+                if index == len(result.history) - 1 and point.best_cost != result.best_cost:
+                    raise ValueError('rounded terminal observation disagrees with best cost')
             # The terminal sample is unconditional; all other samples respect cadence.
             if 0 < index < len(result.history) - 1 and (
                 point.elapsed_s - result.history[index - 1].elapsed_s + 1e-9 < policy["interval_s"]
@@ -113,6 +123,9 @@ def decode_result(value, search, *, search_time_s, validation_time_s=0):
         if type(tour) is not list or len(tour) != n or any(type(city) is not int or not 0 <= city < n for city in tour):
             raise ValueError("invalid recorded tour")
         tour = np.array(tour, dtype=np.int64)
+    rounded = search['instance'].get('distance_kind') == 'tsplib_euc_2d'
+    if rounded and value['best_cost'] is not None:
+        rounded_integer_cost(value['best_cost'])  # Check raw JSON before SolverResult converts to float.
     history = value["history"]
     if history is not None:
         if type(history) is not list:
@@ -123,6 +136,8 @@ def decode_result(value, search, *, search_time_s, validation_time_s=0):
         for point in history:
             _fields(point, {"elapsed_s", "work", "best_cost"})
             _fields(point["work"], WorkCounters().to_dict())
+            if rounded:
+                rounded_integer_cost(point['best_cost'])
             points.append(ProgressPoint(point["elapsed_s"], WorkCounters(**point["work"]), point["best_cost"]))
         history = tuple(points)
     result = SolverResult(value["status"], tour, value["best_cost"], work, value["termination_reason"],
